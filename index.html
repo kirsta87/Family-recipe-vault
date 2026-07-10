@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v050.css?v=50">
+  <link rel="stylesheet" href="styles-v060.css?v=60">
 </head>
 <body>
 <header class="hero">
@@ -199,12 +199,84 @@
   </label>
 
   <div class="actions">
+    <button id="editRecipeBtn" class="primary">Edit recipe</button>
     <button id="saveNotes" class="secondary">Save notes</button>
     <button id="madeBtn" class="secondary">Made this</button>
     <button id="hideBtn" class="danger">Hide recipe</button>
     <a id="sourceLink" class="secondary linkbtn" target="_blank" rel="noopener">Original page</a>
     <a id="pdfLink" class="secondary linkbtn" target="_blank" rel="noopener">Open PDF</a>
   </div>
+</dialog>
+
+<dialog id="editRecipeDialog" class="add-recipe-dialog">
+  <button id="closeEditRecipe" class="close">×</button>
+  <h2>Edit recipe</h2>
+
+  <form id="editRecipeForm">
+    <div class="two-column-form">
+      <label class="field">Recipe name
+        <input id="editName" type="text" required>
+      </label>
+      <label class="field">Source
+        <input id="editSource" type="text">
+      </label>
+    </div>
+
+    <label class="field">Original website URL
+      <input id="editUrl" type="url">
+    </label>
+
+    <label class="field">Image URL
+      <input id="editImage" type="url">
+    </label>
+
+    <div class="three-column-form">
+      <label class="field">Protein
+        <input id="editProtein" type="text">
+      </label>
+      <label class="field">Meal type
+        <input id="editType" type="text">
+      </label>
+      <label class="field">Cuisine
+        <input id="editCuisine" type="text">
+      </label>
+    </div>
+
+    <div class="three-column-form">
+      <label class="field">Prep minutes
+        <input id="editPrep" type="number" min="0">
+      </label>
+      <label class="field">Cook minutes
+        <input id="editCook" type="number" min="0">
+      </label>
+      <label class="field">Total minutes
+        <input id="editTotal" type="number" min="0">
+      </label>
+    </div>
+
+    <label class="field">Tags
+      <input id="editTags" type="text" placeholder="Creamy | Quick | Crockpot">
+    </label>
+
+    <label class="field">Ingredients — one per line
+      <textarea id="editIngredients" rows="10" required></textarea>
+    </label>
+
+    <label class="field">Instructions — one step per line
+      <textarea id="editInstructions" rows="10" required></textarea>
+    </label>
+
+    <label class="field">Nutrition
+      <textarea id="editNutrition" rows="3"></textarea>
+    </label>
+
+    <label class="field">PDF URL
+      <input id="editPdfUrl" type="url">
+    </label>
+
+    <button class="primary" type="submit">Save recipe changes</button>
+    <div id="editRecipeStatus" class="import-status" aria-live="polite"></div>
+  </form>
 </dialog>
 
 <dialog id="plannerDialog">
@@ -215,6 +287,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v050.js?v=50"></script>
+<script src="app-v060.js?v=60"></script>
 </body>
 </html>
