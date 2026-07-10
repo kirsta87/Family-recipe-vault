@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v042.css?v=42?v=3">
+  <link rel="stylesheet" href="styles-v050.css?v=50">
 </head>
 <body>
 <header class="hero">
@@ -68,15 +68,101 @@
   <button id="saveSettings" class="primary">Save shared settings</button>
 </dialog>
 
-<dialog id="addDialog">
+<dialog id="addDialog" class="add-recipe-dialog">
   <button id="closeAdd" class="close">×</button>
-  <h2>Add a HelloFresh recipe</h2>
-  <form id="addForm">
-    <label class="field">Recipe URL
-      <input id="addUrl" type="url" required placeholder="https://www.hellofresh.com/recipes/...">
-    </label>
-    <button class="primary" type="submit">Save recipe</button>
-  </form>
+  <h2>Add recipes</h2>
+
+  <div class="add-tabs" role="tablist" aria-label="Recipe entry options">
+    <button type="button" class="add-tab active" data-add-tab="url">Import URL</button>
+    <button type="button" class="add-tab" data-add-tab="bulk">Bulk HelloFresh</button>
+    <button type="button" class="add-tab" data-add-tab="manual">Manual recipe</button>
+  </div>
+
+  <section id="addPanelUrl" class="add-panel active">
+    <form id="urlImportForm">
+      <label class="field">Paste a recipe website URL
+        <input id="importUrl" type="url" required placeholder="HelloFresh, Allrecipes, Budget Bytes, etc.">
+      </label>
+      <p class="muted">The importer looks for standard structured recipe data: title, image, times, ingredients, instructions, and nutrition.</p>
+      <button class="primary" type="submit">Import recipe</button>
+      <div id="urlImportStatus" class="import-status" aria-live="polite"></div>
+    </form>
+  </section>
+
+  <section id="addPanelBulk" class="add-panel">
+    <form id="bulkImportForm">
+      <label class="field">HelloFresh URLs — one per line
+        <textarea id="bulkUrls" rows="10" placeholder="https://www.hellofresh.com/recipes/..."></textarea>
+      </label>
+      <button class="primary" type="submit">Import batch</button>
+      <div id="bulkProgress" class="import-status" aria-live="polite"></div>
+      <div id="bulkResults" class="bulk-results"></div>
+    </form>
+  </section>
+
+  <section id="addPanelManual" class="add-panel">
+    <form id="manualRecipeForm">
+      <div class="two-column-form">
+        <label class="field">Recipe name
+          <input id="manualName" type="text" required>
+        </label>
+        <label class="field">Source
+          <input id="manualSource" type="text" value="Family Recipe" placeholder="Family Recipe, ChatGPT, cookbook…">
+        </label>
+      </div>
+
+      <label class="field">Original website URL (optional)
+        <input id="manualUrl" type="url" placeholder="https://...">
+      </label>
+
+      <label class="field">Image URL (optional)
+        <input id="manualImage" type="url" placeholder="https://...jpg">
+      </label>
+
+      <div class="three-column-form">
+        <label class="field">Protein
+          <input id="manualProtein" type="text" placeholder="Chicken">
+        </label>
+        <label class="field">Meal type
+          <input id="manualType" type="text" placeholder="Pasta">
+        </label>
+        <label class="field">Cuisine
+          <input id="manualCuisine" type="text" placeholder="Italian">
+        </label>
+      </div>
+
+      <div class="three-column-form">
+        <label class="field">Prep minutes
+          <input id="manualPrep" type="number" min="0">
+        </label>
+        <label class="field">Cook minutes
+          <input id="manualCook" type="number" min="0">
+        </label>
+        <label class="field">Total minutes
+          <input id="manualTotal" type="number" min="0">
+        </label>
+      </div>
+
+      <label class="field">Tags
+        <input id="manualTags" type="text" placeholder="Creamy | Quick | Crockpot">
+      </label>
+
+      <label class="field">Ingredients — one per line
+        <textarea id="manualIngredients" rows="8" required placeholder="1 lb chicken breast&#10;2 tbsp olive oil"></textarea>
+      </label>
+
+      <label class="field">Instructions — one step per line
+        <textarea id="manualInstructions" rows="8" required placeholder="Season the chicken.&#10;Heat oil in a skillet."></textarea>
+      </label>
+
+      <label class="field">Nutrition (optional)
+        <textarea id="manualNutrition" rows="3" placeholder="Calories: 520 | Protein: 42 g"></textarea>
+      </label>
+
+      <button class="primary" type="submit">Save custom recipe</button>
+      <div id="manualStatus" class="import-status" aria-live="polite"></div>
+    </form>
+  </section>
 </dialog>
 
 <dialog id="recipeDialog" class="wide">
@@ -129,6 +215,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v042.js?v=42?v=3"></script>
+<script src="app-v050.js?v=50"></script>
 </body>
 </html>
