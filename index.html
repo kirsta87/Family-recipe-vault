@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles-v031.css?v=3">
 </head>
 <body>
 <header class="hero">
@@ -16,100 +17,102 @@
   <div class="actions">
     <button id="plannerBtn" class="secondary">Meal planner</button>
     <button id="manageBtn" class="secondary">Manage</button>
-    <button id="addRecipeBtn" class="primary">＋ Add recipe</button>
+    <button id="addBtn" class="primary">＋ Add recipe</button>
   </div>
 </header>
 
+<div id="fatalError" class="fatal" hidden></div>
+
 <main class="layout">
   <aside class="panel">
-    <label>Search recipes
+    <label class="field">Search recipes
       <input id="searchInput" type="search" placeholder="chicken, tacos, creamy…">
     </label>
 
     <h3>Protein</h3>
-    <div id="proteinFilters"></div>
+    <div id="proteinFilters" class="filter-list"></div>
 
     <h3>Meal type</h3>
-    <div id="typeFilters"></div>
+    <div id="typeFilters" class="filter-list"></div>
 
     <h3>Automatic filters</h3>
-    <label class="check"><input id="kirstaFavorites" type="checkbox"> Kirsta’s favorites</label>
-    <label class="check"><input id="tjFavorites" type="checkbox"> TJ’s favorites</label>
-    <label class="check"><input id="torrinFavorites" type="checkbox"> Torrin’s safe foods</label>
-    <label class="check"><input id="quickOnly" type="checkbox"> Quick meals (30 min or less)</label>
-    <label class="check"><input id="showHidden" type="checkbox"> Show hidden recipes</label>
-
-    <button id="clearFiltersBtn" class="secondary full">Clear filters</button>
+    <label class="check"><input id="kirstaFav" type="checkbox"> Kirsta’s favorites</label>
+    <label class="check"><input id="tjFav" type="checkbox"> TJ’s favorites</label>
+    <label class="check"><input id="torrinFav" type="checkbox"> Torrin’s safe foods</label>
+    <label class="check"><input id="quickOnly" type="checkbox"> Quick meals</label>
+    <label class="check"><input id="showHidden" type="checkbox"> Hidden recipes only</label>
+    <button id="clearBtn" class="secondary full">Clear filters</button>
   </aside>
 
   <section>
     <div class="toolbar">
-      <strong id="resultCount">0 recipes</strong>
-      <span id="syncStatus"></span>
+      <strong id="count">0 recipes</strong>
+      <span id="status"></span>
     </div>
-    <div id="recipeGrid" class="grid"></div>
+    <div id="grid" class="grid"></div>
   </section>
 </main>
 
 <dialog id="manageDialog">
-  <button class="close" id="closeManageBtn">×</button>
+  <button id="closeManage" class="close">×</button>
   <h2>Manage your vault</h2>
-  <label>Google Sheet CSV URL
-    <input id="sheetUrlInput" type="url">
+  <label class="field">Google Sheet CSV URL
+    <input id="sheetUrl" type="url">
   </label>
-  <label>Apps Script web-app URL
-    <input id="appsScriptUrlInput" type="url">
+  <label class="field">Apps Script web-app URL
+    <input id="scriptUrl" type="url">
   </label>
-  <label>Family write key
-    <input id="sharedKeyInput" type="password">
+  <label class="field">Family write key
+    <input id="familyKey" type="password">
   </label>
-  <button id="saveSharedSettingsBtn" class="primary">Save shared settings</button>
+  <button id="saveSettings" class="primary">Save shared settings</button>
 </dialog>
 
 <dialog id="addDialog">
-  <button class="close" id="closeAddBtn">×</button>
-  <h2>Add recipe</h2>
+  <button id="closeAdd" class="close">×</button>
+  <h2>Add a HelloFresh recipe</h2>
   <form id="addForm">
-    <label>HelloFresh recipe URL
-      <input id="recipeUrlInput" type="url" required>
+    <label class="field">Recipe URL
+      <input id="addUrl" type="url" required placeholder="https://www.hellofresh.com/recipes/...">
     </label>
     <button class="primary" type="submit">Save recipe</button>
   </form>
 </dialog>
 
 <dialog id="recipeDialog" class="wide">
-  <button class="close" id="closeRecipeBtn">×</button>
+  <button id="closeRecipe" class="close">×</button>
   <h2 id="recipeTitle"></h2>
   <p id="recipeMeta"></p>
 
   <div class="ratings">
-    <div><span>Kirsta</span><div id="kirstaStars"></div></div>
-    <div><span>TJ</span><div id="tjStars"></div></div>
-    <div><span>Torrin</span><div id="torrinStars"></div></div>
+    <div><strong>Kirsta</strong><span id="kirstaStars"></span></div>
+    <div><strong>TJ</strong><span id="tjStars"></span></div>
+    <div><strong>Torrin</strong><span id="torrinStars"></span></div>
   </div>
 
-  <iframe id="pdfViewer" title="Recipe card"></iframe>
+  <iframe id="viewer" title="Recipe card"></iframe>
 
-  <label>Family notes
-    <textarea id="notesInput" rows="3"></textarea>
+  <label class="field">Family notes
+    <textarea id="notes" rows="3"></textarea>
   </label>
 
   <div class="actions">
-    <button id="saveNotesBtn" class="secondary">Save notes</button>
+    <button id="saveNotes" class="secondary">Save notes</button>
     <button id="madeBtn" class="secondary">Made this</button>
     <button id="hideBtn" class="danger">Hide recipe</button>
-    <a id="recipePageLink" class="secondary linkbtn" target="_blank" rel="noopener">Original page</a>
+    <a id="sourceLink" class="secondary linkbtn" target="_blank" rel="noopener">Original page</a>
     <a id="pdfLink" class="secondary linkbtn" target="_blank" rel="noopener">Open PDF</a>
   </div>
 </dialog>
 
 <dialog id="plannerDialog">
-  <button class="close" id="closePlannerBtn">×</button>
+  <button id="closePlanner" class="close">×</button>
   <h2>Weekly meal planner</h2>
+  <p class="muted">Basic planner is present; shared planner comes after recipe saving is confirmed.</p>
   <div id="plannerDays"></div>
 </dialog>
 
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=3"></script>
+<script src="app-v031.js?v=3"></script>
 </body>
 </html>
