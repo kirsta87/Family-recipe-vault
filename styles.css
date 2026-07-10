@@ -113,3 +113,10 @@ h1{font-family:Georgia,serif;font-size:clamp(3rem,7vw,6rem);line-height:.9;margi
 .planner-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .planner-item:first-of-type{border-top:0}
 .planner-item button{border:0;background:#eee5d6;border-radius:999px;padding:6px 10px}
+
+.danger{border:0;border-radius:999px;padding:11px 16px;font-weight:800;background:#8f4a43;color:white}
+.recipe-actions-grid{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+.family-ratings{display:grid;gap:8px;margin-top:14px}
+.notes-editor{display:grid;gap:7px;margin-top:14px;font-weight:800}
+.notes-editor textarea{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px;background:white}
+.recipe-card.hidden-card{opacity:.68}

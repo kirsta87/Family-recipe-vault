@@ -1,6 +1,6 @@
 window.RECIPE_VAULT_CONFIG = {
-  // These can stay blank. You can paste the links later through the Manage button.
+  familyName: "The Glaister Family",
   sheetCsvUrl: "",
-  googleFormUrl: "",
-  familyName: "The Glaister Family"
+  appsScriptUrl: "",
+  sharedKey: ""
 };

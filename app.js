@@ -15,6 +15,7 @@ let planner = JSON.parse(localStorage.getItem(PLANNER_KEY) || '{}');
 let activeRecipe = null;
 let sharedSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
 let config = {...baseConfig, ...sharedSettings};
+let activeRecipe = null;
 
 const normalizeTags = value => Array.isArray(value)
   ? value
@@ -98,10 +99,15 @@ function cleanRecipe(r){
     type: r.type || inferred?.type || 'Other',
     tags: normalizeTags(r.tags),
     time: r.time || '',
-    rating: Number(r.rating) || 0,
-    favorite: String(r.favorite).toLowerCase() === 'true',
+    kirsta_rating: Number(r.kirsta_rating) || 0,
+    tj_rating: Number(r.tj_rating) || 0,
+    torrin_rating: Number(r.torrin_rating) || 0,
+    torrin_notes: r.torrin_notes || '',
     notes: r.notes || '',
-    added: r.added || ''
+    made_count: Number(r.made_count) || 0,
+    hidden: String(r.hidden).toLowerCase() === 'true',
+    added: r.added || '',
+    last_made: r.last_made || ''
   };
 }
 
@@ -170,6 +176,7 @@ function render(){
   const types = selected('type');
   const tags = selected('tags');
   const favoritesOnly = $('favoritesOnly').checked;
+  const showHidden = $('showHidden').checked;
 
   let visible = recipes.filter(recipe => {
     const haystack = [
@@ -181,12 +188,13 @@ function render(){
       && (!proteins.length || proteins.includes(recipe.protein))
       && (!types.length || types.includes(recipe.type))
       && (!tags.length || tags.every(tag => recipe.tags.includes(tag)))
-      && (!favoritesOnly || favorites.has(recipe.id) || recipe.favorite);
+      && (!favoritesOnly || Math.max(recipe.kirsta_rating, recipe.tj_rating, recipe.torrin_rating) >= 4)
+      && (showHidden ? recipe.hidden : !recipe.hidden);
   });
 
   const sort = $('sortSelect').value;
   visible.sort((a,b) => sort === 'rating'
-    ? Number(ratings[b.id] || b.rating || 0) - Number(ratings[a.id] || a.rating || 0)
+    ? Math.max(b.kirsta_rating,b.tj_rating,b.torrin_rating) - Math.max(a.kirsta_rating,a.tj_rating,a.torrin_rating)
     : sort === 'newest'
       ? String(b.added).localeCompare(String(a.added))
       : a.name.localeCompare(b.name)
@@ -199,6 +207,7 @@ function render(){
 
   visible.forEach(recipe => {
     const node = $('recipeCardTemplate').content.cloneNode(true);
+    if(recipe.hidden) node.querySelector('.recipe-card').classList.add('hidden-card');
     node.querySelector('.recipe-art span').textContent = emojiFor(recipe);
     node.querySelector('.recipe-meta').textContent =
       [recipe.protein, recipe.type, recipe.time].filter(Boolean).join(' • ');
@@ -207,7 +216,7 @@ function render(){
       .map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('');
 
     const notes = node.querySelector('.recipe-notes');
-    notes.textContent = recipe.notes;
+    notes.textContent = [recipe.notes, recipe.made_count ? `Made ${recipe.made_count} time${recipe.made_count===1?'':'s'}` : ''].filter(Boolean).join(' • ');
     notes.hidden = !recipe.notes;
 
     const favoriteButton = node.querySelector('.favorite');
@@ -225,20 +234,39 @@ function render(){
   });
 }
 
-function renderRating(recipe){
-  const container = $('ratingStars');
+async function writeToSheet(action, recipe, updates = {}){
+  if(!config.appsScriptUrl || !config.sharedKey){
+    alert('Open Manage and add the Apps Script URL and family write key first.');
+    return false;
+  }
+  const payload = {action, key: config.sharedKey, id: recipe?.id || updates.id, url: recipe?.url || updates.url, updates};
+  try{
+    const form = new URLSearchParams();
+    form.set('payload', JSON.stringify(payload));
+    const response = await fetch(config.appsScriptUrl, {method:'POST', body:form, redirect:'follow'});
+    const result = await response.json();
+    if(!result.success) throw new Error(result.error || 'Save failed');
+    await loadRecipes();
+    return true;
+  }catch(error){
+    alert(`Could not save: ${error.message}`);
+    return false;
+  }
+}
+
+function renderPersonRating(containerId, recipe, field){
+  const container = $(containerId);
   container.innerHTML = '';
-  const current = Number(ratings[recipe.id] || recipe.rating || 0);
+  const current = Number(recipe[field] || 0);
   for(let value=1; value<=5; value++){
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = value <= current ? '★' : '☆';
-    button.setAttribute('aria-label', `${value} star rating`);
-    button.onclick = () => {
-      ratings[recipe.id] = value;
-      localStorage.setItem(RATINGS_KEY, JSON.stringify(ratings));
-      renderRating(recipe);
-      render();
+    button.onclick = async () => {
+      if(await writeToSheet('update', recipe, {[field]:value})){
+        recipe[field] = value;
+        renderPersonRating(containerId, recipe, field);
+      }
     };
     container.appendChild(button);
   }
@@ -252,7 +280,11 @@ function openRecipe(recipe){
   $('recipePageLink').href = recipe.url;
   $('directPdfLink').href = PDF(recipe.id);
   activeRecipe = recipe;
-  renderRating(recipe);
+  renderPersonRating('kirstaStars', recipe, 'kirsta_rating');
+  renderPersonRating('tjStars', recipe, 'tj_rating');
+  renderPersonRating('torrinStars', recipe, 'torrin_rating');
+  $('familyNotesInput').value = recipe.notes || '';
+  $('hideRecipeBtn').textContent = recipe.hidden ? 'Restore recipe' : 'Hide recipe';
   $('recipeDialog').showModal();
 }
 
@@ -288,12 +320,36 @@ $('recipeDialog').addEventListener('click', event => {
   if(event.target === $('recipeDialog')) $('closeDialogBtn').click();
 });
 
+
+$('showHidden').addEventListener('change', render);
+
+$('saveNotesBtn').onclick = async () => {
+  if(!activeRecipe) return;
+  await writeToSheet('update', activeRecipe, {notes:$('familyNotesInput').value.trim()});
+};
+
+$('madeRecipeBtn').onclick = async () => {
+  if(!activeRecipe) return;
+  await writeToSheet('update', activeRecipe, {
+    made_count:Number(activeRecipe.made_count || 0)+1,
+    last_made:new Date().toISOString().slice(0,10)
+  });
+};
+
+$('hideRecipeBtn').onclick = async () => {
+  if(!activeRecipe) return;
+  const next = !activeRecipe.hidden;
+  if(!confirm(next ? 'Hide this recipe from normal browsing?' : 'Restore this recipe?')) return;
+  if(await writeToSheet('update', activeRecipe, {hidden:next})) $('recipeDialog').close();
+};
+
 $('searchInput').addEventListener('input', render);
 $('favoritesOnly').addEventListener('change', render);
 $('sortSelect').addEventListener('change', render);
 $('clearFiltersBtn').onclick = () => {
   $('searchInput').value = '';
   $('favoritesOnly').checked = false;
+  $('showHidden').checked = false;
   document.querySelectorAll('[data-filter]').forEach(x => x.checked = false);
   render();
 };
@@ -316,17 +372,20 @@ document.querySelectorAll('.tab').forEach(button => {
   };
 });
 
-$('singleAddForm').onsubmit = event => {
+$('singleAddForm').onsubmit = async event => {
   event.preventDefault();
   const recipe = extractFromUrl($('recipeUrlInput').value);
   if(!recipe) return alert('That does not look like a HelloFresh recipe URL.');
   if($('proteinInput').value !== 'Auto-detect') recipe.protein = $('proteinInput').value;
   if($('typeInput').value !== 'Auto-detect') recipe.type = $('typeInput').value;
   recipe.tags = normalizeTags($('tagsInput').value);
-  saveLocalRecipes([recipe]);
-  $('singleAddForm').reset();
-  $('addDialog').close();
-  loadRecipes();
+  recipe.source = 'HelloFresh';
+  recipe.hidden = false;
+  recipe.made_count = 0;
+  if(await writeToSheet('add', recipe, recipe)){
+    $('singleAddForm').reset();
+    $('addDialog').close();
+  }
 };
 
 $('bulkAddForm').onsubmit = event => {
@@ -341,7 +400,8 @@ $('bulkAddForm').onsubmit = event => {
 
 $('manageBtn').onclick = () => {
   $('sheetUrlInput').value = config.sheetCsvUrl || '';
-  $('formUrlInput').value = config.googleFormUrl || '';
+  $('appsScriptUrlInput').value = config.appsScriptUrl || '';
+  $('sharedKeyInput').value = config.sharedKey || '';
   $('manageDialog').showModal();
 };
 $('closeManageBtn').onclick = () => $('manageDialog').close();
@@ -349,7 +409,8 @@ $('closeManageBtn').onclick = () => $('manageDialog').close();
 $('saveSharedSettingsBtn').onclick = () => {
   sharedSettings = {
     sheetCsvUrl: $('sheetUrlInput').value.trim(),
-    googleFormUrl: $('formUrlInput').value.trim()
+    appsScriptUrl: $('appsScriptUrlInput').value.trim(),
+    sharedKey: $('sharedKeyInput').value.trim()
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(sharedSettings));
   config = {...baseConfig, ...sharedSettings};

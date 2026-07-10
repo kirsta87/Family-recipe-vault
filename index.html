@@ -43,6 +43,7 @@
       <section>
         <div class="section-title">Tags</div>
         <label class="check"><input id="favoritesOnly" type="checkbox" /> Favorites only</label>
+<label class="check"><input id="showHidden" type="checkbox" /> Show hidden recipes</label>
         <div id="tagFilters" class="filter-list"></div>
       </section>
 
@@ -76,11 +77,20 @@
       <p id="dialogMeta" class="eyebrow"></p>
       <h2 id="dialogTitle"></h2>
       <div id="dialogTags" class="tags"></div>
-      <div class="rating-row">
-        <span>Your rating</span>
-        <div id="ratingStars" class="rating-stars" aria-label="Recipe rating"></div>
+      <div class="family-ratings">
+        <div class="rating-row"><span>Kirsta</span><div id="kirstaStars" class="rating-stars"></div></div>
+        <div class="rating-row"><span>TJ</span><div id="tjStars" class="rating-stars"></div></div>
+        <div class="rating-row"><span>Torrin</span><div id="torrinStars" class="rating-stars"></div></div>
       </div>
-      <button id="addToPlannerBtn" class="secondary">Add to meal planner</button>
+      <div class="recipe-actions-grid">
+        <button id="addToPlannerBtn" class="secondary">Add to meal planner</button>
+        <button id="madeRecipeBtn" class="secondary">Made this</button>
+        <button id="hideRecipeBtn" class="danger">Hide recipe</button>
+      </div>
+      <label class="notes-editor">Family notes
+        <textarea id="familyNotesInput" rows="3" placeholder="Double the sauce, serve deconstructed…"></textarea>
+      </label>
+      <button id="saveNotesBtn" class="secondary">Save notes</button>
     </div>
     <div class="viewer-shell">
       <iframe id="pdfViewer" title="Recipe card viewer"></iframe>
@@ -129,7 +139,8 @@
       <h3>Shared family mode</h3>
       <p>Paste your published Google Sheet CSV URL and Google Form URL below. Once connected, both of you can add recipes through the form and the website will read the shared sheet.</p>
       <label>Google Sheet CSV URL<input id="sheetUrlInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" /></label>
-      <label>Google Form URL<input id="formUrlInput" type="url" placeholder="https://forms.gle/..." /></label>
+      <label>Apps Script web-app URL<input id="appsScriptUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" /></label>
+<label>Family write key<input id="sharedKeyInput" type="password" placeholder="Private family key" /></label>
       <button class="primary" id="saveSharedSettingsBtn">Save shared settings</button>
     </section>
 
