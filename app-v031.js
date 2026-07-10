@@ -309,9 +309,15 @@ $("addForm").addEventListener("submit", async event => {
 
 $("loadCardBtn").addEventListener("click", () => {
   if(!active) return;
+  if(!config.appsScriptUrl){
+    alert("Open Manage and add the Apps Script web-app URL first.");
+    return;
+  }
+
   $("viewerPlaceholder").hidden = true;
   $("viewer").hidden = false;
-  $("viewer").src = pdfURL(active);
+  $("viewer").src =
+    `${config.appsScriptUrl}?mode=pdf&id=${encodeURIComponent(active.id)}`;
 });
 
 $("closeRecipe").addEventListener("click", () => {
