@@ -3,17 +3,23 @@
     "name": "One-Pan Mango Salsa Pork Tacos",
     "url": "https://www.hellofresh.com/recipes/one-pan-mango-salsa-pork-tacos-66019b2bda283ecbc2883d33",
     "id": "66019b2bda283ecbc2883d33",
+    "source": "HelloFresh",
+    "image": "",
     "protein": "Pork",
     "type": "Tacos",
-    "tags": [
-      "Mexican",
-      "One Pan",
-      "Quick"
-    ],
-    "time": "30 min",
-    "rating": 0,
-    "favorite": false,
+    "cuisine": "Mexican",
+    "tags": "Mango|Salsa|One Pan|Quick",
+    "prep_time": "",
+    "cook_time": "",
+    "total_time": "30",
+    "kirsta_rating": "",
+    "tj_rating": "",
+    "torrin_rating": "",
+    "torrin_notes": "",
     "notes": "",
-    "added": "2026-07-09T00:00:00Z"
+    "made_count": "0",
+    "hidden": "false",
+    "added": "2026-07-09",
+    "last_made": ""
   }
 ]

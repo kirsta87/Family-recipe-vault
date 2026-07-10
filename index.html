@@ -1,189 +1,115 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#6b7554" />
-  <meta name="description" content="The Glaister Family Recipe Vault" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="hero">
-    <div>
-      <p class="eyebrow" id="familyEyebrow">THE GLAISTER FAMILY</p>
-      <h1>Recipe Vault</h1>
-      <p class="hero-copy">Find dinner without scrolling until your soul leaves your body.</p>
+<header class="hero">
+  <div>
+    <p class="eyebrow">THE GLAISTER FAMILY</p>
+    <h1>Recipe Vault</h1>
+    <p>Find dinner without scrolling until your soul leaves your body.</p>
+  </div>
+  <div class="actions">
+    <button id="plannerBtn" class="secondary">Meal planner</button>
+    <button id="manageBtn" class="secondary">Manage</button>
+    <button id="addRecipeBtn" class="primary">＋ Add recipe</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <label>Search recipes
+      <input id="searchInput" type="search" placeholder="chicken, tacos, creamy…">
+    </label>
+
+    <h3>Protein</h3>
+    <div id="proteinFilters"></div>
+
+    <h3>Meal type</h3>
+    <div id="typeFilters"></div>
+
+    <h3>Automatic filters</h3>
+    <label class="check"><input id="kirstaFavorites" type="checkbox"> Kirsta’s favorites</label>
+    <label class="check"><input id="tjFavorites" type="checkbox"> TJ’s favorites</label>
+    <label class="check"><input id="torrinFavorites" type="checkbox"> Torrin’s safe foods</label>
+    <label class="check"><input id="quickOnly" type="checkbox"> Quick meals (30 min or less)</label>
+    <label class="check"><input id="showHidden" type="checkbox"> Show hidden recipes</label>
+
+    <button id="clearFiltersBtn" class="secondary full">Clear filters</button>
+  </aside>
+
+  <section>
+    <div class="toolbar">
+      <strong id="resultCount">0 recipes</strong>
+      <span id="syncStatus"></span>
     </div>
-    <div class="hero-actions">
-      <button class="secondary" id="plannerBtn">Meal planner</button>
-      <button class="secondary" id="manageBtn">Manage</button>
-      <button class="primary" id="addRecipeBtn">＋ Add recipe</button>
-    </div>
-  </header>
+    <div id="recipeGrid" class="grid"></div>
+  </section>
+</main>
 
-  <main class="layout">
-    <aside class="filters card">
-      <label class="search-wrap">
-        <span>Search recipes</span>
-        <input id="searchInput" type="search" placeholder="chicken, tacos, creamy…" autocomplete="off" />
-      </label>
+<dialog id="manageDialog">
+  <button class="close" id="closeManageBtn">×</button>
+  <h2>Manage your vault</h2>
+  <label>Google Sheet CSV URL
+    <input id="sheetUrlInput" type="url">
+  </label>
+  <label>Apps Script web-app URL
+    <input id="appsScriptUrlInput" type="url">
+  </label>
+  <label>Family write key
+    <input id="sharedKeyInput" type="password">
+  </label>
+  <button id="saveSharedSettingsBtn" class="primary">Save shared settings</button>
+</dialog>
 
-      <section>
-        <div class="section-title">Protein</div>
-        <div id="proteinFilters" class="filter-list"></div>
-      </section>
+<dialog id="addDialog">
+  <button class="close" id="closeAddBtn">×</button>
+  <h2>Add recipe</h2>
+  <form id="addForm">
+    <label>HelloFresh recipe URL
+      <input id="recipeUrlInput" type="url" required>
+    </label>
+    <button class="primary" type="submit">Save recipe</button>
+  </form>
+</dialog>
 
-      <section>
-        <div class="section-title">Meal type</div>
-        <div id="typeFilters" class="filter-list"></div>
-      </section>
+<dialog id="recipeDialog" class="wide">
+  <button class="close" id="closeRecipeBtn">×</button>
+  <h2 id="recipeTitle"></h2>
+  <p id="recipeMeta"></p>
 
-      <section>
-        <div class="section-title">Tags</div>
-        <label class="check"><input id="favoritesOnly" type="checkbox" /> Favorites only</label>
-<label class="check"><input id="showHidden" type="checkbox" /> Show hidden recipes</label>
-        <div id="tagFilters" class="filter-list"></div>
-      </section>
+  <div class="ratings">
+    <div><span>Kirsta</span><div id="kirstaStars"></div></div>
+    <div><span>TJ</span><div id="tjStars"></div></div>
+    <div><span>Torrin</span><div id="torrinStars"></div></div>
+  </div>
 
-      <button class="secondary full" id="clearFiltersBtn">Clear filters</button>
-    </aside>
+  <iframe id="pdfViewer" title="Recipe card"></iframe>
 
-    <section class="content">
-      <div class="toolbar">
-        <div>
-          <strong id="resultCount">0 recipes</strong>
-          <span id="syncStatus" class="muted"></span>
-        </div>
-        <select id="sortSelect" aria-label="Sort recipes">
-          <option value="name">A–Z</option>
-          <option value="newest">Newest added</option>
-          <option value="rating">Highest rated</option>
-        </select>
-      </div>
+  <label>Family notes
+    <textarea id="notesInput" rows="3"></textarea>
+  </label>
 
-      <div id="recipeGrid" class="recipe-grid"></div>
-      <div id="emptyState" class="empty card" hidden>
-        <h2>No dinner magic found.</h2>
-        <p>Clear a filter or try a broader search.</p>
-      </div>
-    </section>
-  </main>
+  <div class="actions">
+    <button id="saveNotesBtn" class="secondary">Save notes</button>
+    <button id="madeBtn" class="secondary">Made this</button>
+    <button id="hideBtn" class="danger">Hide recipe</button>
+    <a id="recipePageLink" class="secondary linkbtn" target="_blank" rel="noopener">Original page</a>
+    <a id="pdfLink" class="secondary linkbtn" target="_blank" rel="noopener">Open PDF</a>
+  </div>
+</dialog>
 
-  <dialog id="recipeDialog" class="recipe-dialog">
-    <button class="icon-btn close" id="closeDialogBtn" aria-label="Close">×</button>
-    <div class="dialog-head">
-      <p id="dialogMeta" class="eyebrow"></p>
-      <h2 id="dialogTitle"></h2>
-      <div id="dialogTags" class="tags"></div>
-      <div class="family-ratings">
-        <div class="rating-row"><span>Kirsta</span><div id="kirstaStars" class="rating-stars"></div></div>
-        <div class="rating-row"><span>TJ</span><div id="tjStars" class="rating-stars"></div></div>
-        <div class="rating-row"><span>Torrin</span><div id="torrinStars" class="rating-stars"></div></div>
-      </div>
-      <div class="recipe-actions-grid">
-        <button id="addToPlannerBtn" class="secondary">Add to meal planner</button>
-        <button id="madeRecipeBtn" class="secondary">Made this</button>
-        <button id="hideRecipeBtn" class="danger">Hide recipe</button>
-      </div>
-      <label class="notes-editor">Family notes
-        <textarea id="familyNotesInput" rows="3" placeholder="Double the sauce, serve deconstructed…"></textarea>
-      </label>
-      <button id="saveNotesBtn" class="secondary">Save notes</button>
-    </div>
-    <div class="viewer-shell">
-      <iframe id="pdfViewer" title="Recipe card viewer"></iframe>
-    </div>
-    <div class="dialog-actions">
-      <a id="recipePageLink" class="secondary button-link" target="_blank" rel="noopener">Open recipe page</a>
-      <a id="directPdfLink" class="secondary button-link" target="_blank" rel="noopener">Open PDF directly</a>
-    </div>
-    <p class="viewer-note">The card opens inside the site through Google’s document viewer. The direct PDF button is a fallback.</p>
-  </dialog>
+<dialog id="plannerDialog">
+  <button class="close" id="closePlannerBtn">×</button>
+  <h2>Weekly meal planner</h2>
+  <div id="plannerDays"></div>
+</dialog>
 
-  <dialog id="addDialog" class="add-dialog">
-    <button class="icon-btn close" id="closeAddBtn" aria-label="Close">×</button>
-    <h2>Add a recipe</h2>
-    <p class="muted" id="addHelp">Paste a HelloFresh recipe URL. It will extract the name and recipe-card link automatically.</p>
-
-    <div class="tab-row">
-      <button class="tab active" data-tab="single">One recipe</button>
-      <button class="tab" data-tab="bulk">Bulk paste</button>
-    </div>
-
-    <form id="singleAddForm" class="tab-panel active">
-      <label>Recipe URL<input id="recipeUrlInput" type="url" required placeholder="https://www.hellofresh.com/recipes/…" /></label>
-      <div class="two-col">
-        <label>Protein<select id="proteinInput"><option>Auto-detect</option><option>Chicken</option><option>Beef</option><option>Pork</option><option>Turkey</option><option>Seafood</option><option>Vegetarian</option><option>Other</option></select></label>
-        <label>Meal type<select id="typeInput"><option>Auto-detect</option><option>Tacos</option><option>Pasta</option><option>Burgers</option><option>Bowls</option><option>Flatbread</option><option>Soup</option><option>Sandwiches</option><option>One Pan</option><option>Other</option></select></label>
-      </div>
-      <label>Tags<input id="tagsInput" type="text" placeholder="Quick, Creamy, Kid Approved" /></label>
-      <button class="primary" type="submit">Save recipe</button>
-    </form>
-
-    <form id="bulkAddForm" class="tab-panel">
-      <label>Paste HelloFresh recipe URLs — one per line
-        <textarea id="bulkUrlsInput" rows="10" placeholder="https://www.hellofresh.com/recipes/..."></textarea>
-      </label>
-      <button class="primary" type="submit">Import URLs</button>
-      <p id="bulkResult" class="muted"></p>
-    </form>
-  </dialog>
-
-  <dialog id="manageDialog" class="manage-dialog">
-    <button class="icon-btn close" id="closeManageBtn" aria-label="Close">×</button>
-    <h2>Manage your vault</h2>
-
-    <section class="manage-section">
-      <h3>Shared family mode</h3>
-      <p>Paste your published Google Sheet CSV URL and Google Form URL below. Once connected, both of you can add recipes through the form and the website will read the shared sheet.</p>
-      <label>Google Sheet CSV URL<input id="sheetUrlInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" /></label>
-      <label>Apps Script web-app URL<input id="appsScriptUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" /></label>
-<label>Family write key<input id="sharedKeyInput" type="password" placeholder="Private family key" /></label>
-      <button class="primary" id="saveSharedSettingsBtn">Save shared settings</button>
-    </section>
-
-    <section class="manage-section">
-      <h3>Backup and restore</h3>
-      <div class="button-stack">
-        <button class="secondary" id="exportJsonBtn">Export backup (.json)</button>
-        <button class="secondary" id="exportCsvBtn">Export recipe list (.csv)</button>
-        <label class="secondary file-button">Import backup
-          <input id="importJsonInput" type="file" accept=".json,application/json" hidden />
-        </label>
-      </div>
-      <p class="muted">Local recipes and favorites are stored in this browser. Export a backup before changing computers or clearing browser data.</p>
-    </section>
-  </dialog>
-
-
-  <dialog id="plannerDialog" class="manage-dialog">
-    <button class="icon-btn close" id="closePlannerBtn" aria-label="Close">×</button>
-    <h2>Weekly meal planner</h2>
-    <p class="muted">Choose a day, then add recipes from the recipe viewer. Your plan stays in this browser.</p>
-    <div id="plannerDays" class="planner-days"></div>
-    <div class="dialog-actions">
-      <button class="secondary" id="clearPlannerBtn">Clear week</button>
-      <button class="primary" id="exportPlannerBtn">Export meal plan</button>
-    </div>
-  </dialog>
-
-  <template id="recipeCardTemplate">
-    <article class="recipe-card card">
-      <button class="favorite" aria-label="Toggle favorite">☆</button>
-      <div class="recipe-art"><span></span></div>
-      <div class="recipe-body">
-        <p class="recipe-meta"></p>
-        <h2 class="recipe-title"></h2>
-        <div class="tags"></div>
-        <p class="recipe-notes"></p>
-        <button class="primary view-button">View recipe card</button>
-      </div>
-    </article>
-  </template>
-
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
