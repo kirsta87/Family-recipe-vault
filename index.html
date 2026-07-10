@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v032.css?v=32?v=3">
+  <link rel="stylesheet" href="styles-v040.css?v=40?v=3">
 </head>
 <body>
 <header class="hero">
@@ -91,6 +91,21 @@
   </div>
 
 
+  <section id="structuredRecipe" class="structured-recipe">
+    <div>
+      <h3>Ingredients</h3>
+      <ul id="ingredientsList"></ul>
+    </div>
+    <div>
+      <h3>Instructions</h3>
+      <ol id="instructionsList"></ol>
+    </div>
+    <div id="nutritionSection">
+      <h3>Nutrition</h3>
+      <p id="nutritionText"></p>
+    </div>
+  </section>
+
   <label class="field">Family notes
     <textarea id="notes" rows="3"></textarea>
   </label>
@@ -112,6 +127,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v032.js?v=32?v=3"></script>
+<script src="app-v040.js?v=40?v=3"></script>
 </body>
 </html>
