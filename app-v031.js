@@ -175,9 +175,6 @@ function openRecipe(recipe){
   $("hideBtn").textContent = recipe.hidden ? "Restore recipe" : "Hide recipe";
   $("sourceLink").href = recipe.url || "#";
   $("pdfLink").href = pdfURL(recipe);
-  $("viewer").src = "about:blank";
-  $("viewer").hidden = true;
-  $("viewerPlaceholder").hidden = false;
   renderStars("kirstaStars", "kirsta_rating");
   renderStars("tjStars", "tj_rating");
   renderStars("torrinStars", "torrin_rating");
