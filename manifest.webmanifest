@@ -1,0 +1,9 @@
+{
+  "name": "Glaister Family Recipe Vault",
+  "short_name": "Recipe Vault",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5efe4",
+  "theme_color": "#697454",
+  "icons": []
+}
