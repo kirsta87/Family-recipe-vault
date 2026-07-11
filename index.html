@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v097.css?v=97">
+  <link rel="stylesheet" href="styles-v099.css?v=99">
 </head>
 <body>
 <header class="hero">
@@ -76,6 +76,16 @@
     <input id="familyKey" type="password">
   </label>
   <button id="saveSettings" class="primary">Save shared settings</button>
+
+  <section class="media-backup-panel" aria-labelledby="mediaBackupHeading">
+    <h3 id="mediaBackupHeading">Recipe image backup</h3>
+    <p class="muted">Copy current recipe images into your private Recipe Vault folder in Google Drive so the vault is not dependent on the original website keeping them online.</p>
+    <div class="actions">
+      <button id="backupImagesBtn" class="secondary" type="button">Back up recipe images</button>
+      <a id="mediaFolderLink" class="secondary linkbtn" target="_blank" rel="noopener" hidden>Open Drive folder</a>
+    </div>
+    <div id="imageBackupStatus" class="import-status" aria-live="polite"></div>
+  </section>
 </dialog>
 
 <dialog id="addDialog" class="add-recipe-dialog">
@@ -357,6 +367,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v098.js?v=98"></script>
+<script src="app-v099.js?v=99"></script>
 </body>
 </html>
