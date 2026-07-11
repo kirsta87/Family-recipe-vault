@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v071.css?v=71">
+  <link rel="stylesheet" href="styles-v080.css?v=80">
 </head>
 <body>
 <header class="hero">
@@ -129,10 +129,18 @@
 
       <div class="three-column-form">
         <label class="field">Protein
-          <input id="manualProtein" type="text" placeholder="Chicken">
+          <select id="manualProtein">
+            <option value="">Select protein</option>
+            <option value="__new__">Add new…</option>
+          </select>
+          <input id="manualProteinNew" class="new-category-input" type="text" placeholder="New protein" hidden>
         </label>
         <label class="field">Meal type
-          <input id="manualType" type="text" placeholder="Pasta">
+          <select id="manualType">
+            <option value="">Select meal type</option>
+            <option value="__new__">Add new…</option>
+          </select>
+          <input id="manualTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
         </label>
         <label class="field">Cuisine
           <input id="manualCuisine" type="text" placeholder="Italian">
@@ -240,10 +248,18 @@
 
     <div class="three-column-form">
       <label class="field">Protein
-        <input id="editProtein" type="text">
+        <select id="editProtein">
+          <option value="">Select protein</option>
+          <option value="__new__">Add new…</option>
+        </select>
+        <input id="editProteinNew" class="new-category-input" type="text" placeholder="New protein" hidden>
       </label>
       <label class="field">Meal type
-        <input id="editType" type="text">
+        <select id="editType">
+          <option value="">Select meal type</option>
+          <option value="__new__">Add new…</option>
+        </select>
+        <input id="editTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
       </label>
       <label class="field">Cuisine
         <input id="editCuisine" type="text">
@@ -295,6 +311,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v071.js?v=71"></script>
+<script src="app-v080.js?v=80"></script>
 </body>
 </html>
