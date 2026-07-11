@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#697454">
+  <title>Recipe Health · Recipe Vault</title>
+  <link rel="stylesheet" href="styles-v101.css?v=101">
+</head>
+<body>
+<header class="hero health-hero">
+  <div>
+    <p class="eyebrow">THE GLAISTER FAMILY</p>
+    <h1>Recipe Health</h1>
+    <p>Find incomplete recipes and fix them without hunting through the whole vault.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary linkbtn" href="index.html">← Back to vault</a>
+  </div>
+</header>
+
+<div id="fatalError" class="fatal" hidden></div>
+
+<main class="health-page">
+  <section class="health-summary panel-wide">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">AT A GLANCE</p>
+        <h2>Vault health</h2>
+      </div>
+      <strong id="healthComplete"></strong>
+    </div>
+    <div id="healthIssueButtons" class="health-issue-grid" aria-label="Recipe health filters"></div>
+    <p id="healthStatus" class="import-status" aria-live="polite"></p>
+  </section>
+
+  <section class="health-results-section">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">NEEDS ATTENTION</p>
+        <h2 id="healthResultsTitle">All incomplete recipes</h2>
+      </div>
+      <span id="healthResultsCount" class="muted"></span>
+    </div>
+    <div id="healthGrid" class="health-grid"></div>
+  </section>
+</main>
+
+<script src="config.js?v=3"></script>
+<script src="recipe-health-v101.js?v=101"></script>
+</body>
+</html>
