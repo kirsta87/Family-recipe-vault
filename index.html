@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v091.css?v=91">
+  <link rel="stylesheet" href="styles-v092.css?v=92">
 </head>
 <body>
 <header class="hero">
@@ -16,7 +16,7 @@
   </div>
   <div class="actions">
     <button id="plannerBtn" class="secondary">Meal planner</button>
-    <a class="secondary linkbtn" href="manage-collections.html">Manage collections</a>
+    <a class="secondary linkbtn collections-link" href="manage-collections.html">Manage collections</a>
     <button id="editModeBtn" class="secondary" type="button" aria-pressed="false">Edit recipes</button>
     <button id="manageBtn" class="secondary">Manage</button>
     <button id="addBtn" class="primary">＋ Add recipe</button>
@@ -139,10 +139,7 @@
           <select id="manualType"><option value="">Select meal type</option><option value="__new__">Add new…</option></select>
           <input id="manualTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
         </label>
-        <label class="field">Collection
-          <select id="manualCollection"><option value="">No collection</option><option value="__new__">Add new…</option></select>
-          <input id="manualCollectionNew" class="new-category-input" type="text" placeholder="New collection" hidden>
-        </label>
+        <div class="field">Collection<div id="manualCollectionPicker"></div></div>
         <label class="field">Cuisine
           <input id="manualCuisine" type="text" placeholder="Italian">
         </label>
@@ -248,10 +245,7 @@
         <select id="quickEditType"><option value="">Select meal type</option><option value="__new__">Add new…</option></select>
         <input id="quickEditTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
       </label>
-      <label class="field">Collection
-        <select id="quickEditCollection"><option value="">No collection</option><option value="__new__">Add new…</option></select>
-        <input id="quickEditCollectionNew" class="new-category-input" type="text" placeholder="New collection" hidden>
-      </label>
+      <div class="field">Collection<div id="quickEditCollectionPicker"></div></div>
     </div>
 
     <button class="primary" type="submit">Save quick changes</button>
@@ -293,10 +287,7 @@
         <select id="editType"><option value="">Select meal type</option><option value="__new__">Add new…</option></select>
         <input id="editTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
       </label>
-      <label class="field">Collection
-        <select id="editCollection"><option value="">No collection</option><option value="__new__">Add new…</option></select>
-        <input id="editCollectionNew" class="new-category-input" type="text" placeholder="New collection" hidden>
-      </label>
+      <div class="field">Collection<div id="editCollectionPicker"></div></div>
       <label class="field">Cuisine
         <input id="editCuisine" type="text">
       </label>
@@ -367,6 +358,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v091.js?v=91"></script>
+<script src="app-v092.js?v=92"></script>
 </body>
 </html>
