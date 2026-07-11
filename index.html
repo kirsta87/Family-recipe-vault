@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v082.css?v=82">
+  <link rel="stylesheet" href="styles-v083.css?v=83">
 </head>
 <body>
 <header class="hero">
@@ -335,6 +335,25 @@
   </form>
 </dialog>
 
+<dialog id="duplicateDialog" class="duplicate-dialog">
+  <button id="closeDuplicate" class="close" type="button">×</button>
+  <p class="eyebrow">DUPLICATE CHECK</p>
+  <h2 id="duplicateHeading">Duplicate recipe found</h2>
+  <p id="duplicateMessage" class="muted"></p>
+
+  <div class="duplicate-existing">
+    <strong id="duplicateExistingName"></strong>
+    <span id="duplicateExistingMeta" class="muted"></span>
+  </div>
+
+  <div class="duplicate-actions">
+    <button id="duplicateOpen" class="primary" type="button">Open existing</button>
+    <button id="duplicateRefresh" class="secondary" type="button">Refresh existing</button>
+    <button id="duplicateKeepBoth" class="secondary" type="button">Keep both</button>
+    <button id="duplicateCancel" class="secondary" type="button">Cancel</button>
+  </div>
+</dialog>
+
 <dialog id="plannerDialog">
   <button id="closePlanner" class="close">×</button>
   <h2>Weekly meal planner</h2>
@@ -343,6 +362,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v082.js?v=82"></script>
+<script src="app-v083.js?v=83"></script>
 </body>
 </html>
