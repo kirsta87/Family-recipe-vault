@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v081.css?v=81">
+  <link rel="stylesheet" href="styles-v082.css?v=82">
 </head>
 <body>
 <header class="hero">
@@ -224,6 +224,38 @@
   </div>
 </dialog>
 
+<dialog id="quickEditDialog">
+  <button id="closeQuickEdit" class="close">×</button>
+  <h2>Quick edit</h2>
+
+  <form id="quickEditForm">
+    <label class="field">Recipe title
+      <input id="quickEditName" type="text" required>
+    </label>
+
+    <div class="two-column-form">
+      <label class="field">Protein
+        <select id="quickEditProtein">
+          <option value="">Select protein</option>
+          <option value="__new__">Add new…</option>
+        </select>
+        <input id="quickEditProteinNew" class="new-category-input" type="text" placeholder="New protein" hidden>
+      </label>
+
+      <label class="field">Meal type
+        <select id="quickEditType">
+          <option value="">Select meal type</option>
+          <option value="__new__">Add new…</option>
+        </select>
+        <input id="quickEditTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
+      </label>
+    </div>
+
+    <button class="primary" type="submit">Save quick changes</button>
+    <div id="quickEditStatus" class="import-status" aria-live="polite"></div>
+  </form>
+</dialog>
+
 <dialog id="editRecipeDialog" class="add-recipe-dialog">
   <button id="closeEditRecipe" class="close">×</button>
   <h2>Edit recipe</h2>
@@ -311,6 +343,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v081.js?v=81"></script>
+<script src="app-v082.js?v=82"></script>
 </body>
 </html>
