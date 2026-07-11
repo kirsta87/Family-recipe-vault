@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v083.css?v=84">
+  <link rel="stylesheet" href="styles-v088.css?v=88">
 </head>
 <body>
 <header class="hero">
@@ -128,20 +128,18 @@
         <input id="manualImage" type="url" placeholder="https://...jpg">
       </label>
 
-      <div class="three-column-form">
+      <div class="four-column-form">
         <label class="field">Protein
-          <select id="manualProtein">
-            <option value="">Select protein</option>
-            <option value="__new__">Add new…</option>
-          </select>
+          <select id="manualProtein"><option value="">Select protein</option><option value="__new__">Add new…</option></select>
           <input id="manualProteinNew" class="new-category-input" type="text" placeholder="New protein" hidden>
         </label>
         <label class="field">Meal type
-          <select id="manualType">
-            <option value="">Select meal type</option>
-            <option value="__new__">Add new…</option>
-          </select>
+          <select id="manualType"><option value="">Select meal type</option><option value="__new__">Add new…</option></select>
           <input id="manualTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
+        </label>
+        <label class="field">Collection
+          <select id="manualCollection"><option value="">No collection</option><option value="__new__">Add new…</option></select>
+          <input id="manualCollectionNew" class="new-category-input" type="text" placeholder="New collection" hidden>
         </label>
         <label class="field">Cuisine
           <input id="manualCuisine" type="text" placeholder="Italian">
@@ -164,9 +162,6 @@
         <input id="manualTags" type="text" placeholder="Creamy | Quick | Crockpot">
       </label>
 
-      <label class="field">Collections
-        <input id="manualCollections" type="text" placeholder="Favorites | Freezer Meals | Camping">
-      </label>
 
       <label class="field">Ingredients — one per line
         <textarea id="manualIngredients" rows="8" required placeholder="1 lb chicken breast&#10;2 tbsp olive oil"></textarea>
@@ -238,7 +233,7 @@
       <input id="quickEditName" type="text" required>
     </label>
 
-    <div class="two-column-form">
+    <div class="three-column-form">
       <label class="field">Protein
         <select id="quickEditProtein">
           <option value="">Select protein</option>
@@ -248,11 +243,12 @@
       </label>
 
       <label class="field">Meal type
-        <select id="quickEditType">
-          <option value="">Select meal type</option>
-          <option value="__new__">Add new…</option>
-        </select>
+        <select id="quickEditType"><option value="">Select meal type</option><option value="__new__">Add new…</option></select>
         <input id="quickEditTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
+      </label>
+      <label class="field">Collection
+        <select id="quickEditCollection"><option value="">No collection</option><option value="__new__">Add new…</option></select>
+        <input id="quickEditCollectionNew" class="new-category-input" type="text" placeholder="New collection" hidden>
       </label>
     </div>
 
@@ -292,11 +288,12 @@
         <input id="editProteinNew" class="new-category-input" type="text" placeholder="New protein" hidden>
       </label>
       <label class="field">Meal type
-        <select id="editType">
-          <option value="">Select meal type</option>
-          <option value="__new__">Add new…</option>
-        </select>
+        <select id="editType"><option value="">Select meal type</option><option value="__new__">Add new…</option></select>
         <input id="editTypeNew" class="new-category-input" type="text" placeholder="New meal type" hidden>
+      </label>
+      <label class="field">Collection
+        <select id="editCollection"><option value="">No collection</option><option value="__new__">Add new…</option></select>
+        <input id="editCollectionNew" class="new-category-input" type="text" placeholder="New collection" hidden>
       </label>
       <label class="field">Cuisine
         <input id="editCuisine" type="text">
@@ -319,9 +316,6 @@
       <input id="editTags" type="text" placeholder="Creamy | Quick | Crockpot">
     </label>
 
-    <label class="field">Collections
-      <input id="editCollections" type="text" placeholder="Favorites | Freezer Meals | Camping">
-    </label>
 
     <label class="field">Ingredients — one per line
       <textarea id="editIngredients" rows="10" required></textarea>
@@ -371,6 +365,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v087.js?v=87"></script>
+<script src="app-v088.js?v=88"></script>
 </body>
 </html>
