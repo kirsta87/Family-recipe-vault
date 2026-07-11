@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v060.css?v=60">
+  <link rel="stylesheet" href="styles-v070.css?v=70">
 </head>
 <body>
 <header class="hero">
@@ -23,32 +23,36 @@
 
 <div id="fatalError" class="fatal" hidden></div>
 
-<main class="layout">
-  <aside class="panel">
-    <label class="field">Search recipes
-      <input id="searchInput" type="search" placeholder="chicken, tacos, creamy…">
+<main class="search-page">
+  <section class="find-panel">
+    <div class="find-heading">
+      <div><p class="eyebrow">FIND RECIPES</p><h2>Search your cookbook</h2></div>
+      <button id="clearBtn" class="secondary">Clear</button>
+    </div>
+
+    <label class="search-field">
+      <span>Search everything</span>
+      <input id="searchInput" type="search" placeholder="broccoli, creamy chicken, Mexican…">
     </label>
 
-    <h3>Protein</h3>
-    <div id="proteinFilters" class="filter-list"></div>
-
-    <h3>Meal type</h3>
-    <div id="typeFilters" class="filter-list"></div>
-
-    <h3>Automatic filters</h3>
-    <label class="check"><input id="kirstaFav" type="checkbox"> Kirsta’s favorites</label>
-    <label class="check"><input id="tjFav" type="checkbox"> TJ’s favorites</label>
-    <label class="check"><input id="torrinFav" type="checkbox"> Torrin’s safe foods</label>
-    <label class="check"><input id="quickOnly" type="checkbox"> Quick meals</label>
-    <label class="check"><input id="showHidden" type="checkbox"> Hidden recipes only</label>
-    <button id="clearBtn" class="secondary full">Clear filters</button>
-  </aside>
-
-  <section>
-    <div class="toolbar">
-      <strong id="count">0 recipes</strong>
-      <span id="status"></span>
+    <div class="filter-grid">
+      <label class="field">Protein<select id="proteinSelect"><option value="">All proteins</option></select></label>
+      <label class="field">Meal type<select id="typeSelect"><option value="">All meal types</option></select></label>
+      <label class="field">Cuisine<select id="cuisineSelect"><option value="">All cuisines</option></select></label>
+      <label class="field">Sort<select id="sortSelect"><option value="relevance">Best match</option><option value="newest">Newest added</option><option value="az">A–Z</option><option value="lastMade">Last made</option></select></label>
     </div>
+
+    <div class="quick-filters">
+      <label class="check"><input id="kirstaFav" type="checkbox"> Kirsta’s favorites</label>
+      <label class="check"><input id="tjFav" type="checkbox"> TJ’s favorites</label>
+      <label class="check"><input id="torrinFav" type="checkbox"> Torrin’s safe foods</label>
+      <label class="check"><input id="quickOnly" type="checkbox"> 30 minutes or less</label>
+      <label class="check"><input id="showHidden" type="checkbox"> Hidden recipes only</label>
+    </div>
+  </section>
+
+  <section class="results-section">
+    <div class="toolbar"><strong id="count">0 recipes</strong><span id="status"></span></div>
     <div id="grid" class="grid"></div>
   </section>
 </main>
@@ -287,6 +291,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v060.js?v=60"></script>
+<script src="app-v070.js?v=70"></script>
 </body>
 </html>
