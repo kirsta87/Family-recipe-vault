@@ -5,21 +5,26 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v102.css?v=102">
+  <link rel="stylesheet" href="styles-v103.css?v=103">
 </head>
 <body>
 <header class="hero">
-  <div>
-    <p class="eyebrow">THE GLAISTER FAMILY</p>
-    <h1>Recipe Vault</h1>
-    <p>Find dinner without scrolling until your soul leaves your body.</p>
-  </div>
-  <div class="actions">
-    <button id="plannerBtn" class="secondary planner-button">Meal planner</button>
+  <div class="hero-tools" aria-label="Vault tools">
     <a class="secondary linkbtn collections-link" href="manage-collections.html">Manage collections</a>
     <a class="secondary linkbtn health-link" href="recipe-health.html">Recipe health</a>
-    <button id="manageBtn" class="secondary">Manage</button>
-    <button id="addBtn" class="primary">＋ Add recipe</button>
+    <button id="manageBtn" class="secondary" type="button">Settings</button>
+  </div>
+
+  <div class="hero-main">
+    <div>
+      <p class="eyebrow">THE GLAISTER FAMILY</p>
+      <h1>Recipe Vault</h1>
+      <p>Find dinner without scrolling until your soul leaves your body.</p>
+    </div>
+    <div class="actions hero-primary-actions">
+      <button id="plannerBtn" class="secondary planner-button">Meal planner</button>
+      <button id="addBtn" class="primary">＋ Add recipe</button>
+    </div>
   </div>
 </header>
 
@@ -66,7 +71,7 @@
 
 <dialog id="manageDialog">
   <button id="closeManage" class="close">×</button>
-  <h2>Manage your vault</h2>
+  <h2>Settings</h2>
   <label class="field">Google Sheet CSV URL
     <input id="sheetUrl" type="url">
   </label>
@@ -369,6 +374,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v102.js?v=102"></script>
+<script src="app-v103.js?v=103"></script>
 </body>
 </html>
