@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#697454">
+  <title>Manage Collections · Recipe Vault</title>
+  <link rel="stylesheet" href="styles-v091.css?v=91">
+</head>
+<body>
+<header class="hero collections-hero">
+  <div>
+    <p class="eyebrow">THE GLAISTER FAMILY</p>
+    <h1>Manage Collections</h1>
+    <p>See what is organized—and quickly sort everything that is not.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary linkbtn" href="index.html">← Back to vault</a>
+  </div>
+</header>
+
+<div id="fatalError" class="fatal" hidden></div>
+
+<main class="collections-page">
+  <section class="collections-summary panel-wide">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">YOUR COLLECTIONS</p>
+        <h2>Collections</h2>
+      </div>
+      <span id="collectionCount" class="muted"></span>
+    </div>
+    <div id="collectionList" class="collection-list"></div>
+  </section>
+
+  <section class="unassigned-section">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">NEEDS SORTING</p>
+        <h2>Recipes without a collection</h2>
+      </div>
+      <span id="unassignedCount" class="muted"></span>
+    </div>
+    <p id="collectionStatus" class="import-status" aria-live="polite"></p>
+    <div id="unassignedGrid" class="unassigned-grid"></div>
+  </section>
+</main>
+
+<script src="config.js?v=3"></script>
+<script src="manage-collections-v091.js?v=91"></script>
+</body>
+</html>
