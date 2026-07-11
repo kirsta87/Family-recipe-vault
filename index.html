@@ -43,6 +43,7 @@
       <label class="field">Protein<select id="proteinSelect"><option value="">All proteins</option></select></label>
       <label class="field">Meal type<select id="typeSelect"><option value="">All meal types</option></select></label>
       <label class="field">Cuisine<select id="cuisineSelect"><option value="">All cuisines</option></select></label>
+      <label class="field">Collection<select id="collectionSelect"><option value="">All collections</option></select></label>
       <label class="field">Sort<select id="sortSelect"><option value="relevance">Best match</option><option value="newest">Newest added</option><option value="az">A–Z</option><option value="lastMade">Last made</option></select></label>
     </div>
 
@@ -161,6 +162,10 @@
 
       <label class="field">Tags
         <input id="manualTags" type="text" placeholder="Creamy | Quick | Crockpot">
+      </label>
+
+      <label class="field">Collections
+        <input id="manualCollections" type="text" placeholder="Favorites | Freezer Meals | Camping">
       </label>
 
       <label class="field">Ingredients — one per line
@@ -314,6 +319,10 @@
       <input id="editTags" type="text" placeholder="Creamy | Quick | Crockpot">
     </label>
 
+    <label class="field">Collections
+      <input id="editCollections" type="text" placeholder="Favorites | Freezer Meals | Camping">
+    </label>
+
     <label class="field">Ingredients — one per line
       <textarea id="editIngredients" rows="10" required></textarea>
     </label>
@@ -362,6 +371,6 @@
 </dialog>
 
 <script src="config.js?v=3"></script>
-<script src="app-v086.js?v=86"></script>
+<script src="app-v087.js?v=87"></script>
 </body>
 </html>
