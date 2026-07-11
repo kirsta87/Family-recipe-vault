@@ -5,47 +5,44 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v104.css?v=104">
+  <link rel="stylesheet" href="styles-v105.css?v=105">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
-  <div>
-    <p class="eyebrow">THE GLAISTER FAMILY</p>
-    <h1>Meal Planner</h1>
-    <p>Plan any week without losing the weeks before it.</p>
-  </div>
+  <div><p class="eyebrow">THE GLAISTER FAMILY</p><h1>Meal Planner</h1><p>Find a recipe once, then assign it to any day.</p></div>
   <a class="secondary linkbtn" href="index.html">Back to Recipe Vault</a>
 </header>
-
 <div id="fatalError" class="fatal" hidden></div>
-
 <main class="planner-page">
   <section class="planner-week-toolbar panel">
     <button id="previousWeek" class="secondary" type="button">Previous week</button>
-    <div class="planner-week-heading">
-      <p class="eyebrow">PLANNING WEEK</p>
-      <h2 id="weekTitle"></h2>
-      <p id="weekStatus" class="muted" aria-live="polite"></p>
-    </div>
-    <div class="planner-week-actions">
-      <button id="thisWeek" class="secondary" type="button">This week</button>
-      <button id="nextWeek" class="secondary" type="button">Next week</button>
-    </div>
+    <div class="planner-week-heading"><p class="eyebrow">PLANNING WEEK</p><h2 id="weekTitle"></h2><p id="weekStatus" class="muted" aria-live="polite"></p></div>
+    <div class="planner-week-actions"><button id="thisWeek" class="secondary" type="button">This week</button><button id="nextWeek" class="secondary" type="button">Next week</button></div>
   </section>
-
   <section id="plannerGrid" class="planner-week-grid" aria-label="Weekly meal plan"></section>
 
-  <section class="planner-history panel">
-    <div>
-      <p class="eyebrow">SAVED WEEKS</p>
-      <h2>Meal plan history</h2>
-      <p class="muted">Weeks stay here after you move forward. Open any saved week to review or change it.</p>
+  <section class="planner-finder panel">
+    <div class="section-heading"><div><p class="eyebrow">FIND A MEAL</p><h2>Search your recipes</h2></div><button id="plannerClearFilters" class="secondary" type="button">Clear</button></div>
+    <label class="search-field"><span>Search title, ingredients, tags, or cuisine</span><input id="plannerSearch" type="search" placeholder="chicken, pasta, quick, Mexican…"></label>
+    <div class="planner-filter-grid">
+      <label class="field">Protein<select id="plannerProtein"><option value="">All proteins</option></select></label>
+      <label class="field">Meal type<select id="plannerType"><option value="">All meal types</option></select></label>
+      <label class="field">Cuisine<select id="plannerCuisine"><option value="">All cuisines</option></select></label>
+      <label class="field">Collection<select id="plannerCollection"><option value="">All collections</option></select></label>
     </div>
-    <div id="savedWeeks" class="saved-weeks"></div>
+    <label class="check planner-quick-check"><input id="plannerQuickOnly" type="checkbox"> 30 minutes or less</label>
+    <div class="toolbar"><strong id="plannerResultCount">0 recipes</strong></div>
+    <div id="plannerResults" class="planner-results-grid"></div>
   </section>
-</main>
 
-<script src="config.js?v=3"></script>
-<script src="meal-planner-v104.js?v=104"></script>
-</body>
-</html>
+  <section class="planner-history panel"><div><p class="eyebrow">SAVED WEEKS</p><h2>Meal plan history</h2><p class="muted">Weeks stay here after you move forward.</p></div><div id="savedWeeks" class="saved-weeks"></div></section>
+</main>
+<dialog id="plannerAssignDialog" class="meal-plan-dialog">
+  <button id="closePlannerAssign" class="close" type="button">×</button>
+  <p class="eyebrow">ASSIGN MEAL</p><h2 id="plannerAssignName"></h2>
+  <p class="muted">Choose a date. Existing meals are shown before you replace anything.</p>
+  <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
+  <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
+</dialog>
+<script src="config.js?v=3"></script><script src="meal-planner-v105.js?v=105"></script>
+</body></html>

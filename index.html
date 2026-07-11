@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v104.css?v=104">
+  <link rel="stylesheet" href="styles-v105.css?v=105">
 </head>
 <body>
 <header class="hero">
@@ -368,7 +368,16 @@
 
 
 
+<dialog id="mealPlanDialog" class="meal-plan-dialog">
+  <button id="closeMealPlanDialog" class="close" type="button">×</button>
+  <p class="eyebrow">ADD TO MEAL PLAN</p>
+  <h2 id="mealPlanRecipeName"></h2>
+  <p class="muted">Choose a date. Days that already have a meal show it below the date.</p>
+  <div id="mealPlanDateChoices" class="meal-plan-date-choices"></div>
+  <p id="mealPlanDialogStatus" class="import-status" aria-live="polite"></p>
+</dialog>
+
 <script src="config.js?v=3"></script>
-<script src="app-v104.js?v=104"></script>
+<script src="app-v105.js?v=105"></script>
 </body>
 </html>
