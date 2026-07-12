@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v105.css?v=105">
+  <link rel="stylesheet" href="styles-v106.css?v=106">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
@@ -20,6 +20,15 @@
     <div class="planner-week-actions"><button id="thisWeek" class="secondary" type="button">This week</button><button id="nextWeek" class="secondary" type="button">Next week</button></div>
   </section>
   <section id="plannerGrid" class="planner-week-grid" aria-label="Weekly meal plan"></section>
+
+  <section class="planner-pool panel">
+    <div class="section-heading">
+      <div><p class="eyebrow">RECIPE POOL</p><h2>Maybe this week</h2><p class="muted">Save ideas for this planning week before choosing a day.</p></div>
+      <button id="clearRecipePool" class="secondary" type="button">Clear pool</button>
+    </div>
+    <div class="toolbar"><strong id="recipePoolCount">0 recipes</strong><span id="recipePoolStatus" class="muted" aria-live="polite"></span></div>
+    <div id="recipePool" class="recipe-pool-grid"></div>
+  </section>
 
   <section class="planner-finder panel">
     <div class="section-heading"><div><p class="eyebrow">FIND A MEAL</p><h2>Search your recipes</h2></div><button id="plannerClearFilters" class="secondary" type="button">Clear</button></div>
@@ -44,5 +53,5 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=3"></script><script src="meal-planner-v105.js?v=105"></script>
+<script src="config.js?v=3"></script><script src="meal-planner-v106.js?v=106"></script>
 </body></html>
