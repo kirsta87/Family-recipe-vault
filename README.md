@@ -1,7 +1,3 @@
-# Glaister Family Recipe Vault v0.3
+# Recipe Vault v127
 
-Adds shared ratings, notes, made count, hide/restore, and shared recipe saving.
-
-
-## Current working files (v123)
-The live site now uses stable filenames: `app.js`, `styles.css`, `meal-planner.js`, `manage-collections.js`, and `recipe-health.js`. Git history stores older versions; old version-numbered files are intentionally excluded from this clean project package.
+Adds multiple recipes per day in the weekly meal planner. Existing plans migrate automatically, each planned recipe can be removed individually, and shopping lists include every recipe on every day.

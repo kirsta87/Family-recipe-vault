@@ -690,3 +690,12 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .shopping-extra-result{display:flex;justify-content:space-between;gap:14px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);text-align:left;cursor:pointer}
 .shopping-extra-result:hover{border-color:var(--sage)}
 .shopping-extra-result span{color:var(--muted);font-size:.82rem;text-align:right}
+
+/* Multiple recipes per planner day */
+.planner-add-meal{border:0;border-radius:999px;padding:6px 10px;background:#eee5d6;color:var(--ink);font-weight:800;cursor:pointer}
+.planner-day-meals{display:grid;gap:9px}
+.planner-day-meal{position:relative;display:grid;grid-template-columns:64px 1fr auto;gap:9px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:13px;background:#faf6ee}
+.planner-day-meal .planner-recipe-image{width:64px;height:56px;margin:0;border-radius:9px}
+.planner-day-meal-copy{min-width:0}.planner-day-meal-copy .planner-recipe-link{margin:0;font-size:.92rem}.planner-day-meal-copy .planner-recipe-meta{margin:3px 0 0}
+.planner-remove-meal{border:0;background:none;color:var(--clay);font-size:1.25rem;font-weight:900;cursor:pointer;padding:4px 6px}
+@media(max-width:480px){.planner-day-card{display:block}.planner-day-meal{grid-template-columns:58px 1fr auto}.planner-day-meal .planner-recipe-image{width:58px;height:52px}}

@@ -38,7 +38,6 @@ let activeWeek = mondayOf(new Date());
 let assigningRecipe = null;
 let syncReady = false;
 let sharedLoadSequence = 0;
-let plannerMutationSequence = 0;
 let sharedSaveQueue = Promise.resolve();
 
 window.addEventListener("error", event => {
@@ -141,24 +140,25 @@ function normalizePlanShape(plan, key){
   const normalizedDays = {};
   Object.entries(sourceDays).forEach(([rawKey, rawValue]) => {
     const day = dayNameFromKey(rawKey, weekStart);
-    const id = normalizePlanReference(rawValue, cleanPlan);
-    if(day && id) normalizedDays[day] = id;
+    if(!day) return;
+    const rawItems = Array.isArray(rawValue) ? rawValue : [rawValue];
+    const ids = rawItems.map(value => normalizePlanReference(value, cleanPlan)).filter(Boolean);
+    if(ids.length) normalizedDays[day] = [...new Set(ids)];
   });
   cleanPlan.days = normalizedDays;
   cleanPlan.pool = (Array.isArray(cleanPlan.pool) ? cleanPlan.pool : [])
     .map(value => normalizePlanReference(value, cleanPlan))
     .filter(Boolean);
-  cleanPlan.revision = Math.max(0, Number(cleanPlan.revision) || 0);
   return cleanPlan;
 }
 function planHasContent(plan){
   return Boolean(
-    Object.keys(plan?.days || {}).length ||
+    Object.values(plan?.days || {}).some(items => (Array.isArray(items) ? items : [items]).filter(Boolean).length) ||
     (plan?.pool || []).length
   );
 }
 function countPlannedMeals(allPlans){
-  return Object.values(allPlans || {}).reduce((total, plan) => total + Object.keys(plan?.days || {}).length, 0);
+  return Object.values(allPlans || {}).reduce((total, plan) => total + Object.values(plan?.days || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : (items ? 1 : 0)), 0), 0);
 }
 
 function readPlans(){
@@ -250,20 +250,19 @@ async function loadSharedPlans(force = false){
 
   Object.entries(local).forEach(([key, localPlan]) => {
     const remotePlan = remote[key];
+    const localTime = planTimestamp(localPlan);
+    const remoteTime = planTimestamp(remotePlan);
 
-    // Only a real unsent browser edit may override shared data.
-    // A stale local copy must never win merely because its clock/timestamp is newer.
-    if(localPlan.pendingSync){
+    // A browser change always wins until the server confirms that exact version.
+    if(localPlan.pendingSync || localTime > remoteTime){
       merged[key] = localPlan;
       plansToUpload.push([key, localPlan]);
       return;
     }
 
-    // Shared data is authoritative after the initial migration. If a week does
-    // not exist remotely, keep the local copy visible but do not upload it unless
-    // it was explicitly marked pending by a user edit.
     if(!remotePlan && planHasContent(localPlan)){
       merged[key] = localPlan;
+      plansToUpload.push([key, localPlan]);
     }
   });
 
@@ -287,48 +286,23 @@ async function loadSharedPlans(force = false){
 }
 
 function queueSharedPlanSave(key, plan, versionBeingSaved){
-  const payloadPlan = JSON.parse(JSON.stringify({...plan, pendingSync:false}));
   sharedSaveQueue = sharedSaveQueue.then(async () => {
-    const result = await plannerPost({
-      action:"saveMealPlan",
-      weekKey:key,
-      plan:payloadPlan,
-      baseRevision:Number(payloadPlan.baseRevision ?? payloadPlan.revision ?? 0)
-    });
-
-    if(result.conflict){
-      const currentShared = normalizePlanShape(result.currentPlan || {}, key);
-      currentShared.pendingSync = false;
-      plans[key] = currentShared;
-      savePlans();
-      renderPlanner();
-      renderResults();
-      throw new Error("This meal plan changed on another browser. The newest shared version was reloaded.");
-    }
-
+    const sharedPlan = {...plan, pendingSync:false};
+    await plannerPost({action:"saveMealPlan", weekKey:key, plan:sharedPlan});
     const current = plans[key];
     if(current && current.updatedAt === versionBeingSaved){
-      const savedPlan = normalizePlanShape(result.plan || payloadPlan, key);
-      savedPlan.pendingSync = false;
-      delete savedPlan.baseRevision;
-      plans[key] = savedPlan;
+      current.pendingSync = false;
       savePlans();
     }
-    return result;
   });
   return sharedSaveQueue;
 }
 
 async function saveSharedWeek(date = activeWeek){
-  // Invalidate any shared-plan GET that started before this edit.
-  sharedLoadSequence++;
-  plannerMutationSequence++;
-
   const key = weekKey(date);
   const plan = normalizePlanShape(planFor(date), key);
   ensurePlanSnapshots(plan);
   const versionBeingSaved = new Date().toISOString();
-  plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.updatedAt = versionBeingSaved;
   plan.pendingSync = true;
   plans[key] = plan;
@@ -342,9 +316,7 @@ async function saveSharedWeek(date = activeWeek){
     setTimeout(() => { if($("weekStatus")?.textContent === "Saved") $("weekStatus").textContent = ""; }, 1800);
     return true;
   }catch(error){
-    $("weekStatus").textContent = error.message.includes("another browser")
-      ? "Newer shared plan reloaded"
-      : "Saved on this device; shared sync will retry later";
+    $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
     return false;
   }
 }
@@ -385,7 +357,7 @@ function ensurePlanSnapshots(plan){
   if(!plan || typeof plan !== "object") return false;
   if(!plan.recipeSnapshots || typeof plan.recipeSnapshots !== "object") plan.recipeSnapshots = {};
   let changed = false;
-  const ids = [...Object.values(plan.days || {}), ...(plan.pool || [])].map(normalizeRecipeId).filter(Boolean);
+  const ids = [...Object.values(plan.days || {}).flatMap(items => Array.isArray(items) ? items : [items]), ...(plan.pool || [])].map(normalizeRecipeId).filter(Boolean);
   ids.forEach(id => {
     const live = recipeById(id);
     if(live){
@@ -407,7 +379,7 @@ function fill(id, values){
   select.innerHTML = select.options[0].outerHTML + values.map(value => `<option value="${escapeHTML(value)}">${escapeHTML(value)}</option>`).join("");
 }
 function assignedDayForRecipe(plan, recipeId){
-  return days.find(day => String(plan.days[day] || "") === String(recipeId)) || "";
+  return days.find(day => (Array.isArray(plan.days[day]) ? plan.days[day] : [plan.days[day]]).some(id => String(id || "") === String(recipeId))) || "";
 }
 
 function scheduledDatesForRecipe(recipeId, startWeek = activeWeek, weekCount = 2){
@@ -416,7 +388,8 @@ function scheduledDatesForRecipe(recipeId, startWeek = activeWeek, weekCount = 2
     const weekStart = addDays(startWeek, weekOffset * 7);
     const plan = planFor(weekStart);
     days.forEach((day, dayIndex) => {
-      if(String(plan.days[day] || "") === String(recipeId)){
+      const dayRecipes = Array.isArray(plan.days[day]) ? plan.days[day] : [plan.days[day]];
+      if(dayRecipes.some(id => String(id || "") === String(recipeId))){
         dates.push(addDays(weekStart, dayIndex));
       }
     });
@@ -435,31 +408,46 @@ function renderPlanner(){
   $("weekTitle").textContent = weekLabel(activeWeek);
   $("plannerGrid").innerHTML = days.map((day, index) => {
     const date = addDays(activeWeek, index);
-    const recipeId = plan.days[day] || "";
-    const recipe = recipeForPlan(recipeId, plan);
+    const recipeIds = Array.isArray(plan.days[day]) ? plan.days[day] : (plan.days[day] ? [plan.days[day]] : []);
+    const meals = recipeIds.map(id => ({id, recipe:recipeForPlan(id, plan)})).filter(item => item.recipe);
     return `<article class="planner-day-card">
       <div class="planner-day-header">
         <div><strong>${day}</strong><span>${formatDate(date)}</span></div>
-        ${recipeId ? `<button class="planner-clear" type="button" data-clear-day="${day}">Clear</button>` : ""}
+        <button class="planner-add-meal" type="button" data-add-day="${day}">Add meal</button>
       </div>
-      ${recipe?.image ? `<img class="planner-recipe-image" src="${escapeHTML(recipe.image)}" alt="">` : ""}
-      ${recipe ? `<a class="planner-recipe-link" href="index.html?recipe=${encodeURIComponent(recipe.id)}">${escapeHTML(recipe.name || "Open recipe")}</a>
-        <p class="planner-recipe-meta">${escapeHTML([recipe.protein, recipe.type, recipe.total_time ? `${recipe.total_time} min` : ""].filter(Boolean).join(" • "))}</p>`
-        : `<p class="muted planner-empty">Nothing planned yet.</p>`}
+      <div class="planner-day-meals">
+        ${meals.length ? meals.map(({id,recipe}) => `<div class="planner-day-meal">
+          ${recipe.image ? `<img class="planner-recipe-image" src="${escapeHTML(recipe.image)}" alt="">` : ""}
+          <div class="planner-day-meal-copy">
+            <a class="planner-recipe-link" href="index.html?recipe=${encodeURIComponent(recipe.id)}">${escapeHTML(recipe.name || "Open recipe")}</a>
+            <p class="planner-recipe-meta">${escapeHTML([recipe.protein, recipe.type, recipe.total_time ? `${recipe.total_time} min` : ""].filter(Boolean).join(" • "))}</p>
+          </div>
+          <button class="planner-remove-meal" type="button" data-remove-day="${day}" data-remove-recipe="${escapeHTML(id)}" aria-label="Remove ${escapeHTML(recipe.name || "meal")}">×</button>
+        </div>`).join("") : `<p class="muted planner-empty">Nothing planned yet.</p>`}
+      </div>
     </article>`;
   }).join("");
 
-  document.querySelectorAll("[data-clear-day]").forEach(button => button.addEventListener("click", async () => {
-    delete plan.days[button.dataset.clearDay];
-    plan.updatedAt = new Date().toISOString();
+  document.querySelectorAll("[data-add-day]").forEach(button => button.addEventListener("click", () => {
+    $("plannerSearch").focus();
+    $("plannerSearch").scrollIntoView({behavior:"smooth", block:"center"});
+    $("weekStatus").textContent = `Choose a recipe below, then assign it to ${button.dataset.addDay}.`;
+  }));
+
+  document.querySelectorAll("[data-remove-day]").forEach(button => button.addEventListener("click", async () => {
+    const day = button.dataset.removeDay;
+    const recipeId = button.dataset.removeRecipe;
+    const current = Array.isArray(plan.days[day]) ? plan.days[day] : [plan.days[day]].filter(Boolean);
+    const next = current.filter(id => String(id) !== String(recipeId));
+    if(next.length) plan.days[day] = next; else delete plan.days[day];
     await saveSharedWeek(activeWeek);
     renderPlanner();
     renderPool();
+    renderResults();
   }));
   renderPool();
   renderHistory();
 }
-
 function renderPool(){
   const plan = planFor();
   const poolRecipes = plan.pool.map(id => recipeForPlan(id, plan)).filter(Boolean);
@@ -489,7 +477,7 @@ function renderHistory(){
     .sort((a,b) => b.localeCompare(a));
   $("savedWeeks").innerHTML = keys.length ? keys.map(key => {
     const start = mondayOf(new Date(`${key}T12:00:00`));
-    const mealCount = Object.keys(plans[key].days || {}).length;
+    const mealCount = Object.values(plans[key].days || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : (items ? 1 : 0)), 0);
     const poolCount = (plans[key].pool || []).length;
     const detail = [mealCount ? `${mealCount} meal${mealCount === 1 ? "" : "s"}` : "", poolCount ? `${poolCount} pooled` : ""].filter(Boolean).join(" • ");
     return `<button class="saved-week-button ${key === weekKey(activeWeek) ? "active" : ""}" type="button" data-week-key="${key}">
@@ -550,10 +538,11 @@ function renderWeekDateGroup(weekStart, label){
     <div class="meal-plan-week-days">
       ${days.map((day, index) => {
         const date = addDays(weekStart, index);
-        const recipeId = plan.days[day] || "";
-        const existing = recipeId ? (recipeForPlan(recipeId, plan)?.name || "Planned recipe unavailable") : "Empty";
-        const isCurrentRecipe = recipeId && assigningRecipe && String(recipeId) === String(assigningRecipe.id);
-        const stateClass = isCurrentRecipe ? "current-recipe" : (recipeId ? "occupied" : "");
+        const recipeIds = Array.isArray(plan.days[day]) ? plan.days[day] : (plan.days[day] ? [plan.days[day]] : []);
+        const names = recipeIds.map(id => recipeForPlan(id, plan)?.name || "Planned recipe unavailable");
+        const isCurrentRecipe = assigningRecipe && recipeIds.some(id => String(id) === String(assigningRecipe.id));
+        const stateClass = isCurrentRecipe ? "current-recipe" : (recipeIds.length ? "occupied" : "");
+        const existing = names.length ? names.join(" + ") : "Empty";
         const detail = isCurrentRecipe ? `${existing} • Already planned` : existing;
         return `<button class="meal-plan-date-choice ${stateClass}" type="button" data-assign-date="${date.toISOString().slice(0,10)}">
           <strong>${escapeHTML(fullDate(date))}</strong><span>${escapeHTML(detail)}</span>
@@ -573,16 +562,16 @@ async function assign(date){
   const weekStart = mondayOf(date);
   const plan = planFor(weekStart);
   const day = days[(date.getDay() + 6) % 7];
-  const oldRecipeId = plan.days[day] || "";
-  if(oldRecipeId && String(oldRecipeId) !== String(assigningRecipe.id)){
-    const oldName = recipeForPlan(oldRecipeId, plan)?.name || "Planned recipe unavailable";
-    const confirmed = window.confirm(`${fullDate(date)} already has:\n\n${oldName}\n\nReplace it with:\n\n${assigningRecipe.name}?`);
-    if(!confirmed) return;
+  const current = Array.isArray(plan.days[day]) ? [...plan.days[day]] : (plan.days[day] ? [plan.days[day]] : []);
+  if(current.some(id => String(id) === String(assigningRecipe.id))){
+    $("plannerAssignStatus").textContent = `${assigningRecipe.name} is already planned for ${fullDate(date)}.`;
+    $("plannerAssignStatus").className = "import-status success";
+    return;
   }
-  plan.days[day] = assigningRecipe.id;
+  current.push(assigningRecipe.id);
+  plan.days[day] = current;
   if(!plan.recipeSnapshots) plan.recipeSnapshots = {};
   plan.recipeSnapshots[normalizeRecipeId(assigningRecipe.id)] = snapshotForRecipe(assigningRecipe);
-  plan.updatedAt = new Date().toISOString();
   const synced = await saveSharedWeek(weekStart);
   $("plannerAssignStatus").textContent = synced
     ? `Added to ${fullDate(date)} and shared.`
@@ -592,7 +581,6 @@ async function assign(date){
   renderResults();
   renderAssignDates();
 }
-
 function openAssignDialog(recipe){
   assigningRecipe = recipe;
   $("plannerAssignName").textContent = recipe.name || "Untitled recipe";
@@ -715,14 +703,10 @@ function ingredientMemoryKey(value){
 
 function plannedRecipesForWeek(){
   const plan = planFor();
-  const seen = new Set();
-  return days.map(day => {
-    const id = normalizeRecipeId(plan.days[day] || "");
-    if(!id || seen.has(id)) return null;
-    seen.add(id);
-    const recipe = recipeForPlan(id, plan);
-    return recipe ? {day, recipe} : null;
-  }).filter(Boolean);
+  return days.flatMap(day => {
+    const ids = Array.isArray(plan.days[day]) ? plan.days[day] : (plan.days[day] ? [plan.days[day]] : []);
+    return ids.map(id => ({day, recipe:recipeForPlan(id, plan)})).filter(item => item.recipe);
+  });
 }
 
 function categoryForIngredient(text){
