@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v121.css?v=121">
+  <link rel="stylesheet" href="styles-v122.css?v=122">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
@@ -57,6 +57,14 @@
   <h2 id="shoppingListTitle">Choose planned recipes</h2>
   <p id="shoppingListIntro" class="muted"></p>
   <section id="shoppingRecipeChooser" class="shopping-recipe-chooser"></section>
+  <section id="shoppingExtraRecipes" class="shopping-extra-recipes">
+    <div class="shopping-extra-heading">
+      <div><strong>Add extra recipes</strong><span class="muted">Include toppings, sauces, sides, or desserts without scheduling them.</span></div>
+    </div>
+    <label class="search-field"><span>Search the vault</span><input id="shoppingExtraSearch" type="search" placeholder="avocado topping, sauce, side…"></label>
+    <div id="shoppingExtraSelected" class="shopping-extra-selected"></div>
+    <div id="shoppingExtraResults" class="shopping-extra-results"></div>
+  </section>
   <div class="shopping-list-actions">
     <button id="generateShoppingList" class="primary" type="button">Generate list</button>
     <button id="backToShoppingRecipes" class="secondary" type="button" hidden>Change recipes</button>
@@ -74,7 +82,7 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=3"></script><script src="meal-planner-v121.js?v=121"></script>
+<script src="config.js?v=3"></script><script src="meal-planner-v122.js?v=122"></script>
 
 <script>
 if ("serviceWorker" in navigator) {
