@@ -699,3 +699,19 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .planner-day-meal-copy{min-width:0}.planner-day-meal-copy .planner-recipe-link{margin:0;font-size:.92rem}.planner-day-meal-copy .planner-recipe-meta{margin:3px 0 0}
 .planner-remove-meal{border:0;background:none;color:var(--clay);font-size:1.25rem;font-weight:900;cursor:pointer;padding:4px 6px}
 @media(max-width:480px){.planner-day-card{display:block}.planner-day-meal{grid-template-columns:58px 1fr auto}.planner-day-meal .planner-recipe-image{width:58px;height:52px}}
+
+/* Recipe Pack importer */
+.recipe-pack-drop{display:grid;gap:10px;place-items:center;padding:28px;border:2px dashed var(--line);border-radius:18px;background:#faf6ee;text-align:center}
+.recipe-pack-drop.dragging{border-color:var(--sage);background:#f0f3e8}
+.recipe-pack-preview{display:grid;gap:14px;margin-top:16px;max-height:58vh;overflow:auto}
+.recipe-pack-heading{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 2px}
+.recipe-pack-item{display:grid;grid-template-columns:auto 110px 1fr;gap:14px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--paper)}
+.recipe-pack-item.has-error{border-color:#b95b50;background:#fff3f0}
+.recipe-pack-item img,.recipe-pack-placeholder{width:110px;height:90px;object-fit:cover;border-radius:12px;background:#eee5d6;display:grid;place-items:center;color:var(--muted);font-size:.8rem}
+.recipe-pack-include{display:flex;align-items:flex-start;gap:6px;font-weight:800}
+.recipe-pack-fields{min-width:0}.recipe-pack-fields .field{margin:0}
+.recipe-pack-counts,.recipe-pack-warning{margin:8px 0 0;color:var(--muted);font-size:.85rem}
+.recipe-pack-warning{color:#8d342c}.recipe-pack-duplicate{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:10px;border-radius:12px;background:#f2e6dc}
+.recipe-pack-duplicate label{display:flex;gap:6px;align-items:center;margin:0}
+.recipe-pack-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+@media(max-width:700px){.recipe-pack-item{grid-template-columns:auto 72px 1fr}.recipe-pack-item img,.recipe-pack-placeholder{width:72px;height:72px}.recipe-pack-item .three-column-form{grid-template-columns:1fr}}

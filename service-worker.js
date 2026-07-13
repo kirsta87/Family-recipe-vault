@@ -1,12 +1,12 @@
 "use strict";
 
-const CACHE_NAME = "recipe-vault-v127";
+const CACHE_NAME = "recipe-vault-v128";
 const APP_SHELL = [
-  "./", "./index.html", "./styles.css?v=123", "./app.js?v=123",
-  "./meal-planner.html", "./meal-planner.js?v=123",
-  "./manage-collections.html", "./manage-collections.js?v=123",
-  "./recipe-health.html", "./recipe-health.js?v=123",
-  "./config.js?v=3", "./manifest.webmanifest"
+  "./", "./index.html", "./styles.css?v=128", "./app.js?v=128",
+  "./meal-planner.html", "./meal-planner.js?v=128",
+  "./manage-collections.html", "./manage-collections.js?v=128",
+  "./recipe-health.html", "./recipe-health.js?v=128",
+  "./config.js?v=3", "./recipe-pack-schema.js", "./sample-recipe-pack.zip", "./manifest.webmanifest"
 ];
 
 self.addEventListener("install", event => {

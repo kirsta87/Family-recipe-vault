@@ -1463,7 +1463,7 @@ function switchAddTab(tabName){
     button.classList.toggle("active", button.dataset.addTab === tabName);
   });
 
-  ["url","bulk","manual"].forEach(name => {
+  ["url","bulk","manual","pack"].forEach(name => {
     const panelId = `addPanel${name.charAt(0).toUpperCase()}${name.slice(1)}`;
     const panel = $(panelId);
     if(panel) panel.classList.toggle("active", name === tabName);
@@ -1859,6 +1859,225 @@ on("clearBtn", "click", () => {
   });
 
   render();
+});
+
+
+
+// Recipe Pack importer -----------------------------------------------------
+let recipePackState = null;
+
+function packMinutes(value){
+  const match = String(value || "").match(/\d+/);
+  return match ? Number(match[0]) : "";
+}
+
+function packSafePath(value){
+  const path = String(value || "").replace(/\\/g, "/");
+  return path && !path.startsWith("/") && !path.split("/").includes("..") ? path : "";
+}
+
+function packRecipeId(recipe, index){
+  return `pack-${Date.now()}-${index}-${Math.random().toString(36).slice(2,8)}`;
+}
+
+function packDuplicate(recipe){
+  const title = normalizeDuplicateTitle(recipe.name);
+  return recipes.find(item => title && normalizeDuplicateTitle(item.name) === title)
+    || (recipe.url ? recipes.find(item => normalizeDuplicateUrl(item.url) === normalizeDuplicateUrl(recipe.url)) : null)
+    || null;
+}
+
+function packImageToDataUrl(blob){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read image."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function parseRecipePack(file){
+  const schema = window.RECIPE_PACK_SCHEMA;
+  if(!window.JSZip) throw new Error("ZIP support did not load. Refresh the page and try again.");
+  if(!file || file.size > schema.limits.maxZipBytes) throw new Error("Recipe pack must be 25 MB or smaller.");
+
+  const zip = await JSZip.loadAsync(file);
+  const names = Object.keys(zip.files);
+  if(names.some(name => !packSafePath(name))) throw new Error("The ZIP contains an unsafe file path.");
+
+  const manifestFile = zip.file("manifest.json");
+  if(!manifestFile) throw new Error("manifest.json is missing from the ZIP.");
+
+  let manifest;
+  try{ manifest = JSON.parse(await manifestFile.async("text")); }
+  catch(error){ throw new Error("manifest.json is not valid JSON."); }
+
+  if(manifest.format !== schema.format) throw new Error(`Unsupported pack format. Expected ${schema.format}.`);
+  if(!schema.supportedVersions.includes(Number(manifest.version))) throw new Error(`Recipe pack version ${manifest.version} is not supported.`);
+  if(!Array.isArray(manifest.recipes)) throw new Error("manifest.json must contain a recipes array.");
+  if(manifest.recipes.length > schema.limits.maxRecipes) throw new Error(`Recipe packs can contain at most ${schema.limits.maxRecipes} recipes.`);
+
+  const items = [];
+  for(let index = 0; index < manifest.recipes.length; index++){
+    const raw = manifest.recipes[index] || {};
+    const warnings = [];
+    const errors = [];
+    const title = String(raw.title || "").trim();
+    const ingredients = Array.isArray(raw.ingredients) ? raw.ingredients.map(String) : [];
+    const instructions = Array.isArray(raw.instructions) ? raw.instructions.map(String) : [];
+    if(!title) errors.push("Title is required.");
+    if(!ingredients.length) errors.push("At least one ingredient is required.");
+    if(!instructions.length) errors.push("At least one instruction is required.");
+
+    let imageData = "", imageMime = "", imageName = "", imagePreview = "";
+    const imagePath = packSafePath(raw.image);
+    if(raw.image && !imagePath){
+      warnings.push("Unsafe image path ignored.");
+    }else if(imagePath){
+      const imageFile = zip.file(imagePath);
+      if(!imageFile){
+        warnings.push(`Image not found: ${imagePath}`);
+      }else{
+        const rawBlob = await imageFile.async("blob");
+        const extension = imagePath.split(".").pop().toLowerCase();
+        const inferredMime = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : (["jpg","jpeg"].includes(extension) ? "image/jpeg" : "");
+        const blob = inferredMime ? new Blob([rawBlob], {type: inferredMime}) : rawBlob;
+        if(blob.size > schema.limits.maxImageBytes){
+          warnings.push("Image is larger than 8 MB and was skipped.");
+        }else if(!schema.imageTypes.includes(inferredMime)){
+          warnings.push("Image must be JPG, PNG, or WebP.");
+        }else{
+          imageData = await packImageToDataUrl(blob);
+          imageMime = inferredMime;
+          imageName = imagePath.split("/").pop();
+          imagePreview = URL.createObjectURL(blob);
+        }
+      }
+    }else{
+      warnings.push("No image included.");
+    }
+
+    const recipe = {
+      name: title,
+      url: String(raw.sourceUrl || "").trim(),
+      source: String(raw.sourceName || "Recipe Vault Pack").trim() || "Recipe Vault Pack",
+      image: "",
+      protein: String(raw.protein || "").trim(),
+      type: String(raw.mealType || "").trim(),
+      cuisine: String(raw.cuisine || "").trim(),
+      tags: Array.isArray(raw.tags) ? raw.tags.map(String).join("|") : "",
+      collections: Array.isArray(raw.collections) ? raw.collections.map(String).join("|") : "",
+      prep_time: packMinutes(raw.prepTime),
+      cook_time: packMinutes(raw.cookTime),
+      total_time: packMinutes(raw.totalTime),
+      ingredients,
+      instructions,
+      nutrition: String(raw.nutrition || "").trim(),
+      notes: [raw.description, raw.notes].filter(Boolean).map(String).join("\n\n"),
+      kirsta_rating:"", tj_rating:"", torrin_rating:"", torrin_notes:"",
+      made_count:0, hidden:false, added:new Date().toISOString().slice(0,10), last_made:"", pdf_url:""
+    };
+    const duplicate = packDuplicate(recipe);
+    items.push({id:packRecipeId(recipe,index), include:!errors.length, recipe, duplicate, warnings, errors, imageData, imageMime, imageName, imagePreview, duplicateAction: duplicate ? "skip" : "keep"});
+  }
+  return {manifest, items};
+}
+
+function packOptions(values, selected, placeholder){
+  const all = [...new Set([...(values || []), selected].filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  return `<option value="">${escapeHTML(placeholder)}</option>${all.map(value => `<option value="${escapeHTML(value)}" ${value===selected?"selected":""}>${escapeHTML(value)}</option>`).join("")}<option value="__new__">Add new…</option>`;
+}
+
+function renderRecipePackPreview(){
+  const container = $("recipePackPreview");
+  const footer = $("recipePackFooter");
+  if(!recipePackState){ container.innerHTML=""; footer.hidden=true; return; }
+  const proteins = categoryValues("protein", DEFAULT_PROTEINS);
+  const types = categoryValues("type", DEFAULT_MEAL_TYPES);
+  container.innerHTML = `<div class="recipe-pack-heading"><strong>${escapeHTML(recipePackState.manifest.packName || "Recipe Pack")}</strong><span>${recipePackState.items.length} recipes</span></div>` + recipePackState.items.map((item,index) => {
+    const status = item.errors.length ? item.errors.join(" ") : item.warnings.join(" ");
+    return `<article class="recipe-pack-item ${item.errors.length?"has-error":""}">
+      <label class="recipe-pack-include"><input type="checkbox" data-pack-include="${index}" ${item.include?"checked":""} ${item.errors.length?"disabled":""}> Include</label>
+      ${item.imagePreview ? `<img src="${escapeHTML(item.imagePreview)}" alt="">` : '<div class="recipe-pack-placeholder">No image</div>'}
+      <div class="recipe-pack-fields">
+        <label class="field">Title<input data-pack-title="${index}" value="${escapeHTML(item.recipe.name)}"></label>
+        <div class="three-column-form">
+          <label class="field">Protein<select data-pack-protein="${index}">${packOptions(proteins,item.recipe.protein,"Select protein")}</select><input class="new-category-input" data-pack-protein-new="${index}" placeholder="New protein" hidden></label>
+          <label class="field">Meal type<select data-pack-type="${index}">${packOptions(types,item.recipe.type,"Select meal type")}</select><input class="new-category-input" data-pack-type-new="${index}" placeholder="New meal type" hidden></label>
+          <label class="field">Collections<input data-pack-collections="${index}" value="${escapeHTML(item.recipe.collections)}" placeholder="Quick | Comfort Food"></label>
+        </div>
+        <p class="recipe-pack-counts">${item.recipe.ingredients.length} ingredients • ${item.recipe.instructions.length} instructions</p>
+        ${item.duplicate ? `<div class="recipe-pack-duplicate"><strong>Possible duplicate:</strong> ${escapeHTML(item.duplicate.name)}<label>Action<select data-pack-duplicate="${index}"><option value="skip" selected>Skip imported recipe</option><option value="keep">Import anyway</option><option value="refresh">Replace existing recipe</option></select></label></div>` : ""}
+        ${status ? `<p class="recipe-pack-warning">${escapeHTML(status)}</p>` : ""}
+      </div>
+    </article>`;
+  }).join("");
+  footer.hidden = false;
+}
+
+async function chooseRecipePackFile(file){
+  setImportStatus("recipePackStatus", "Reading recipe pack…");
+  try{
+    recipePackState = await parseRecipePack(file);
+    renderRecipePackPreview();
+    setImportStatus("recipePackStatus", "Review the recipes below, then import selected.", "success");
+  }catch(error){
+    recipePackState = null;
+    renderRecipePackPreview();
+    setImportStatus("recipePackStatus", error.message, "error");
+  }
+}
+
+on("chooseRecipePack", "click", () => $("recipePackFile").click());
+on("recipePackFile", "change", event => chooseRecipePackFile(event.target.files?.[0]));
+const packDrop = $("recipePackDrop");
+if(packDrop){
+  ["dragenter","dragover"].forEach(type => packDrop.addEventListener(type,event=>{event.preventDefault(); packDrop.classList.add("dragging");}));
+  ["dragleave","drop"].forEach(type => packDrop.addEventListener(type,event=>{event.preventDefault(); packDrop.classList.remove("dragging");}));
+  packDrop.addEventListener("drop", event => chooseRecipePackFile(event.dataTransfer.files?.[0]));
+}
+
+document.addEventListener("change", event => {
+  if(!recipePackState) return;
+  let match;
+  if((match=event.target.dataset.packInclude) !== undefined) recipePackState.items[Number(match)].include = event.target.checked;
+  if((match=event.target.dataset.packDuplicate) !== undefined) recipePackState.items[Number(match)].duplicateAction = event.target.value;
+  if((match=event.target.dataset.packProtein) !== undefined){
+    const input=document.querySelector(`[data-pack-protein-new="${match}"]`); input.hidden=event.target.value!=="__new__";
+  }
+  if((match=event.target.dataset.packType) !== undefined){
+    const input=document.querySelector(`[data-pack-type-new="${match}"]`); input.hidden=event.target.value!=="__new__";
+  }
+});
+
+on("cancelRecipePack", "click", () => { recipePackState=null; $("recipePackFile").value=""; renderRecipePackPreview(); setImportStatus("recipePackStatus",""); });
+
+on("importSelectedPackRecipes", "click", async () => {
+  if(!recipePackState) return;
+  const button=$("importSelectedPackRecipes");
+  button.disabled=true;
+  let imported=0, skipped=0, replaced=0, failed=0, withoutImages=0;
+  for(let index=0; index<recipePackState.items.length; index++){
+    const item=recipePackState.items[index];
+    if(!item.include || item.errors.length){ skipped++; continue; }
+    item.recipe.name = document.querySelector(`[data-pack-title="${index}"]`).value.trim();
+    const proteinSelect=document.querySelector(`[data-pack-protein="${index}"]`);
+    item.recipe.protein = proteinSelect.value === "__new__" ? document.querySelector(`[data-pack-protein-new="${index}"]`).value.trim() : proteinSelect.value;
+    const typeSelect=document.querySelector(`[data-pack-type="${index}"]`);
+    item.recipe.type = typeSelect.value === "__new__" ? document.querySelector(`[data-pack-type-new="${index}"]`).value.trim() : typeSelect.value;
+    item.recipe.collections = document.querySelector(`[data-pack-collections="${index}"]`).value.split(/[|,]/).map(v=>v.trim()).filter(Boolean).join("|");
+    if(item.duplicate && item.duplicateAction === "skip"){ skipped++; continue; }
+    setImportStatus("recipePackStatus", `Importing ${index+1} of ${recipePackState.items.length}…`);
+    try{
+      const result=await postVault({action:"importPackRecipe", recipe:item.recipe, imageData:item.imageData, imageMime:item.imageMime, imageName:item.imageName, duplicateAction:item.duplicateAction});
+      if(result.action === "duplicate"){ skipped++; continue; }
+      if(result.action === "refreshed") replaced++; else imported++;
+      if(!item.imageData) withoutImages++;
+    }catch(error){ failed++; item.warnings.push(error.message); }
+  }
+  button.disabled=false;
+  await loadRecipes();
+  setImportStatus("recipePackStatus", `Finished: ${imported} imported, ${replaced} replaced, ${skipped} skipped, ${failed} failed, ${withoutImages} without images.`, failed?"":"success");
 });
 
 setupNewCategory("manualProtein", "manualProteinNew");

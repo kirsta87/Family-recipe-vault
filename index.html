@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=123">
+  <link rel="stylesheet" href="styles.css?v=128">
 </head>
 <body>
 <header class="hero">
@@ -103,6 +103,7 @@
     <button type="button" class="add-tab active" data-add-tab="url">Import URL</button>
     <button type="button" class="add-tab" data-add-tab="bulk">Bulk HelloFresh</button>
     <button type="button" class="add-tab" data-add-tab="manual">Manual recipe</button>
+    <button type="button" class="add-tab" data-add-tab="pack">Import Recipe Pack (.zip)</button>
   </div>
 
   <section id="addPanelUrl" class="add-panel active">
@@ -193,6 +194,22 @@
       <button class="primary" type="submit">Save custom recipe</button>
       <div id="manualStatus" class="import-status" aria-live="polite"></div>
     </form>
+  </section>
+
+  <section id="addPanelPack" class="add-panel">
+    <div class="recipe-pack-drop" id="recipePackDrop">
+      <strong>Import Recipe Pack (.zip)</strong>
+      <span>Drop a ZIP here or choose one from your computer.</span>
+      <input id="recipePackFile" type="file" accept=".zip,application/zip" hidden>
+      <button id="chooseRecipePack" class="primary" type="button">Choose ZIP file</button>
+      <a class="secondary linkbtn" href="sample-recipe-pack.zip" download>Download Sample Recipe Pack</a>
+    </div>
+    <div id="recipePackStatus" class="import-status" aria-live="polite"></div>
+    <div id="recipePackPreview" class="recipe-pack-preview"></div>
+    <div class="recipe-pack-footer" id="recipePackFooter" hidden>
+      <button id="importSelectedPackRecipes" class="primary" type="button">Import selected</button>
+      <button id="cancelRecipePack" class="secondary" type="button">Cancel</button>
+    </div>
   </section>
 </dialog>
 
@@ -377,7 +394,9 @@
   <p id="mealPlanDialogStatus" class="import-status" aria-live="polite"></p>
 </dialog>
 
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="recipe-pack-schema.js"></script>
 <script src="config.js?v=3"></script>
-<script src="app.js?v=123"></script>
+<script src="app.js?v=128"></script>
 </body>
 </html>
