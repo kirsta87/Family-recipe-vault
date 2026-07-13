@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v114.css?v=114">
+  <link rel="stylesheet" href="styles-v114.css?v=116">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
@@ -53,5 +53,18 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=3"></script><script src="meal-planner-v115.js?v=114"></script>
+<script src="config.js?v=3"></script><script src="meal-planner-v116.js?v=116"></script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=116", {updateViaCache:"none"});
+      await registration.update();
+    } catch (error) {
+      console.warn("Service worker update failed:", error);
+    }
+  });
+}
+</script>
 </body></html>
