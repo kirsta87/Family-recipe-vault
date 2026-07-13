@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles-v114.css?v=116">
+  <link rel="stylesheet" href="styles-v119.css?v=119">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
@@ -44,8 +44,33 @@
     <div id="plannerResults" class="planner-results-grid"></div>
   </section>
 
+
+  <section class="shopping-list-panel panel">
+    <div class="section-heading">
+      <div><p class="eyebrow">SHOPPING LIST</p><h2>Build this week’s list</h2><p class="muted">Choose the planned recipes you are actually shopping for, then combine matching ingredients.</p></div>
+      <button id="openShoppingList" class="planner-button" type="button">Generate shopping list</button>
+    </div>
+  </section>
+
   <section class="planner-history panel"><div><p class="eyebrow">SAVED WEEKS</p><h2>Meal plan history</h2><p class="muted">Weeks stay here after you move forward.</p></div><div id="savedWeeks" class="saved-weeks"></div></section>
 </main>
+
+<dialog id="shoppingListDialog" class="shopping-list-dialog wide">
+  <button id="closeShoppingList" class="close" type="button">×</button>
+  <p class="eyebrow">SHOPPING LIST</p>
+  <h2 id="shoppingListTitle">Choose planned recipes</h2>
+  <p id="shoppingListIntro" class="muted"></p>
+  <section id="shoppingRecipeChooser" class="shopping-recipe-chooser"></section>
+  <div class="shopping-list-actions">
+    <button id="generateShoppingList" class="primary" type="button">Generate list</button>
+    <button id="backToShoppingRecipes" class="secondary" type="button" hidden>Change recipes</button>
+    <button id="copyShoppingList" class="secondary" type="button" hidden>Copy list</button>
+    <button id="printShoppingList" class="secondary" type="button" hidden>Print</button>
+  </div>
+  <p id="shoppingListStatus" class="import-status" aria-live="polite"></p>
+  <section id="shoppingListOutput" class="shopping-list-output" hidden></section>
+</dialog>
+
 <dialog id="plannerAssignDialog" class="meal-plan-dialog">
   <button id="closePlannerAssign" class="close" type="button">×</button>
   <p class="eyebrow">ASSIGN MEAL</p><h2 id="plannerAssignName"></h2>
@@ -53,7 +78,7 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=3"></script><script src="meal-planner-v118.js?v=118"></script>
+<script src="config.js?v=3"></script><script src="meal-planner-v119.js?v=119"></script>
 
 <script>
 if ("serviceWorker" in navigator) {
