@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "recipe-vault-v116";
+const CACHE_NAME = "recipe-vault-v118";
 const STATIC_FALLBACKS = [
   "./",
   "./index.html",
