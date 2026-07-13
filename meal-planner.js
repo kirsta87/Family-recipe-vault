@@ -248,19 +248,20 @@ async function loadSharedPlans(force = false){
 
   Object.entries(local).forEach(([key, localPlan]) => {
     const remotePlan = remote[key];
-    const localTime = planTimestamp(localPlan);
-    const remoteTime = planTimestamp(remotePlan);
 
-    // A browser change always wins until the server confirms that exact version.
-    if(localPlan.pendingSync || localTime > remoteTime){
+    // Only a real unsent browser edit may override shared data.
+    // A stale local copy must never win merely because its clock/timestamp is newer.
+    if(localPlan.pendingSync){
       merged[key] = localPlan;
       plansToUpload.push([key, localPlan]);
       return;
     }
 
+    // Shared data is authoritative after the initial migration. If a week does
+    // not exist remotely, keep the local copy visible but do not upload it unless
+    // it was explicitly marked pending by a user edit.
     if(!remotePlan && planHasContent(localPlan)){
       merged[key] = localPlan;
-      plansToUpload.push([key, localPlan]);
     }
   });
 
