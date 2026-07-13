@@ -38,6 +38,7 @@ let activeWeek = mondayOf(new Date());
 let assigningRecipe = null;
 let syncReady = false;
 let sharedLoadSequence = 0;
+let plannerMutationSequence = 0;
 let sharedSaveQueue = Promise.resolve();
 
 window.addEventListener("error", event => {
@@ -147,6 +148,7 @@ function normalizePlanShape(plan, key){
   cleanPlan.pool = (Array.isArray(cleanPlan.pool) ? cleanPlan.pool : [])
     .map(value => normalizePlanReference(value, cleanPlan))
     .filter(Boolean);
+  cleanPlan.revision = Math.max(0, Number(cleanPlan.revision) || 0);
   return cleanPlan;
 }
 function planHasContent(plan){
@@ -285,23 +287,48 @@ async function loadSharedPlans(force = false){
 }
 
 function queueSharedPlanSave(key, plan, versionBeingSaved){
+  const payloadPlan = JSON.parse(JSON.stringify({...plan, pendingSync:false}));
   sharedSaveQueue = sharedSaveQueue.then(async () => {
-    const sharedPlan = {...plan, pendingSync:false};
-    await plannerPost({action:"saveMealPlan", weekKey:key, plan:sharedPlan});
+    const result = await plannerPost({
+      action:"saveMealPlan",
+      weekKey:key,
+      plan:payloadPlan,
+      baseRevision:Number(payloadPlan.baseRevision ?? payloadPlan.revision ?? 0)
+    });
+
+    if(result.conflict){
+      const currentShared = normalizePlanShape(result.currentPlan || {}, key);
+      currentShared.pendingSync = false;
+      plans[key] = currentShared;
+      savePlans();
+      renderPlanner();
+      renderResults();
+      throw new Error("This meal plan changed on another browser. The newest shared version was reloaded.");
+    }
+
     const current = plans[key];
     if(current && current.updatedAt === versionBeingSaved){
-      current.pendingSync = false;
+      const savedPlan = normalizePlanShape(result.plan || payloadPlan, key);
+      savedPlan.pendingSync = false;
+      delete savedPlan.baseRevision;
+      plans[key] = savedPlan;
       savePlans();
     }
+    return result;
   });
   return sharedSaveQueue;
 }
 
 async function saveSharedWeek(date = activeWeek){
+  // Invalidate any shared-plan GET that started before this edit.
+  sharedLoadSequence++;
+  plannerMutationSequence++;
+
   const key = weekKey(date);
   const plan = normalizePlanShape(planFor(date), key);
   ensurePlanSnapshots(plan);
   const versionBeingSaved = new Date().toISOString();
+  plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.updatedAt = versionBeingSaved;
   plan.pendingSync = true;
   plans[key] = plan;
@@ -315,7 +342,9 @@ async function saveSharedWeek(date = activeWeek){
     setTimeout(() => { if($("weekStatus")?.textContent === "Saved") $("weekStatus").textContent = ""; }, 1800);
     return true;
   }catch(error){
-    $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
+    $("weekStatus").textContent = error.message.includes("another browser")
+      ? "Newer shared plan reloaded"
+      : "Saved on this device; shared sync will retry later";
     return false;
   }
 }
