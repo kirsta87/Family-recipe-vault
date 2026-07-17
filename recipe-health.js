@@ -5,13 +5,68 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV130";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
 let recipes = [];
 let activeIssue = "all";
 
+const INSTRUCTION_INGREDIENT_RULES = [
+  {key:"garlic", label:"garlic", aliases:["garlic","garlic clove","garlic cloves"]},
+  {key:"onion", label:"onion", aliases:["onion","onions"]},
+  {key:"butter", label:"butter", aliases:["butter"]},
+  {key:"olive-oil", label:"olive oil", aliases:["olive oil","extra virgin olive oil","evoo"]},
+  {key:"salt", label:"salt", aliases:["salt"]},
+  {key:"pepper", label:"black pepper", aliases:["black pepper","pepper"]},
+  {key:"broth", label:"broth", aliases:["chicken broth","beef broth","vegetable broth","stock"]},
+  {key:"milk", label:"milk", aliases:["milk"]},
+  {key:"cream", label:"cream", aliases:["heavy cream","cream"]},
+  {key:"cheese", label:"cheese", aliases:["cheese","cheddar","mozzarella","parmesan"]},
+  {key:"rice", label:"rice", aliases:["rice"]},
+  {key:"pasta", label:"pasta", aliases:["pasta","spaghetti","penne","noodles"]},
+  {key:"cilantro", label:"cilantro", aliases:["cilantro"]},
+  {key:"lime", label:"lime", aliases:["lime","lime juice"]},
+  {key:"lemon", label:"lemon", aliases:["lemon","lemon juice"]}
+];
+
+const EXPECTED_COMPONENT_RULES = [
+  {
+    key:"taco-tortillas",
+    matches:recipe => /\btacos?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:ingredientText => /\b(tortillas?|taco shells?|hard shells?|soft shells?)\b/i.test(ingredientText),
+    ingredient:"8 tortillas",
+    label:"tortillas or taco shells",
+    reason:"This looks like a taco recipe, but no tortillas or taco shells were found in the ingredient list."
+  },
+  {
+    key:"burger-buns",
+    matches:recipe => /\b(burgers?|hamburgers?|sliders?)\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:ingredientText => /\b(buns?|rolls?|bread)\b/i.test(ingredientText),
+    ingredient:"4 burger buns",
+    label:"burger buns",
+    reason:"This looks like a burger recipe, but no buns were found in the ingredient list."
+  },
+  {
+    key:"sandwich-bread",
+    matches:recipe => /\b(sandwich|sandwiches|grilled cheese)\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:ingredientText => /\b(bread|rolls?|buns?|croissants?|pitas?)\b/i.test(ingredientText),
+    ingredient:"8 slices bread",
+    label:"bread",
+    reason:"This looks like a sandwich recipe, but no bread or rolls were found in the ingredient list."
+  },
+  {
+    key:"quesadilla-tortillas",
+    matches:recipe => /\bquesadillas?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:ingredientText => /\btortillas?\b/i.test(ingredientText),
+    ingredient:"8 tortillas",
+    label:"tortillas",
+    reason:"This looks like a quesadilla recipe, but no tortillas were found in the ingredient list."
+  }
+];
+
 const ISSUE_DEFS = [
+  {key:"completeness", label:"Possible missing ingredients", test:r => completenessSuggestions(r).length > 0},
   {key:"protein", label:"Missing protein", test:r => !String(r.protein || "").trim()},
   {key:"type", label:"Missing meal type", test:r => !String(r.type || "").trim()},
   {key:"collections", label:"Missing collection", test:r => !(r.collections || []).length},
@@ -67,6 +122,83 @@ function parseStoredList(value){
     if(Array.isArray(parsed)) return parsed.map(String);
   }catch(error){}
   return text.split(/\r?\n|\|/).map(item => item.trim()).filter(Boolean);
+}
+
+function normalizedText(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function readCompletenessDismissals(){
+  try{
+    const parsed = JSON.parse(localStorage.getItem(COMPLETENESS_DISMISS_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  }catch(error){ return {}; }
+}
+
+function dismissalId(recipe, suggestionKey){
+  return `${String(recipe.id || recipe.url || recipe.name || "recipe")}::${suggestionKey}`;
+}
+
+function isSuggestionDismissed(recipe, suggestionKey){
+  return Boolean(readCompletenessDismissals()[dismissalId(recipe, suggestionKey)]);
+}
+
+function dismissSuggestion(recipe, suggestionKey){
+  const dismissed = readCompletenessDismissals();
+  dismissed[dismissalId(recipe, suggestionKey)] = Date.now();
+  localStorage.setItem(COMPLETENESS_DISMISS_KEY, JSON.stringify(dismissed));
+}
+
+function ingredientContains(ingredientText, aliases){
+  return aliases.some(alias => {
+    const normalized = normalizedText(alias);
+    return new RegExp(`\\b${normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}\\b`, "i").test(ingredientText);
+  });
+}
+
+function completenessSuggestions(recipe){
+  if(!(recipe.ingredients || []).length) return [];
+  const ingredientText = normalizedText((recipe.ingredients || []).join(" "));
+  const instructionText = normalizedText((recipe.instructions || []).join(" "));
+  const suggestions = [];
+
+  EXPECTED_COMPONENT_RULES.forEach(rule => {
+    if(rule.matches(recipe) && !rule.present(ingredientText) && !isSuggestionDismissed(recipe, rule.key)){
+      suggestions.push({
+        key:rule.key,
+        ingredient:rule.ingredient,
+        label:rule.label,
+        reason:rule.reason,
+        kind:"expected"
+      });
+    }
+  });
+
+  if(instructionText){
+    INSTRUCTION_INGREDIENT_RULES.forEach(rule => {
+      const appearsInInstructions = ingredientContains(instructionText, rule.aliases);
+      const appearsInIngredients = ingredientContains(ingredientText, rule.aliases);
+      if(appearsInInstructions && !appearsInIngredients){
+        const key = `instruction-${rule.key}`;
+        if(!isSuggestionDismissed(recipe, key)){
+          suggestions.push({
+            key,
+            ingredient:rule.label,
+            label:rule.label,
+            reason:`The instructions mention ${rule.label}, but it was not found in the ingredient list.`,
+            kind:"instruction"
+          });
+        }
+      }
+    });
+  }
+
+  return suggestions;
 }
 
 function readCollectionOverrides(){
@@ -171,6 +303,34 @@ function collectionPickerMarkup(recipe){
   `;
 }
 
+function completenessMarkup(recipe){
+  const suggestions = completenessSuggestions(recipe);
+  if(!suggestions.length) return "";
+  return `
+    <section class="health-completeness-panel" aria-label="Possible missing ingredients">
+      <div class="health-completeness-heading">
+        <strong>Possible missing ingredients</strong>
+        <span>${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="health-suggestion-list">
+        ${suggestions.map(suggestion => `
+          <div class="health-suggestion" data-suggestion-key="${escapeHTML(suggestion.key)}">
+            <p>${escapeHTML(suggestion.reason)}</p>
+            <label>
+              Suggested ingredient
+              <input type="text" value="${escapeHTML(suggestion.ingredient)}" data-suggestion-ingredient>
+            </label>
+            <div class="health-suggestion-actions">
+              <button type="button" class="primary compact" data-add-suggestion>Add to recipe</button>
+              <button type="button" class="secondary compact" data-dismiss-suggestion>Dismiss</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function healthCard(recipe){
   const issues = issueKeys(recipe);
   return `
@@ -183,6 +343,7 @@ function healthCard(recipe){
         </div>
       </div>
       <form class="health-edit-form">
+        ${completenessMarkup(recipe)}
         <div class="health-form-grid">
           <label class="field">Protein<input name="protein" value="${escapeHTML(recipe.protein || "")}" placeholder="Chicken"></label>
           <label class="field">Meal type<input name="type" value="${escapeHTML(recipe.type || "")}" placeholder="Pasta"></label>
@@ -219,7 +380,7 @@ function renderResults(){
 function render(){ renderSummary(); renderResults(); }
 
 async function postVault(payload){
-  if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Open Manage on the main vault and save the Apps Script URL and family key first.");
+  if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Open Settings on the main vault and save the Apps Script URL and family key first.");
   const form = new URLSearchParams();
   form.set("payload", JSON.stringify({...payload, key:config.sharedKey}));
   const response = await fetch(config.appsScriptUrl, {method:"POST", body:form, redirect:"follow"});
@@ -242,9 +403,87 @@ async function loadRecipes(){
   }
 }
 
-document.addEventListener("click", event => {
+function collectUpdates(form){
+  const picker = form.querySelector("[data-health-collection-picker]");
+  const collections = [...picker.querySelectorAll("[data-health-remove-collection]")].map(chip => chip.dataset.healthRemoveCollection);
+  const lines = name => form.elements[name].value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  return {
+    collections,
+    updates:{
+      protein:form.elements.protein.value.trim(),
+      type:form.elements.type.value.trim(),
+      total_time:form.elements.total_time.value.trim(),
+      image:form.elements.image.value.trim(),
+      collections:collections.join("|"),
+      ingredients:lines("ingredients"),
+      instructions:lines("instructions"),
+      nutrition:form.elements.nutrition.value.trim()
+    }
+  };
+}
+
+async function saveHealthForm(form, recipe, successMessage="Saved."){
+  const status = form.querySelector("[data-health-save-status]");
+  const {collections, updates} = collectUpdates(form);
+  status.textContent = "Saving…";
+  status.className = "import-status";
+  try{
+    await postVault({action:"update", id:recipe.id, url:recipe.url, updates});
+    Object.assign(recipe, updates, {
+      collections,
+      total_time:Number(updates.total_time) || 0,
+      ingredients:updates.ingredients,
+      instructions:updates.instructions
+    });
+    rememberCollectionOverride(recipe.id, collections);
+    status.textContent = successMessage;
+    status.className = "import-status success";
+    setTimeout(render, 650);
+    return true;
+  }catch(error){
+    status.textContent = `Could not save: ${error.message}`;
+    status.className = "import-status error";
+    return false;
+  }
+}
+
+document.addEventListener("click", async event => {
   const issueButton = event.target.closest("[data-health-issue]");
   if(issueButton){ activeIssue = issueButton.dataset.healthIssue; render(); return; }
+
+  const suggestionRow = event.target.closest("[data-suggestion-key]");
+  if(suggestionRow){
+    const card = suggestionRow.closest("[data-health-id]");
+    const form = suggestionRow.closest(".health-edit-form");
+    const recipe = recipes.find(item => String(item.id) === card.dataset.healthId);
+    const suggestionKey = suggestionRow.dataset.suggestionKey;
+
+    if(event.target.closest("[data-dismiss-suggestion]")){
+      dismissSuggestion(recipe, suggestionKey);
+      render();
+      return;
+    }
+
+    if(event.target.closest("[data-add-suggestion]")){
+      const input = suggestionRow.querySelector("[data-suggestion-ingredient]");
+      const ingredient = input.value.trim();
+      if(!ingredient){
+        input.focus();
+        return;
+      }
+      const textarea = form.elements.ingredients;
+      const existing = textarea.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+      if(!existing.some(value => normalizedText(value) === normalizedText(ingredient))){
+        existing.push(ingredient);
+        textarea.value = existing.join("\n");
+      }
+      const button = event.target.closest("[data-add-suggestion]");
+      button.disabled = true;
+      const saved = await saveHealthForm(form, recipe, `Added “${ingredient}” and saved.`);
+      if(!saved) button.disabled = false;
+      return;
+    }
+  }
 
   const picker = event.target.closest("[data-health-collection-picker]");
   if(!picker) return;
@@ -293,33 +532,7 @@ document.addEventListener("submit", async event => {
   event.preventDefault();
   const card = form.closest("[data-health-id]");
   const recipe = recipes.find(item => String(item.id) === card.dataset.healthId);
-  const status = form.querySelector("[data-health-save-status]");
-  const picker = form.querySelector("[data-health-collection-picker]");
-  const collections = [...picker.querySelectorAll("[data-health-remove-collection]")].map(chip => chip.dataset.healthRemoveCollection);
-  const lines = name => form.elements[name].value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-  const updates = {
-    protein:form.elements.protein.value.trim(),
-    type:form.elements.type.value.trim(),
-    total_time:form.elements.total_time.value.trim(),
-    image:form.elements.image.value.trim(),
-    collections:collections.join("|"),
-    ingredients:lines("ingredients"),
-    instructions:lines("instructions"),
-    nutrition:form.elements.nutrition.value.trim()
-  };
-  status.textContent = "Saving…";
-  status.className = "import-status";
-  try{
-    await postVault({action:"update", id:recipe.id, url:recipe.url, updates});
-    Object.assign(recipe, updates, {collections, total_time:Number(updates.total_time) || 0, ingredients:updates.ingredients, instructions:updates.instructions});
-    rememberCollectionOverride(recipe.id, collections);
-    status.textContent = "Saved.";
-    status.className = "import-status success";
-    setTimeout(render, 450);
-  }catch(error){
-    status.textContent = `Could not save: ${error.message}`;
-    status.className = "import-status error";
-  }
+  await saveHealthForm(form, recipe);
 });
 
 loadRecipes();
