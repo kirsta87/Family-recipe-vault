@@ -5,7 +5,9 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV130";
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV140";
+const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV140";
+const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV140";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
@@ -33,40 +35,151 @@ const INSTRUCTION_INGREDIENT_RULES = [
 const EXPECTED_COMPONENT_RULES = [
   {
     key:"taco-tortillas",
-    matches:recipe => /\btacos?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:ingredientText => /\b(tortillas?|taco shells?|hard shells?|soft shells?)\b/i.test(ingredientText),
+    matches:recipe => /tacos?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(tortillas?|taco shells?|hard shells?|soft shells?)/i.test(text),
     ingredient:"8 tortillas",
-    label:"tortillas or taco shells",
-    reason:"This looks like a taco recipe, but no tortillas or taco shells were found in the ingredient list."
+    reason:"This looks like a taco recipe, but no tortillas or taco shells were found."
   },
   {
     key:"burger-buns",
-    matches:recipe => /\b(burgers?|hamburgers?|sliders?)\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:ingredientText => /\b(buns?|rolls?|bread)\b/i.test(ingredientText),
+    matches:recipe => /(burgers?|hamburgers?)/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(burger buns?|buns?|rolls?)/i.test(text),
     ingredient:"4 burger buns",
-    label:"burger buns",
-    reason:"This looks like a burger recipe, but no buns were found in the ingredient list."
+    reason:"This looks like a burger recipe, but no buns were found."
   },
   {
-    key:"sandwich-bread",
-    matches:recipe => /\b(sandwich|sandwiches|grilled cheese)\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:ingredientText => /\b(bread|rolls?|buns?|croissants?|pitas?)\b/i.test(ingredientText),
-    ingredient:"8 slices bread",
-    label:"bread",
-    reason:"This looks like a sandwich recipe, but no bread or rolls were found in the ingredient list."
+    key:"slider-buns",
+    matches:recipe => /sliders?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(slider buns?|hawaiian rolls?|rolls?|buns?)/i.test(text),
+    ingredient:"12 slider buns",
+    reason:"This looks like a slider recipe, but no slider buns or rolls were found."
   },
   {
     key:"quesadilla-tortillas",
-    matches:recipe => /\bquesadillas?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:ingredientText => /\btortillas?\b/i.test(ingredientText),
+    matches:recipe => /quesadillas?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /tortillas?/i.test(text),
     ingredient:"8 tortillas",
-    label:"tortillas",
-    reason:"This looks like a quesadilla recipe, but no tortillas were found in the ingredient list."
+    reason:"This looks like a quesadilla recipe, but no tortillas were found."
+  },
+  {
+    key:"burrito-tortillas",
+    matches:recipe => /burritos?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /tortillas?/i.test(text),
+    ingredient:"8 large flour tortillas",
+    reason:"This looks like a burrito recipe, but no tortillas were found."
+  },
+  {
+    key:"sandwich-bread",
+    matches:recipe => /(sandwich|sandwiches|grilled cheese)/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(bread|rolls?|buns?|croissants?|pitas?)/i.test(text),
+    ingredient:"8 slices bread",
+    reason:"This looks like a sandwich recipe, but no bread or rolls were found."
+  },
+  {
+    key:"french-dip-rolls",
+    matches:recipe => /french dip/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(hoagie rolls?|sub rolls?|french rolls?|rolls?|buns?)/i.test(text),
+    ingredient:"4 hoagie rolls",
+    reason:"This looks like a French dip recipe, but no rolls were found."
+  },
+  {
+    key:"nacho-chips",
+    matches:recipe => /nachos?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(tortilla chips?|corn chips?|chips?)/i.test(text),
+    ingredient:"1 bag tortilla chips",
+    reason:"This looks like a nacho recipe, but no tortilla chips were found."
+  },
+  {
+    key:"pizza-dough",
+    matches:recipe => /pizzas?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(pizza dough|pizza crust|flatbread|naan)/i.test(text),
+    ingredient:"1 pizza crust",
+    reason:"This looks like a pizza recipe, but no crust or dough was found."
+  },
+  {
+    key:"lasagna-noodles",
+    matches:recipe => /lasagnas?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(lasagna noodles?|lasagne sheets?)/i.test(text),
+    ingredient:"12 lasagna noodles",
+    reason:"This looks like a lasagna recipe, but no lasagna noodles were found."
+  },
+  {
+    key:"alfredo-pasta",
+    matches:recipe => /alfredo/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(pasta|fettuccine|linguine|spaghetti|penne|noodles?)/i.test(text),
+    ingredient:"12 oz pasta",
+    reason:"This looks like an Alfredo recipe, but no pasta was found."
+  },
+  {
+    key:"pot-pie-crust",
+    matches:recipe => /pot pie/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /(pie crust|puff pastry|biscuits?|crescent rolls?)/i.test(text),
+    ingredient:"1 refrigerated pie crust",
+    reason:"This looks like a pot pie recipe, but no crust or topping was found."
   }
 ];
 
+const INGREDIENT_STANDARDIZATION_RULES = [
+  {key:"evoo", pattern:/EVOO/gi, replacement:"olive oil"},
+  {key:"extra-virgin-olive-oil", pattern:/extra[- ]virgin olive oil/gi, replacement:"olive oil"},
+  {key:"chicken-stock", pattern:/chicken stock/gi, replacement:"chicken broth"},
+  {key:"beef-stock", pattern:/beef stock/gi, replacement:"beef broth"},
+  {key:"vegetable-stock", pattern:/vegetable stock/gi, replacement:"vegetable broth"},
+  {key:"yellow-onion", pattern:/yellow onions?/gi, replacement:"onion"},
+  {key:"white-onion", pattern:/white onions?/gi, replacement:"onion"},
+  {key:"parmesan-cheese", pattern:/parmesan cheese/gi, replacement:"Parmesan"},
+  {key:"mozzarella-cheese", pattern:/mozzarella cheese/gi, replacement:"mozzarella"},
+  {key:"cheddar-cheese", pattern:/cheddar cheese/gi, replacement:"cheddar"},
+  {key:"garlic-cloves", pattern:/cloves? of garlic/gi, replacement:"garlic cloves"},
+  {key:"minced-garlic", pattern:/minced garlic/gi, replacement:"garlic"},
+  {key:"green-onions", pattern:/green onions?/gi, replacement:"scallions"},
+  {key:"confectioners-sugar", pattern:/confectioners['’]? sugar/gi, replacement:"powdered sugar"}
+];
+
+const CATEGORY_RULES = {
+  protein:[
+    {value:"Chicken", test:text => /(chicken|rotisserie chicken)/i.test(text)},
+    {value:"Turkey", test:text => /(turkey)/i.test(text)},
+    {value:"Pork", test:text => /(pork|bacon|ham|sausage|prosciutto)/i.test(text)},
+    {value:"Beef", test:text => /(beef|steak|hamburger|ground beef|roast)/i.test(text)},
+    {value:"Seafood", test:text => /(shrimp|salmon|fish|tuna|cod|tilapia|crab)/i.test(text)},
+    {value:"Vegetarian", test:text => !/(chicken|turkey|pork|bacon|ham|sausage|beef|steak|hamburger|shrimp|salmon|fish|tuna|cod|tilapia|crab)/i.test(text)}
+  ],
+  type:[
+    {value:"Tacos", test:text => /tacos?/i.test(text)},
+    {value:"Burritos", test:text => /burritos?/i.test(text)},
+    {value:"Quesadillas", test:text => /quesadillas?/i.test(text)},
+    {value:"Pasta", test:text => /(pasta|spaghetti|fettuccine|linguine|penne|lasagna|alfredo|mac and cheese|noodles)/i.test(text)},
+    {value:"Soup", test:text => /(soup|chowder|bisque)/i.test(text)},
+    {value:"Casserole", test:text => /(casserole|bake)/i.test(text)},
+    {value:"Sandwiches", test:text => /(sandwich|burger|slider|french dip|grilled cheese)/i.test(text)},
+    {value:"Salad", test:text => /salad/i.test(text)},
+    {value:"Bowls", test:text => /(bowl|bowls)/i.test(text)},
+    {value:"Pizza", test:text => /pizzas?/i.test(text)},
+    {value:"Sheet Pan", test:text => /sheet pan/i.test(text)},
+    {value:"Slow Cooker", test:text => /(slow cooker|crockpot|crock pot)/i.test(text)}
+  ],
+  cuisine:[
+    {value:"Mexican-inspired", test:text => /(taco|burrito|quesadilla|enchilada|salsa|tortilla|fajita|nacho)/i.test(text)},
+    {value:"Italian-inspired", test:text => /(pasta|lasagna|alfredo|parmesan|mozzarella|marinara|pizza|risotto)/i.test(text)},
+    {value:"Asian-inspired", test:text => /(soy sauce|teriyaki|sesame|ginger|ramen|stir fry|fried rice|gochujang)/i.test(text)},
+    {value:"Mediterranean-inspired", test:text => /(feta|tzatziki|pita|hummus|greek|mediterranean)/i.test(text)},
+    {value:"American", test:text => /(burger|slider|meatloaf|mac and cheese|barbecue|bbq|pot pie)/i.test(text)}
+  ],
+  collections:[
+    {value:"Meatless Meals", test:(text, recipe) => suggestedCategoryValue("protein", recipe) === "Vegetarian"},
+    {value:"Crockpot", test:text => /(slow cooker|crockpot|crock pot)/i.test(text)},
+    {value:"Quick Meals", test:(text, recipe) => Number(recipe.total_time || 0) > 0 && Number(recipe.total_time) <= 30},
+    {value:"Pasta Night", test:text => /(pasta|spaghetti|fettuccine|linguine|penne|lasagna|alfredo|noodles)/i.test(text)},
+    {value:"Taco Night", test:text => /(taco|burrito|quesadilla|enchilada|fajita|nacho)/i.test(text)},
+    {value:"Soups & Stews", test:text => /(soup|stew|chowder|bisque|chili)/i.test(text)}
+  ]
+};
+
 const ISSUE_DEFS = [
   {key:"completeness", label:"Possible missing ingredients", test:r => completenessSuggestions(r).length > 0},
+  {key:"intelligence", label:"Ingredient cleanup", test:r => ingredientIntelligenceSuggestions(r).length > 0},
+  {key:"categorization", label:"Smart categorization", test:r => categorizationSuggestions(r).length > 0},
   {key:"protein", label:"Missing protein", test:r => !String(r.protein || "").trim()},
   {key:"type", label:"Missing meal type", test:r => !String(r.type || "").trim()},
   {key:"collections", label:"Missing collection", test:r => !(r.collections || []).length},
@@ -201,6 +314,92 @@ function completenessSuggestions(recipe){
   return suggestions;
 }
 
+function readDismissals(storageKey){
+  try{
+    const parsed = JSON.parse(localStorage.getItem(storageKey) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  }catch(error){ return {}; }
+}
+
+function genericSuggestionId(recipe, suggestionKey){
+  return `${String(recipe.id || recipe.url || recipe.name || "recipe")}::${suggestionKey}`;
+}
+
+function isGenericDismissed(storageKey, recipe, suggestionKey){
+  return Boolean(readDismissals(storageKey)[genericSuggestionId(recipe, suggestionKey)]);
+}
+
+function dismissGeneric(storageKey, recipe, suggestionKey){
+  const dismissed = readDismissals(storageKey);
+  dismissed[genericSuggestionId(recipe, suggestionKey)] = Date.now();
+  localStorage.setItem(storageKey, JSON.stringify(dismissed));
+}
+
+function ingredientIntelligenceSuggestions(recipe){
+  const suggestions = [];
+  (recipe.ingredients || []).forEach((line, index) => {
+    let standardized = String(line);
+    const matchedKeys = [];
+    INGREDIENT_STANDARDIZATION_RULES.forEach(rule => {
+      rule.pattern.lastIndex = 0;
+      if(rule.pattern.test(standardized)){
+        rule.pattern.lastIndex = 0;
+        standardized = standardized.replace(rule.pattern, rule.replacement);
+        matchedKeys.push(rule.key);
+      }
+    });
+    standardized = standardized.replace(/\s+/g, " ").trim();
+    const key = `ingredient-${index}-${matchedKeys.join("-")}`;
+    if(matchedKeys.length && standardized !== String(line).trim() && !isGenericDismissed(INTELLIGENCE_DISMISS_KEY, recipe, key)){
+      suggestions.push({key, index, current:String(line).trim(), replacement:standardized});
+    }
+  });
+  return suggestions;
+}
+
+function recipeCategoryText(recipe){
+  return [
+    recipe.name,
+    recipe.type,
+    recipe.cuisine,
+    ...(recipe.ingredients || []),
+    ...(recipe.instructions || [])
+  ].filter(Boolean).join(" ");
+}
+
+function suggestedCategoryValue(field, recipe){
+  const text = recipeCategoryText(recipe);
+  const rule = (CATEGORY_RULES[field] || []).find(item => item.test(text, recipe));
+  return rule ? rule.value : "";
+}
+
+function categorizationSuggestions(recipe){
+  const suggestions = [];
+  const fields = [
+    {field:"protein", label:"Protein"},
+    {field:"type", label:"Meal type"},
+    {field:"cuisine", label:"Cuisine"}
+  ];
+  fields.forEach(item => {
+    if(String(recipe[item.field] || "").trim()) return;
+    const value = suggestedCategoryValue(item.field, recipe);
+    const key = `${item.field}-${normalizedText(value)}`;
+    if(value && !isGenericDismissed(CATEGORY_DISMISS_KEY, recipe, key)){
+      suggestions.push({key, field:item.field, label:item.label, value});
+    }
+  });
+
+  const existingCollections = recipe.collections || [];
+  (CATEGORY_RULES.collections || []).forEach(rule => {
+    if(!rule.test(recipeCategoryText(recipe), recipe) || existingCollections.includes(rule.value)) return;
+    const key = `collection-${normalizedText(rule.value)}`;
+    if(!isGenericDismissed(CATEGORY_DISMISS_KEY, recipe, key)){
+      suggestions.push({key, field:"collections", label:"Collection", value:rule.value});
+    }
+  });
+  return suggestions;
+}
+
 function readCollectionOverrides(){
   try{
     const stored = JSON.parse(localStorage.getItem(COLLECTION_OVERRIDE_KEY) || "{}");
@@ -331,6 +530,59 @@ function completenessMarkup(recipe){
   `;
 }
 
+function intelligenceMarkup(recipe){
+  const suggestions = ingredientIntelligenceSuggestions(recipe);
+  if(!suggestions.length) return "";
+  return `
+    <section class="health-smart-panel" aria-label="Ingredient cleanup suggestions">
+      <div class="health-smart-heading">
+        <strong>Ingredient cleanup</strong>
+        <span>${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="health-smart-list">
+        ${suggestions.map(item => `
+          <div class="health-smart-row" data-intelligence-key="${escapeHTML(item.key)}" data-ingredient-index="${item.index}">
+            <div>
+              <small>Current</small>
+              <p>${escapeHTML(item.current)}</p>
+              <small>Suggested</small>
+              <input type="text" value="${escapeHTML(item.replacement)}" data-intelligence-value>
+            </div>
+            <div class="health-suggestion-actions">
+              <button type="button" class="primary compact" data-apply-intelligence>Apply</button>
+              <button type="button" class="secondary compact" data-dismiss-intelligence>Dismiss</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function categorizationMarkup(recipe){
+  const suggestions = categorizationSuggestions(recipe);
+  if(!suggestions.length) return "";
+  return `
+    <section class="health-smart-panel" aria-label="Smart categorization suggestions">
+      <div class="health-smart-heading">
+        <strong>Smart categorization</strong>
+        <span>${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="health-category-list">
+        ${suggestions.map(item => `
+          <div class="health-category-row" data-category-key="${escapeHTML(item.key)}" data-category-field="${escapeHTML(item.field)}">
+            <div><small>${escapeHTML(item.label)}</small><strong>${escapeHTML(item.value)}</strong></div>
+            <div class="health-suggestion-actions">
+              <button type="button" class="primary compact" data-apply-category data-category-value="${escapeHTML(item.value)}">Apply</button>
+              <button type="button" class="secondary compact" data-dismiss-category>Dismiss</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function healthCard(recipe){
   const issues = issueKeys(recipe);
   return `
@@ -344,9 +596,12 @@ function healthCard(recipe){
       </div>
       <form class="health-edit-form">
         ${completenessMarkup(recipe)}
+        ${intelligenceMarkup(recipe)}
+        ${categorizationMarkup(recipe)}
         <div class="health-form-grid">
           <label class="field">Protein<input name="protein" value="${escapeHTML(recipe.protein || "")}" placeholder="Chicken"></label>
           <label class="field">Meal type<input name="type" value="${escapeHTML(recipe.type || "")}" placeholder="Pasta"></label>
+          <label class="field">Cuisine<input name="cuisine" value="${escapeHTML(recipe.cuisine || "")}" placeholder="Italian-inspired"></label>
           <label class="field">Total minutes<input name="total_time" type="number" min="0" value="${recipe.total_time || ""}"></label>
           <label class="field health-image-field">Image URL<input name="image" type="url" value="${escapeHTML(recipe.image || "")}" placeholder="https://..."></label>
         </div>
@@ -403,7 +658,7 @@ async function loadRecipes(){
   }
 }
 
-function collectUpdates(form){
+function collectUpdates(form, recipe){
   const picker = form.querySelector("[data-health-collection-picker]");
   const collections = [...picker.querySelectorAll("[data-health-remove-collection]")].map(chip => chip.dataset.healthRemoveCollection);
   const lines = name => form.elements[name].value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
@@ -412,6 +667,7 @@ function collectUpdates(form){
     updates:{
       protein:form.elements.protein.value.trim(),
       type:form.elements.type.value.trim(),
+      cuisine:form.elements.cuisine ? form.elements.cuisine.value.trim() : String(recipe?.cuisine || ""),
       total_time:form.elements.total_time.value.trim(),
       image:form.elements.image.value.trim(),
       collections:collections.join("|"),
@@ -424,7 +680,7 @@ function collectUpdates(form){
 
 async function saveHealthForm(form, recipe, successMessage="Saved."){
   const status = form.querySelector("[data-health-save-status]");
-  const {collections, updates} = collectUpdates(form);
+  const {collections, updates} = collectUpdates(form, recipe);
   status.textContent = "Saving…";
   status.className = "import-status";
   try{
@@ -450,6 +706,71 @@ async function saveHealthForm(form, recipe, successMessage="Saved."){
 document.addEventListener("click", async event => {
   const issueButton = event.target.closest("[data-health-issue]");
   if(issueButton){ activeIssue = issueButton.dataset.healthIssue; render(); return; }
+
+
+  const intelligenceRow = event.target.closest("[data-intelligence-key]");
+  if(intelligenceRow){
+    const card = intelligenceRow.closest("[data-health-id]");
+    const form = intelligenceRow.closest(".health-edit-form");
+    const recipe = recipes.find(item => String(item.id) === card.dataset.healthId);
+    const key = intelligenceRow.dataset.intelligenceKey;
+
+    if(event.target.closest("[data-dismiss-intelligence]")){
+      dismissGeneric(INTELLIGENCE_DISMISS_KEY, recipe, key);
+      render();
+      return;
+    }
+
+    if(event.target.closest("[data-apply-intelligence]")){
+      const index = Number(intelligenceRow.dataset.ingredientIndex);
+      const value = intelligenceRow.querySelector("[data-intelligence-value]").value.trim();
+      const lines = form.elements.ingredients.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+      if(Number.isInteger(index) && lines[index] && value){
+        lines[index] = value;
+        form.elements.ingredients.value = lines.join("\n");
+        intelligenceRow.remove();
+        const status = form.querySelector("[data-health-save-status]");
+        status.textContent = "Suggestion applied. Click Save fixes to keep it.";
+        status.className = "import-status success";
+      }
+      return;
+    }
+  }
+
+  const categoryRow = event.target.closest("[data-category-key]");
+  if(categoryRow){
+    const card = categoryRow.closest("[data-health-id]");
+    const form = categoryRow.closest(".health-edit-form");
+    const recipe = recipes.find(item => String(item.id) === card.dataset.healthId);
+    const key = categoryRow.dataset.categoryKey;
+    const field = categoryRow.dataset.categoryField;
+
+    if(event.target.closest("[data-dismiss-category]")){
+      dismissGeneric(CATEGORY_DISMISS_KEY, recipe, key);
+      render();
+      return;
+    }
+
+    const apply = event.target.closest("[data-apply-category]");
+    if(apply){
+      const value = apply.dataset.categoryValue;
+      if(field === "collections"){
+        const picker = form.querySelector("[data-health-collection-picker]");
+        const chips = picker.querySelector("[data-health-collection-chips]");
+        chips.querySelector(".collection-empty")?.remove();
+        if(![...chips.querySelectorAll("[data-health-remove-collection]")].some(chip => chip.dataset.healthRemoveCollection === value)){
+          chips.insertAdjacentHTML("beforeend", `<button type="button" class="collection-chip" data-health-remove-collection="${escapeHTML(value)}">${escapeHTML(value)} ×</button>`);
+        }
+      }else if(form.elements[field]){
+        form.elements[field].value = value;
+      }
+      categoryRow.remove();
+      const status = form.querySelector("[data-health-save-status]");
+      status.textContent = "Suggestion applied. Click Save fixes to keep it.";
+      status.className = "import-status success";
+      return;
+    }
+  }
 
   const suggestionRow = event.target.closest("[data-suggestion-key]");
   if(suggestionRow){
