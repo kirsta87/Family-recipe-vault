@@ -5,9 +5,9 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV140";
-const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV140";
-const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV140";
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV141";
+const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV141";
+const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV141";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
@@ -120,59 +120,63 @@ const EXPECTED_COMPONENT_RULES = [
 ];
 
 const INGREDIENT_STANDARDIZATION_RULES = [
-  {key:"evoo", pattern:/EVOO/gi, replacement:"olive oil"},
-  {key:"extra-virgin-olive-oil", pattern:/extra[- ]virgin olive oil/gi, replacement:"olive oil"},
-  {key:"chicken-stock", pattern:/chicken stock/gi, replacement:"chicken broth"},
-  {key:"beef-stock", pattern:/beef stock/gi, replacement:"beef broth"},
-  {key:"vegetable-stock", pattern:/vegetable stock/gi, replacement:"vegetable broth"},
-  {key:"yellow-onion", pattern:/yellow onions?/gi, replacement:"onion"},
-  {key:"white-onion", pattern:/white onions?/gi, replacement:"onion"},
-  {key:"parmesan-cheese", pattern:/parmesan cheese/gi, replacement:"Parmesan"},
-  {key:"mozzarella-cheese", pattern:/mozzarella cheese/gi, replacement:"mozzarella"},
-  {key:"cheddar-cheese", pattern:/cheddar cheese/gi, replacement:"cheddar"},
-  {key:"garlic-cloves", pattern:/cloves? of garlic/gi, replacement:"garlic cloves"},
-  {key:"minced-garlic", pattern:/minced garlic/gi, replacement:"garlic"},
-  {key:"green-onions", pattern:/green onions?/gi, replacement:"scallions"},
-  {key:"confectioners-sugar", pattern:/confectioners['’]? sugar/gi, replacement:"powdered sugar"}
+  {key:"evoo", aliases:["evoo"], replacement:"olive oil"},
+  {key:"extra-virgin-olive-oil", aliases:["extra virgin olive oil","extra-virgin olive oil"], replacement:"olive oil"},
+  {key:"chicken-stock", aliases:["chicken stock"], replacement:"chicken broth"},
+  {key:"beef-stock", aliases:["beef stock"], replacement:"beef broth"},
+  {key:"vegetable-stock", aliases:["vegetable stock","veggie stock"], replacement:"vegetable broth"},
+  {key:"yellow-onion", aliases:["yellow onion","yellow onions"], replacement:"onion"},
+  {key:"white-onion", aliases:["white onion","white onions"], replacement:"onion"},
+  {key:"parmesan-cheese", aliases:["parmesan cheese"], replacement:"Parmesan"},
+  {key:"mozzarella-cheese", aliases:["mozzarella cheese"], replacement:"mozzarella"},
+  {key:"cheddar-cheese", aliases:["cheddar cheese"], replacement:"cheddar"},
+  {key:"cloves-of-garlic", aliases:["clove of garlic","cloves of garlic"], replacement:"garlic cloves"},
+  {key:"minced-garlic", aliases:["minced garlic"], replacement:"garlic"},
+  {key:"green-onions", aliases:["green onion","green onions"], replacement:"scallions"},
+  {key:"confectioners-sugar", aliases:["confectioners sugar","confectioner's sugar","confectioners' sugar"], replacement:"powdered sugar"}
 ];
+
+const ANIMAL_PROTEIN_PATTERN = /\b(chicken|turkey|pork|bacon|ham|sausage|prosciutto|beef|steak|hamburger|ground beef|roast|shrimp|salmon|fish|tuna|cod|tilapia|crab|lobster|lamb)\b/i;
 
 const CATEGORY_RULES = {
   protein:[
-    {value:"Chicken", test:text => /(chicken|rotisserie chicken)/i.test(text)},
-    {value:"Turkey", test:text => /(turkey)/i.test(text)},
-    {value:"Pork", test:text => /(pork|bacon|ham|sausage|prosciutto)/i.test(text)},
-    {value:"Beef", test:text => /(beef|steak|hamburger|ground beef|roast)/i.test(text)},
-    {value:"Seafood", test:text => /(shrimp|salmon|fish|tuna|cod|tilapia|crab)/i.test(text)},
-    {value:"Vegetarian", test:text => !/(chicken|turkey|pork|bacon|ham|sausage|beef|steak|hamburger|shrimp|salmon|fish|tuna|cod|tilapia|crab)/i.test(text)}
+    {value:"Chicken", test:text => /\b(chicken|rotisserie chicken)\b/i.test(text)},
+    {value:"Turkey", test:text => /\bturkey\b/i.test(text)},
+    {value:"Pork", test:text => /\b(pork|bacon|ham|sausage|prosciutto)\b/i.test(text)},
+    {value:"Beef", test:text => /\b(beef|steak|hamburger|ground beef|roast)\b/i.test(text)},
+    {value:"Seafood", test:text => /\b(shrimp|salmon|fish|tuna|cod|tilapia|crab|lobster)\b/i.test(text)},
+    {value:"Lamb", test:text => /\blamb\b/i.test(text)},
+    {value:"Vegetarian", test:text => !ANIMAL_PROTEIN_PATTERN.test(text)}
   ],
   type:[
-    {value:"Tacos", test:text => /tacos?/i.test(text)},
-    {value:"Burritos", test:text => /burritos?/i.test(text)},
-    {value:"Quesadillas", test:text => /quesadillas?/i.test(text)},
-    {value:"Pasta", test:text => /(pasta|spaghetti|fettuccine|linguine|penne|lasagna|alfredo|mac and cheese|noodles)/i.test(text)},
-    {value:"Soup", test:text => /(soup|chowder|bisque)/i.test(text)},
-    {value:"Casserole", test:text => /(casserole|bake)/i.test(text)},
-    {value:"Sandwiches", test:text => /(sandwich|burger|slider|french dip|grilled cheese)/i.test(text)},
-    {value:"Salad", test:text => /salad/i.test(text)},
-    {value:"Bowls", test:text => /(bowl|bowls)/i.test(text)},
-    {value:"Pizza", test:text => /pizzas?/i.test(text)},
-    {value:"Sheet Pan", test:text => /sheet pan/i.test(text)},
-    {value:"Slow Cooker", test:text => /(slow cooker|crockpot|crock pot)/i.test(text)}
+    {value:"Tacos", test:text => /\btacos?\b/i.test(text)},
+    {value:"Burritos", test:text => /\bburritos?\b/i.test(text)},
+    {value:"Quesadillas", test:text => /\bquesadillas?\b/i.test(text)},
+    {value:"Pasta", test:text => /\b(pasta|spaghetti|fettuccine|linguine|penne|lasagna|alfredo|mac and cheese|noodles)\b/i.test(text)},
+    {value:"Soup", test:text => /\b(soup|chowder|bisque)\b/i.test(text)},
+    {value:"Stew", test:text => /\bstew\b/i.test(text)},
+    {value:"Casserole", test:text => /\b(casserole|bake)\b/i.test(text)},
+    {value:"Sandwiches", test:text => /\b(sandwich|burger|slider|french dip|grilled cheese)\b/i.test(text)},
+    {value:"Salad", test:text => /\bsalad\b/i.test(text)},
+    {value:"Bowls", test:text => /\b(bowl|bowls)\b/i.test(text)},
+    {value:"Pizza", test:text => /\bpizzas?\b/i.test(text)},
+    {value:"Sheet Pan", test:text => /\bsheet pan\b/i.test(text)},
+    {value:"Slow Cooker", test:text => /\b(slow cooker|crockpot|crock pot)\b/i.test(text)}
   ],
   cuisine:[
-    {value:"Mexican-inspired", test:text => /(taco|burrito|quesadilla|enchilada|salsa|tortilla|fajita|nacho)/i.test(text)},
-    {value:"Italian-inspired", test:text => /(pasta|lasagna|alfredo|parmesan|mozzarella|marinara|pizza|risotto)/i.test(text)},
-    {value:"Asian-inspired", test:text => /(soy sauce|teriyaki|sesame|ginger|ramen|stir fry|fried rice|gochujang)/i.test(text)},
-    {value:"Mediterranean-inspired", test:text => /(feta|tzatziki|pita|hummus|greek|mediterranean)/i.test(text)},
-    {value:"American", test:text => /(burger|slider|meatloaf|mac and cheese|barbecue|bbq|pot pie)/i.test(text)}
+    {value:"Mexican-inspired", test:text => /\b(taco|burrito|quesadilla|enchilada|salsa|tortilla|fajita|nacho)\b/i.test(text)},
+    {value:"Italian-inspired", test:text => /\b(pasta|lasagna|alfredo|parmesan|mozzarella|marinara|pizza|risotto)\b/i.test(text)},
+    {value:"Asian-inspired", test:text => /\b(soy sauce|teriyaki|sesame|ginger|ramen|stir fry|fried rice|gochujang)\b/i.test(text)},
+    {value:"Mediterranean-inspired", test:text => /\b(feta|tzatziki|pita|hummus|greek|mediterranean)\b/i.test(text)},
+    {value:"American", test:text => /\b(burger|slider|meatloaf|mac and cheese|barbecue|bbq|pot pie)\b/i.test(text)}
   ],
   collections:[
-    {value:"Meatless Meals", test:(text, recipe) => suggestedCategoryValue("protein", recipe) === "Vegetarian"},
-    {value:"Crockpot", test:text => /(slow cooker|crockpot|crock pot)/i.test(text)},
+    {value:"Meatless Meals", test:(text, recipe) => !ANIMAL_PROTEIN_PATTERN.test(ingredientAndTitleText(recipe))},
+    {value:"Crockpot", test:text => /\b(slow cooker|crockpot|crock pot)\b/i.test(text)},
     {value:"Quick Meals", test:(text, recipe) => Number(recipe.total_time || 0) > 0 && Number(recipe.total_time) <= 30},
-    {value:"Pasta Night", test:text => /(pasta|spaghetti|fettuccine|linguine|penne|lasagna|alfredo|noodles)/i.test(text)},
-    {value:"Taco Night", test:text => /(taco|burrito|quesadilla|enchilada|fajita|nacho)/i.test(text)},
-    {value:"Soups & Stews", test:text => /(soup|stew|chowder|bisque|chili)/i.test(text)}
+    {value:"Pasta Night", test:text => /\b(pasta|spaghetti|fettuccine|linguine|penne|lasagna|alfredo|noodles)\b/i.test(text)},
+    {value:"Taco Night", test:text => /\b(taco|burrito|quesadilla|enchilada|fajita|nacho)\b/i.test(text)},
+    {value:"Soups & Stews", test:text => /\b(soup|stew|chowder|bisque|chili)\b/i.test(text)}
   ]
 };
 
@@ -335,26 +339,45 @@ function dismissGeneric(storageKey, recipe, suggestionKey){
   localStorage.setItem(storageKey, JSON.stringify(dismissed));
 }
 
+function escapeRegExp(value){
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceIngredientAlias(line, alias, replacement){
+  const expression = new RegExp(`\\b${escapeRegExp(alias).replace(/\\ /g, "\\s+")}\\b`, "ig");
+  return String(line).replace(expression, replacement);
+}
+
 function ingredientIntelligenceSuggestions(recipe){
   const suggestions = [];
   (recipe.ingredients || []).forEach((line, index) => {
-    let standardized = String(line);
+    const original = String(line).trim();
+    let standardized = original;
     const matchedKeys = [];
+
     INGREDIENT_STANDARDIZATION_RULES.forEach(rule => {
-      rule.pattern.lastIndex = 0;
-      if(rule.pattern.test(standardized)){
-        rule.pattern.lastIndex = 0;
-        standardized = standardized.replace(rule.pattern, rule.replacement);
-        matchedKeys.push(rule.key);
-      }
+      const before = standardized;
+      rule.aliases.forEach(alias => {
+        standardized = replaceIngredientAlias(standardized, alias, rule.replacement);
+      });
+      if(standardized !== before) matchedKeys.push(rule.key);
     });
+
     standardized = standardized.replace(/\s+/g, " ").trim();
     const key = `ingredient-${index}-${matchedKeys.join("-")}`;
-    if(matchedKeys.length && standardized !== String(line).trim() && !isGenericDismissed(INTELLIGENCE_DISMISS_KEY, recipe, key)){
-      suggestions.push({key, index, current:String(line).trim(), replacement:standardized});
+    if(matchedKeys.length && standardized !== original && !isGenericDismissed(INTELLIGENCE_DISMISS_KEY, recipe, key)){
+      suggestions.push({key, index, current:original, replacement:standardized});
     }
   });
   return suggestions;
+}
+
+function ingredientAndTitleText(recipe){
+  return [
+    recipe.name,
+    ...(recipe.ingredients || []),
+    ...(recipe.instructions || [])
+  ].filter(Boolean).join(" ");
 }
 
 function recipeCategoryText(recipe){
@@ -367,10 +390,25 @@ function recipeCategoryText(recipe){
   ].filter(Boolean).join(" ");
 }
 
+function categoryDetectionText(field, recipe){
+  if(field === "protein") return ingredientAndTitleText(recipe);
+  if(field === "type"){
+    return [recipe.name, ...(recipe.ingredients || []), ...(recipe.instructions || [])].filter(Boolean).join(" ");
+  }
+  if(field === "cuisine"){
+    return [recipe.name, ...(recipe.ingredients || []), ...(recipe.instructions || [])].filter(Boolean).join(" ");
+  }
+  return recipeCategoryText(recipe);
+}
+
 function suggestedCategoryValue(field, recipe){
-  const text = recipeCategoryText(recipe);
+  const text = categoryDetectionText(field, recipe);
   const rule = (CATEGORY_RULES[field] || []).find(item => item.test(text, recipe));
   return rule ? rule.value : "";
+}
+
+function sameCategoryValue(a, b){
+  return normalizedText(a) === normalizedText(b);
 }
 
 function categorizationSuggestions(recipe){
@@ -380,23 +418,41 @@ function categorizationSuggestions(recipe){
     {field:"type", label:"Meal type"},
     {field:"cuisine", label:"Cuisine"}
   ];
+
   fields.forEach(item => {
-    if(String(recipe[item.field] || "").trim()) return;
+    const current = String(recipe[item.field] || "").trim();
     const value = suggestedCategoryValue(item.field, recipe);
-    const key = `${item.field}-${normalizedText(value)}`;
-    if(value && !isGenericDismissed(CATEGORY_DISMISS_KEY, recipe, key)){
-      suggestions.push({key, field:item.field, label:item.label, value});
+    if(!value || sameCategoryValue(current, value)) return;
+
+    const key = `${item.field}-${normalizedText(current || "missing")}-${normalizedText(value)}`;
+    if(!isGenericDismissed(CATEGORY_DISMISS_KEY, recipe, key)){
+      suggestions.push({
+        key,
+        field:item.field,
+        label:item.label,
+        current,
+        value,
+        mismatch:Boolean(current)
+      });
     }
   });
 
   const existingCollections = recipe.collections || [];
   (CATEGORY_RULES.collections || []).forEach(rule => {
-    if(!rule.test(recipeCategoryText(recipe), recipe) || existingCollections.includes(rule.value)) return;
+    if(!rule.test(recipeCategoryText(recipe), recipe) || existingCollections.some(item => sameCategoryValue(item, rule.value))) return;
     const key = `collection-${normalizedText(rule.value)}`;
     if(!isGenericDismissed(CATEGORY_DISMISS_KEY, recipe, key)){
-      suggestions.push({key, field:"collections", label:"Collection", value:rule.value});
+      suggestions.push({
+        key,
+        field:"collections",
+        label:"Collection",
+        current:"",
+        value:rule.value,
+        mismatch:false
+      });
     }
   });
+
   return suggestions;
 }
 
@@ -571,14 +627,25 @@ function categorizationMarkup(recipe){
       <div class="health-category-list">
         ${suggestions.map(item => `
           <div class="health-category-row" data-category-key="${escapeHTML(item.key)}" data-category-field="${escapeHTML(item.field)}">
-            <div><small>${escapeHTML(item.label)}</small><strong>${escapeHTML(item.value)}</strong></div>
+            <div class="health-category-copy">
+              <small>${escapeHTML(item.label)}</small>
+              ${item.current ? `<p class="health-current-value"><span>Current</span>${escapeHTML(item.current)}</p>` : ""}
+              <label class="health-suggested-value">
+                <span>${item.current ? "Suggested" : "Suggestion"}</span>
+                <input type="text" value="${escapeHTML(item.value)}" data-category-value-input
+                  ${item.field === "collections" ? `list="health-collection-options-${escapeHTML(String(recipe.id || "recipe"))}"` : ""}>
+              </label>
+            </div>
             <div class="health-suggestion-actions">
-              <button type="button" class="primary compact" data-apply-category data-category-value="${escapeHTML(item.value)}">Apply</button>
+              <button type="button" class="primary compact" data-apply-category>Apply</button>
               <button type="button" class="secondary compact" data-dismiss-category>Dismiss</button>
             </div>
           </div>
         `).join("")}
       </div>
+      <datalist id="health-collection-options-${escapeHTML(String(recipe.id || "recipe"))}">
+        ${allCollections().map(name => `<option value="${escapeHTML(name)}"></option>`).join("")}
+      </datalist>
     </section>
   `;
 }
@@ -753,7 +820,8 @@ document.addEventListener("click", async event => {
 
     const apply = event.target.closest("[data-apply-category]");
     if(apply){
-      const value = apply.dataset.categoryValue;
+      const value = categoryRow.querySelector("[data-category-value-input]")?.value.trim() || "";
+      if(!value) return;
       if(field === "collections"){
         const picker = form.querySelector("[data-health-collection-picker]");
         const chips = picker.querySelector("[data-health-collection-chips]");

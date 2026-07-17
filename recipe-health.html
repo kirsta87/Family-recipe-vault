@@ -28,6 +28,12 @@
     .health-smart-row input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit}
     .health-category-row strong{display:block;margin-top:2px}
     @media(max-width:620px){.health-smart-row,.health-category-row{align-items:stretch;flex-direction:column}.health-suggestion-actions{width:100%}}
+
+    .health-category-copy{min-width:0;flex:1}
+    .health-current-value{display:flex;gap:8px;align-items:baseline;margin:5px 0 8px}
+    .health-current-value span,.health-suggested-value span{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    .health-suggested-value{display:grid;gap:4px}
+    .health-suggested-value input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit;font-weight:700}
   </style>
 </head>
 <body>
@@ -70,6 +76,6 @@
 </main>
 
 <script src="config.js?v=3"></script>
-<script src="recipe-health.js?v=140"></script>
+<script src="recipe-health.js?v=141"></script>
 </body>
 </html>
