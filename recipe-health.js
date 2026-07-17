@@ -5,9 +5,9 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV141";
-const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV141";
-const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV141";
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV142";
+const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV142";
+const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV142";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
@@ -35,85 +35,85 @@ const INSTRUCTION_INGREDIENT_RULES = [
 const EXPECTED_COMPONENT_RULES = [
   {
     key:"taco-tortillas",
-    matches:recipe => /tacos?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(tortillas?|taco shells?|hard shells?|soft shells?)/i.test(text),
+    matches:recipe => /\btacos?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(tortillas?|taco shells?|hard shells?|soft shells?)\b/i.test(text),
     ingredient:"8 tortillas",
     reason:"This looks like a taco recipe, but no tortillas or taco shells were found."
   },
   {
     key:"burger-buns",
-    matches:recipe => /(burgers?|hamburgers?)/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(burger buns?|buns?|rolls?)/i.test(text),
+    matches:recipe => /\b(burgers?|hamburgers?)\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(burger buns?|buns?|rolls?)\b/i.test(text),
     ingredient:"4 burger buns",
     reason:"This looks like a burger recipe, but no buns were found."
   },
   {
     key:"slider-buns",
-    matches:recipe => /sliders?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(slider buns?|hawaiian rolls?|rolls?|buns?)/i.test(text),
+    matches:recipe => /\bsliders?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(slider buns?|hawaiian rolls?|rolls?|buns?)\b/i.test(text),
     ingredient:"12 slider buns",
     reason:"This looks like a slider recipe, but no slider buns or rolls were found."
   },
   {
     key:"quesadilla-tortillas",
-    matches:recipe => /quesadillas?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /tortillas?/i.test(text),
+    matches:recipe => /\bquesadillas?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\btortillas?\b/i.test(text),
     ingredient:"8 tortillas",
     reason:"This looks like a quesadilla recipe, but no tortillas were found."
   },
   {
     key:"burrito-tortillas",
-    matches:recipe => /burritos?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /tortillas?/i.test(text),
+    matches:recipe => /\bburritos?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\btortillas?\b/i.test(text),
     ingredient:"8 large flour tortillas",
     reason:"This looks like a burrito recipe, but no tortillas were found."
   },
   {
     key:"sandwich-bread",
-    matches:recipe => /(sandwich|sandwiches|grilled cheese)/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(bread|rolls?|buns?|croissants?|pitas?)/i.test(text),
+    matches:recipe => /\b(sandwich|sandwiches|grilled cheese)\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(bread|rolls?|buns?|croissants?|pitas?)\b/i.test(text),
     ingredient:"8 slices bread",
     reason:"This looks like a sandwich recipe, but no bread or rolls were found."
   },
   {
     key:"french-dip-rolls",
-    matches:recipe => /french dip/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(hoagie rolls?|sub rolls?|french rolls?|rolls?|buns?)/i.test(text),
+    matches:recipe => /\bfrench dip\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(hoagie rolls?|sub rolls?|french rolls?|rolls?|buns?)\b/i.test(text),
     ingredient:"4 hoagie rolls",
     reason:"This looks like a French dip recipe, but no rolls were found."
   },
   {
     key:"nacho-chips",
-    matches:recipe => /nachos?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(tortilla chips?|corn chips?|chips?)/i.test(text),
+    matches:recipe => /\bnachos?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(tortilla chips?|corn chips?|chips?)\b/i.test(text),
     ingredient:"1 bag tortilla chips",
     reason:"This looks like a nacho recipe, but no tortilla chips were found."
   },
   {
     key:"pizza-dough",
-    matches:recipe => /pizzas?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(pizza dough|pizza crust|flatbread|naan)/i.test(text),
+    matches:recipe => /\bpizzas?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(pizza dough|pizza crust|flatbread|naan)\b/i.test(text),
     ingredient:"1 pizza crust",
     reason:"This looks like a pizza recipe, but no crust or dough was found."
   },
   {
     key:"lasagna-noodles",
-    matches:recipe => /lasagnas?/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(lasagna noodles?|lasagne sheets?)/i.test(text),
+    matches:recipe => /\blasagnas?\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(lasagna noodles?|lasagne sheets?)\b/i.test(text),
     ingredient:"12 lasagna noodles",
     reason:"This looks like a lasagna recipe, but no lasagna noodles were found."
   },
   {
     key:"alfredo-pasta",
-    matches:recipe => /alfredo/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(pasta|fettuccine|linguine|spaghetti|penne|noodles?)/i.test(text),
+    matches:recipe => /\balfredo\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(pasta|fettuccine|linguine|spaghetti|penne|noodles?)\b/i.test(text),
     ingredient:"12 oz pasta",
     reason:"This looks like an Alfredo recipe, but no pasta was found."
   },
   {
     key:"pot-pie-crust",
-    matches:recipe => /pot pie/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
-    present:text => /(pie crust|puff pastry|biscuits?|crescent rolls?)/i.test(text),
+    matches:recipe => /\bpot pie\b/i.test(`${recipe.name || ""} ${recipe.type || ""}`),
+    present:text => /\b(pie crust|puff pastry|biscuits?|crescent rolls?)\b/i.test(text),
     ingredient:"1 refrigerated pie crust",
     reason:"This looks like a pot pie recipe, but no crust or topping was found."
   }
@@ -339,13 +339,31 @@ function dismissGeneric(storageKey, recipe, suggestionKey){
   localStorage.setItem(storageKey, JSON.stringify(dismissed));
 }
 
-function escapeRegExp(value){
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function replaceIngredientAlias(line, alias, replacement){
-  const expression = new RegExp(`\\b${escapeRegExp(alias).replace(/\\ /g, "\\s+")}\\b`, "ig");
-  return String(line).replace(expression, replacement);
+  let result = String(line);
+  const needle = String(alias).toLowerCase();
+  if(!needle) return result;
+
+  let searchFrom = 0;
+  while(searchFrom < result.length){
+    const lower = result.toLowerCase();
+    const index = lower.indexOf(needle, searchFrom);
+    if(index === -1) break;
+
+    const before = index > 0 ? lower[index - 1] : "";
+    const afterIndex = index + needle.length;
+    const after = afterIndex < lower.length ? lower[afterIndex] : "";
+    const beforeIsWord = /[a-z0-9]/i.test(before);
+    const afterIsWord = /[a-z0-9]/i.test(after);
+
+    if(!beforeIsWord && !afterIsWord){
+      result = result.slice(0, index) + replacement + result.slice(afterIndex);
+      searchFrom = index + replacement.length;
+    }else{
+      searchFrom = index + needle.length;
+    }
+  }
+  return result;
 }
 
 function ingredientIntelligenceSuggestions(recipe){
