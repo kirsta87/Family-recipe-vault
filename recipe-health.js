@@ -5,9 +5,10 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV143";
-const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV143";
-const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV143";
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV144";
+const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV144";
+const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV144";
+const CUSTOM_CATEGORY_KEY = "recipeVaultCustomCategoryValuesV144";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
@@ -120,13 +121,13 @@ const EXPECTED_COMPONENT_RULES = [
 ];
 
 const INGREDIENT_STANDARDIZATION_RULES = [
-  {key:"evoo", aliases:["evoo"], replacement:"olive oil"},
-  {key:"confectioners-sugar", aliases:["confectioners sugar","confectioner's sugar","confectioners' sugar"], replacement:"powdered sugar"},
-  {key:"veggie-stock", aliases:["veggie stock"], replacement:"vegetable stock"},
-  {key:"green-onion-singular", aliases:["green onion"], replacement:"green onion"},
-  {key:"garlic-clove-wording", aliases:["clove of garlic"], replacement:"garlic clove"},
-  {key:"garlic-cloves-wording", aliases:["cloves of garlic"], replacement:"garlic cloves"},
-  {key:"parmesan-cheese", aliases:["parmesan cheese"], replacement:"Parmesan cheese"}
+  {key:"evoo", aliases:["evoo"], replacement:"olive oil", reason:"Common abbreviation", confidence:"High"},
+  {key:"extra-virgin-olive-oil", aliases:["extra virgin olive oil","extra-virgin olive oil"], replacement:"olive oil", reason:"Standard pantry name", confidence:"High"},
+  {key:"confectioners-sugar", aliases:["confectioners sugar","confectioner's sugar","confectioners' sugar","icing sugar"], replacement:"powdered sugar", reason:"Common synonym", confidence:"High"},
+  {key:"veggie-stock", aliases:["veggie stock","veggie broth"], replacement:"vegetable broth", reason:"Common abbreviation", confidence:"High"},
+  {key:"all-purpose-flour", aliases:["all purpose flour","a.p. flour","ap flour"], replacement:"all-purpose flour", reason:"Common spelling or abbreviation", confidence:"High"},
+  {key:"garlic-clove-wording", aliases:["clove of garlic"], replacement:"garlic clove", reason:"Equivalent wording", confidence:"High"},
+  {key:"garlic-cloves-wording", aliases:["cloves of garlic"], replacement:"garlic cloves", reason:"Equivalent wording", confidence:"High"}
 ];
 
 const ANIMAL_PROTEIN_PATTERN = /\b(chicken|turkey|pork|bacon|ham|sausage|prosciutto|beef|steak|hamburger|ground beef|roast|shrimp|salmon|fish|tuna|cod|tilapia|crab|lobster|lamb)\b/i;
@@ -180,9 +181,37 @@ const DEFAULT_CATEGORY_VALUES = {
   cuisine:["American","Asian-inspired","Italian-inspired","Mediterranean-inspired","Mexican-inspired","Other"]
 };
 
+
+function readCustomCategories(){
+  try{
+    const parsed = JSON.parse(localStorage.getItem(CUSTOM_CATEGORY_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  }catch(error){ return {}; }
+}
+
+function rememberCustomCategory(field, value){
+  const cleanValue = String(value || "").trim();
+  if(!cleanValue) return;
+  const stored = readCustomCategories();
+  const existing = Array.isArray(stored[field]) ? stored[field] : [];
+  stored[field] = unique([...existing, cleanValue]);
+  localStorage.setItem(CUSTOM_CATEGORY_KEY, JSON.stringify(stored));
+}
+
+function addOptionToVisibleCategorySelects(field, value){
+  document.querySelectorAll(`[data-health-category-select="${field}"], [data-category-field="${field}"] [data-category-value-select]`).forEach(select => {
+    if([...select.options].some(option => sameCategoryValue(option.value, value))) return;
+    const option = new Option(value, value);
+    const addNew = select.querySelector('option[value="__new__"]');
+    if(addNew) select.insertBefore(option, addNew);
+    else select.appendChild(option);
+  });
+}
+
 function categoryOptions(field, currentValue="", suggestedValue=""){
   return unique([
     ...(DEFAULT_CATEGORY_VALUES[field] || []),
+    ...(readCustomCategories()[field] || []),
     ...recipes.map(recipe => String(recipe[field] || "").trim()),
     currentValue,
     suggestedValue
@@ -394,25 +423,50 @@ function replaceIngredientAlias(line, alias, replacement){
   return result;
 }
 
+function ingredientComparisonText(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[.,;:]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function ingredientIntelligenceSuggestions(recipe){
   const suggestions = [];
   (recipe.ingredients || []).forEach((line, index) => {
     const original = String(line).trim();
     let standardized = original;
-    const matchedKeys = [];
+    const matchedRules = [];
 
     INGREDIENT_STANDARDIZATION_RULES.forEach(rule => {
       const before = standardized;
       rule.aliases.forEach(alias => {
         standardized = replaceIngredientAlias(standardized, alias, rule.replacement);
       });
-      if(standardized !== before) matchedKeys.push(rule.key);
+      if(ingredientComparisonText(standardized) !== ingredientComparisonText(before)){
+        matchedRules.push(rule);
+      }
     });
 
     standardized = standardized.replace(/\s+/g, " ").trim();
-    const key = `ingredient-${index}-${matchedKeys.join("-")}`;
-    if(matchedKeys.length && standardized !== original && !isGenericDismissed(INTELLIGENCE_DISMISS_KEY, recipe, key)){
-      suggestions.push({key, index, current:original, replacement:standardized});
+    const meaningfulChange =
+      matchedRules.length &&
+      ingredientComparisonText(standardized) !== ingredientComparisonText(original);
+
+    if(!meaningfulChange) return;
+
+    const key = `ingredient-${index}-${matchedRules.map(rule => rule.key).join("-")}`;
+    if(!isGenericDismissed(INTELLIGENCE_DISMISS_KEY, recipe, key)){
+      suggestions.push({
+        key,
+        index,
+        current:original,
+        replacement:standardized,
+        ruleKeys:matchedRules.map(rule => rule.key),
+        reason:matchedRules.map(rule => rule.reason).filter(Boolean).join(" + "),
+        confidence:matchedRules.every(rule => rule.confidence === "High") ? "High" : "Review"
+      });
     }
   });
   return suggestions;
@@ -562,6 +616,71 @@ function allCollections(){
   return unique(recipes.flatMap(recipe => recipe.collections || []));
 }
 
+
+function allIngredientIntelligenceSuggestions(){
+  return recipes.flatMap(recipe =>
+    ingredientIntelligenceSuggestions(recipe).map(suggestion => ({recipe, suggestion}))
+  );
+}
+
+function globalIngredientGroups(){
+  const groups = new Map();
+  allIngredientIntelligenceSuggestions().forEach(item => {
+    const key = item.suggestion.ruleKeys.join("|");
+    if(!groups.has(key)){
+      groups.set(key, {
+        key,
+        replacement:item.suggestion.replacement,
+        reason:item.suggestion.reason,
+        confidence:item.suggestion.confidence,
+        items:[]
+      });
+    }
+    groups.get(key).items.push(item);
+  });
+  return [...groups.values()].sort((a,b) => b.items.length - a.items.length);
+}
+
+function globalIngredientMarkup(){
+  const groups = globalIngredientGroups();
+  if(!groups.length){
+    return '<div class="health-clear-state compact-clear"><strong>No meaningful ingredient aliases found.</strong><span>Capitalization-only differences are ignored.</span></div>';
+  }
+  return `
+    <div class="global-intelligence-list">
+      ${groups.map(group => {
+        const originals = unique(group.items.map(item => item.suggestion.current));
+        return `
+          <div class="global-intelligence-row" data-global-intelligence="${escapeHTML(group.key)}">
+            <div>
+              <div class="confidence-badge">${escapeHTML(group.confidence)} confidence</div>
+              <strong>${escapeHTML(group.replacement)}</strong>
+              <p>${escapeHTML(originals.slice(0,4).join(" • "))}${originals.length > 4 ? ` • +${originals.length-4} more` : ""}</p>
+              <small>${group.items.length} recipe${group.items.length === 1 ? "" : "s"} · ${escapeHTML(group.reason || "Safe alias")}</small>
+            </div>
+            <button type="button" class="primary compact" data-standardize-all>Standardize all</button>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+function renderGlobalIngredientPanel(){
+  const panel = $("globalIngredientPanel");
+  if(!panel) return;
+  const count = allIngredientIntelligenceSuggestions().length;
+  panel.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">INGREDIENT LIBRARIAN</p>
+        <h2>Safe global cleanup</h2>
+      </div>
+      <strong>${count} meaningful match${count === 1 ? "" : "es"}</strong>
+    </div>
+    <p class="muted global-intelligence-note">Capitalization-only differences are ignored. Preparation words such as grated, minced, shredded, diced, fresh, and powdered are preserved.</p>
+    ${globalIngredientMarkup()}
+    <p class="import-status" id="globalIngredientStatus" aria-live="polite"></p>`;
+}
+
 function renderSummary(){
   const complete = recipes.filter(recipe => issueKeys(recipe).length === 0).length;
   $("healthComplete").textContent = `${complete} of ${recipes.length} complete`;
@@ -639,16 +758,18 @@ function intelligenceMarkup(recipe){
     <section class="health-smart-panel" aria-label="Ingredient cleanup suggestions">
       <div class="health-smart-heading">
         <strong>Ingredient cleanup</strong>
-        <span>${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}</span>
+        <span>${suggestions.length} meaningful suggestion${suggestions.length === 1 ? "" : "s"}</span>
       </div>
       <div class="health-smart-list">
         ${suggestions.map(item => `
           <div class="health-smart-row" data-intelligence-key="${escapeHTML(item.key)}" data-ingredient-index="${item.index}">
             <div>
+              <div class="confidence-badge">${escapeHTML(item.confidence)} confidence</div>
               <small>Current</small>
               <p>${escapeHTML(item.current)}</p>
-              <small>Suggested</small>
+              <small>Standard</small>
               <input type="text" value="${escapeHTML(item.replacement)}" data-intelligence-value>
+              <small class="intelligence-reason">${escapeHTML(item.reason || "Safe alias")}</small>
             </div>
             <div class="health-suggestion-actions">
               <button type="button" class="primary compact" data-apply-intelligence>Apply</button>
@@ -780,7 +901,7 @@ function renderResults(){
     : '<div class="health-clear-state"><h3>Nothing to fix here 🎉</h3><p>This category is complete.</p></div>';
 }
 
-function render(){ renderSummary(); renderResults(); }
+function render(){ renderSummary(); renderGlobalIngredientPanel(); renderResults(); }
 
 async function postVault(payload){
   if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Open Settings on the main vault and save the Apps Script URL and family key first.");
@@ -832,6 +953,7 @@ async function saveHealthForm(form, recipe, successMessage="Saved."){
   status.textContent = "Saving…";
   status.className = "import-status";
   try{
+    ["protein","type","cuisine"].forEach(field => rememberCustomCategory(field, updates[field]));
     await postVault({action:"update", id:recipe.id, url:recipe.url, updates});
     Object.assign(recipe, updates, {
       collections,
@@ -862,9 +984,10 @@ document.addEventListener("click", async event => {
     const input = row.querySelector("[data-category-new-input]");
     const value = String(input?.value || "").trim();
     if(!value) return;
-    const option = new Option(value, value, true, true);
-    select.insertBefore(option, select.querySelector('option[value="__new__"]'));
-    select.value = value;
+    const field = row.dataset.categoryField;
+    rememberCustomCategory(field, value);
+    addOptionToVisibleCategorySelects(field, value);
+    select.value = [...select.options].find(option => sameCategoryValue(option.value, value))?.value || value;
     input.value = "";
     row.querySelector("[data-category-new-row]").hidden = true;
     return;
@@ -878,14 +1001,53 @@ document.addEventListener("click", async event => {
     const input = form.querySelector(`[data-health-category-new="${field}"]`);
     const value = String(input?.value || "").trim();
     if(!value) return;
-    const option = new Option(value, value, true, true);
-    select.insertBefore(option, select.querySelector('option[value="__new__"]'));
-    select.value = value;
+    rememberCustomCategory(field, value);
+    addOptionToVisibleCategorySelects(field, value);
+    select.value = [...select.options].find(option => sameCategoryValue(option.value, value))?.value || value;
     input.value = "";
     input.closest(".health-inline-add").hidden = true;
     return;
   }
 
+
+  const globalButton = event.target.closest("[data-standardize-all]");
+  if(globalButton){
+    const row = globalButton.closest("[data-global-intelligence]");
+    const group = globalIngredientGroups().find(item => item.key === row.dataset.globalIntelligence);
+    if(!group || !group.items.length) return;
+    const ok = window.confirm(`Standardize ${group.items.length} ingredient line${group.items.length === 1 ? "" : "s"} across the vault?`);
+    if(!ok) return;
+
+    const status = $("globalIngredientStatus");
+    globalButton.disabled = true;
+    let saved = 0;
+    let failed = 0;
+
+    for(const {recipe, suggestion} of group.items){
+      const updatedIngredients = [...(recipe.ingredients || [])];
+      updatedIngredients[suggestion.index] = suggestion.replacement;
+      status.textContent = `Saving ${saved + failed + 1} of ${group.items.length}…`;
+      try{
+        await postVault({
+          action:"update",
+          id:recipe.id,
+          url:recipe.url,
+          updates:{ingredients:updatedIngredients}
+        });
+        recipe.ingredients = updatedIngredients;
+        saved++;
+      }catch(error){
+        failed++;
+      }
+    }
+
+    status.textContent = failed
+      ? `Finished: ${saved} updated, ${failed} could not be saved.`
+      : `Finished: ${saved} ingredient line${saved === 1 ? "" : "s"} standardized.`;
+    status.className = failed ? "import-status error" : "import-status success";
+    setTimeout(render, 900);
+    return;
+  }
 
   const intelligenceRow = event.target.closest("[data-intelligence-key]");
   if(intelligenceRow){

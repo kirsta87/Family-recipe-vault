@@ -43,6 +43,18 @@
     .health-category-new-row,.health-inline-add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:7px}
     .health-category-new-row[hidden],.health-inline-add[hidden]{display:none}
     .health-category-new-row input,.health-inline-add input{min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:11px;font:inherit}
+
+    .global-intelligence-panel{margin-top:18px}
+    .global-intelligence-note{margin:-4px 0 14px}
+    .global-intelligence-list{display:grid;gap:10px}
+    .global-intelligence-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--paper)}
+    .global-intelligence-row>div{min-width:0}
+    .global-intelligence-row p{margin:4px 0;color:var(--text)}
+    .global-intelligence-row small{color:var(--muted)}
+    .confidence-badge{display:inline-block;margin-bottom:5px;padding:3px 7px;border-radius:999px;background:#e8eee1;font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+    .intelligence-reason{margin-top:6px;text-transform:none!important;letter-spacing:0!important}
+    .compact-clear{display:flex;flex-direction:column;gap:4px;padding:14px}
+    @media(max-width:620px){.global-intelligence-row{align-items:stretch;flex-direction:column}.global-intelligence-row button{width:100%}}
   </style>
 </head>
 <body>
@@ -72,6 +84,8 @@
     <p id="healthStatus" class="import-status" aria-live="polite"></p>
   </section>
 
+  <section id="globalIngredientPanel" class="health-summary panel-wide global-intelligence-panel"></section>
+
   <section class="health-results-section">
     <div class="section-heading">
       <div>
@@ -85,6 +99,6 @@
 </main>
 
 <script src="config.js?v=3"></script>
-<script src="recipe-health.js?v=143"></script>
+<script src="recipe-health.js?v=144"></script>
 </body>
 </html>
