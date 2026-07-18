@@ -452,36 +452,100 @@ function escapeHTML(value){
   })[c]);
 }
 
-function searchScore(recipe, query){
-  if(!query) return {score:0, reason:""};
+function normalizeSearchText(value){
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
-  const needle = query.toLowerCase();
+function searchTokens(query){
+  return [...new Set(
+    normalizeSearchText(query)
+      .split(/\s+/)
+      .map(token => token.trim())
+      .filter(Boolean)
+  )];
+}
+
+function searchScore(recipe, query){
+  const normalizedQuery = normalizeSearchText(query);
+  if(!normalizedQuery) return {score:0, reason:""};
+
+  const tokens = searchTokens(normalizedQuery);
+  if(!tokens.length) return {score:0, reason:""};
+
   const buckets = [
     {weight:100, label:"ingredient match", values:recipe.ingredients || []},
-    {weight:80, label:"title match", values:[recipe.name]},
-    {weight:60, label:"category match", values:[recipe.protein, recipe.type, recipe.cuisine, ...(recipe.tags || []), ...(recipe.collections || [])]},
-    {weight:35, label:"family note match", values:[recipe.notes, recipe.torrin_notes]},
-    {weight:15, label:"instruction match", values:recipe.instructions || []}
-  ];
+    {weight:85, label:"title match", values:[recipe.name]},
+    {weight:65, label:"category match", values:[recipe.protein, recipe.type, recipe.cuisine, ...(recipe.tags || []), ...(recipe.collections || [])]},
+    {weight:40, label:"family note match", values:[recipe.notes, recipe.torrin_notes]},
+    {weight:20, label:"instruction match", values:recipe.instructions || []}
+  ].map(bucket => ({
+    ...bucket,
+    text: normalizeSearchText(bucket.values.filter(Boolean).join(" "))
+  }));
 
-  let bestScore = 0;
-  let bestReason = "";
+  const allSearchableText = buckets.map(bucket => bucket.text).join(" ");
+
+  // AND search: every word must appear somewhere in the recipe.
+  if(!tokens.every(token => allSearchableText.includes(token))){
+    return {score:0, reason:""};
+  }
+
+  let score = 0;
+  let bestBucket = null;
 
   buckets.forEach(bucket => {
-    const combined = bucket.values.filter(Boolean).join(" ").toLowerCase();
-    if(!combined.includes(needle)) return;
+    const matchedTokens = tokens.filter(token => bucket.text.includes(token));
+    if(!matchedTokens.length) return;
 
-    let score = bucket.weight;
-    if(combined === needle) score += 25;
-    else if(combined.startsWith(needle)) score += 10;
+    const coverage = matchedTokens.length / tokens.length;
+    const bucketScore = bucket.weight * coverage;
+    score += bucketScore;
 
-    if(score > bestScore){
-      bestScore = score;
-      bestReason = bucket.label;
+    if(!bestBucket || bucketScore > bestBucket.bucketScore){
+      bestBucket = {...bucket, bucketScore, matchedTokens};
     }
   });
 
-  return {score:bestScore, reason:bestReason};
+  const titleText = normalizeSearchText(recipe.name);
+  const ingredientText = normalizeSearchText((recipe.ingredients || []).join(" "));
+  const categoryText = normalizeSearchText([
+    recipe.protein,
+    recipe.type,
+    recipe.cuisine,
+    ...(recipe.tags || []),
+    ...(recipe.collections || [])
+  ].filter(Boolean).join(" "));
+
+  // Exact phrase bonuses.
+  if(titleText === normalizedQuery) score += 120;
+  else if(titleText.includes(normalizedQuery)) score += 70;
+
+  if(ingredientText.includes(normalizedQuery)) score += 45;
+  if(categoryText.includes(normalizedQuery)) score += 25;
+
+  // Extra relevance when all words appear together within one strong field.
+  if(tokens.every(token => ingredientText.includes(token))) score += 35;
+  if(tokens.every(token => titleText.includes(token))) score += 50;
+  if(tokens.every(token => categoryText.includes(token))) score += 20;
+
+  let reason = bestBucket?.label || "recipe match";
+
+  const matchingBucketLabels = buckets
+    .filter(bucket => tokens.some(token => bucket.text.includes(token)))
+    .sort((a,b) => b.weight - a.weight)
+    .map(bucket => bucket.label);
+
+  if(matchingBucketLabels.length > 1 && !tokens.every(token => bestBucket?.text.includes(token))){
+    reason = "matches across recipe";
+  }
+
+  return {score, reason};
 }
 
 function parseDateValue(value){
