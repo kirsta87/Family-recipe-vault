@@ -55,6 +55,32 @@
     .intelligence-reason{margin-top:6px;text-transform:none!important;letter-spacing:0!important}
     .compact-clear{display:flex;flex-direction:column;gap:4px;padding:14px}
     @media(max-width:620px){.global-intelligence-row{align-items:stretch;flex-direction:column}.global-intelligence-row button{width:100%}}
+
+    .ingredient-health-counts{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+    .ingredient-health-counts span{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--paper);font-size:.84rem}
+    .global-intelligence-group{border:1px solid var(--line);border-radius:14px;background:var(--paper);overflow:hidden}
+    .global-intelligence-group summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;cursor:pointer;list-style:none}
+    .global-intelligence-group summary::-webkit-details-marker{display:none}
+    .global-intelligence-group summary>span:first-child{display:grid;gap:4px}
+    .global-intelligence-group summary small{color:var(--muted)}
+    .review-group-count{font-weight:800;white-space:nowrap}
+    .global-review-list{display:grid;gap:10px;padding:0 14px 14px}
+    .global-review-item{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--background)}
+    .global-review-check{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700}
+    .global-review-title-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+    .ingredient-change-preview{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .ingredient-change-preview>div{padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+    .ingredient-change-preview small{display:block;margin-bottom:4px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+    .ingredient-change-preview p{margin:0}
+    .global-review-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--line)}
+    .open-recipe-link{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+    @media(max-width:620px){
+      .global-intelligence-group summary,.global-review-title-row{align-items:stretch;flex-direction:column}
+      .ingredient-change-preview{grid-template-columns:1fr}
+      .global-review-actions>*{flex:1}
+      .open-recipe-link{width:100%}
+    }
+
   </style>
 </head>
 <body>
@@ -99,6 +125,6 @@
 </main>
 
 <script src="config.js?v=3"></script>
-<script src="recipe-health.js?v=144"></script>
+<script src="recipe-health.js?v=145"></script>
 </body>
 </html>

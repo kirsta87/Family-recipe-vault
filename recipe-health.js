@@ -5,10 +5,10 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV144";
-const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV144";
-const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV144";
-const CUSTOM_CATEGORY_KEY = "recipeVaultCustomCategoryValuesV144";
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV145";
+const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV145";
+const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV145";
+const CUSTOM_CATEGORY_KEY = "recipeVaultCustomCategoryValuesV145";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
@@ -124,7 +124,8 @@ const INGREDIENT_STANDARDIZATION_RULES = [
   {key:"evoo", aliases:["evoo"], replacement:"olive oil", reason:"Common abbreviation", confidence:"High"},
   {key:"extra-virgin-olive-oil", aliases:["extra virgin olive oil","extra-virgin olive oil"], replacement:"olive oil", reason:"Standard pantry name", confidence:"High"},
   {key:"confectioners-sugar", aliases:["confectioners sugar","confectioner's sugar","confectioners' sugar","icing sugar"], replacement:"powdered sugar", reason:"Common synonym", confidence:"High"},
-  {key:"veggie-stock", aliases:["veggie stock","veggie broth"], replacement:"vegetable broth", reason:"Common abbreviation", confidence:"High"},
+  {key:"veggie-stock", aliases:["veggie stock"], replacement:"vegetable stock", reason:"Expands “veggie”; keeps stock as stock", confidence:"High"},
+  {key:"veggie-broth", aliases:["veggie broth"], replacement:"vegetable broth", reason:"Expands “veggie”; keeps broth as broth", confidence:"High"},
   {key:"all-purpose-flour", aliases:["all purpose flour","a.p. flour","ap flour"], replacement:"all-purpose flour", reason:"Common spelling or abbreviation", confidence:"High"},
   {key:"garlic-clove-wording", aliases:["clove of garlic"], replacement:"garlic clove", reason:"Equivalent wording", confidence:"High"},
   {key:"garlic-cloves-wording", aliases:["cloves of garlic"], replacement:"garlic cloves", reason:"Equivalent wording", confidence:"High"}
@@ -630,9 +631,12 @@ function globalIngredientGroups(){
     if(!groups.has(key)){
       groups.set(key, {
         key,
-        replacement:item.suggestion.replacement,
         reason:item.suggestion.reason,
         confidence:item.suggestion.confidence,
+        label:item.suggestion.ruleKeys.map(ruleKey => {
+          const rule = INGREDIENT_STANDARDIZATION_RULES.find(candidate => candidate.key === ruleKey);
+          return rule?.replacement || ruleKey;
+        }).join(" + "),
         items:[]
       });
     }
@@ -646,37 +650,84 @@ function globalIngredientMarkup(){
   if(!groups.length){
     return '<div class="health-clear-state compact-clear"><strong>No meaningful ingredient aliases found.</strong><span>Capitalization-only differences are ignored.</span></div>';
   }
+
   return `
     <div class="global-intelligence-list">
-      ${groups.map(group => {
-        const originals = unique(group.items.map(item => item.suggestion.current));
-        return `
-          <div class="global-intelligence-row" data-global-intelligence="${escapeHTML(group.key)}">
-            <div>
-              <div class="confidence-badge">${escapeHTML(group.confidence)} confidence</div>
-              <strong>${escapeHTML(group.replacement)}</strong>
-              <p>${escapeHTML(originals.slice(0,4).join(" • "))}${originals.length > 4 ? ` • +${originals.length-4} more` : ""}</p>
+      ${groups.map(group => `
+        <details class="global-intelligence-group" data-global-intelligence="${escapeHTML(group.key)}">
+          <summary>
+            <span>
+              <span class="confidence-badge">${escapeHTML(group.confidence)} confidence</span>
+              <strong>${escapeHTML(group.label)}</strong>
               <small>${group.items.length} recipe${group.items.length === 1 ? "" : "s"} · ${escapeHTML(group.reason || "Safe alias")}</small>
-            </div>
-            <button type="button" class="primary compact" data-standardize-all>Standardize all</button>
-          </div>`;
-      }).join("")}
+            </span>
+            <span class="review-group-count">Review ${group.items.length}</span>
+          </summary>
+
+          <div class="global-review-list">
+            ${group.items.map(({recipe, suggestion}, itemIndex) => `
+              <article class="global-review-item">
+                <label class="global-review-check">
+                  <input type="checkbox" data-global-review-checkbox data-recipe-id="${escapeHTML(recipe.id)}" data-suggestion-key="${escapeHTML(suggestion.key)}" checked>
+                  <span>Apply this change</span>
+                </label>
+
+                <div class="global-review-title-row">
+                  <strong>${escapeHTML(recipe.title || "Untitled recipe")}</strong>
+                  <a class="secondary compact open-recipe-link" href="${escapeHTML(recipePageUrl(recipe))}" target="_blank" rel="noopener">Open Recipe ↗</a>
+                </div>
+
+                <div class="ingredient-change-preview">
+                  <div>
+                    <small>Current</small>
+                    <p>${escapeHTML(suggestion.current)}</p>
+                  </div>
+                  <div>
+                    <small>Suggested</small>
+                    <p>${escapeHTML(suggestion.replacement)}</p>
+                  </div>
+                </div>
+              </article>
+            `).join("")}
+          </div>
+
+          <div class="global-review-actions">
+            <button type="button" class="secondary compact" data-select-review="all">Select all</button>
+            <button type="button" class="secondary compact" data-select-review="none">Select none</button>
+            <button type="button" class="primary compact" data-apply-selected>Apply selected</button>
+          </div>
+        </details>
+      `).join("")}
     </div>`;
 }
 
 function renderGlobalIngredientPanel(){
   const panel = $("globalIngredientPanel");
   if(!panel) return;
-  const count = allIngredientIntelligenceSuggestions().length;
+  const suggestions = allIngredientIntelligenceSuggestions();
+  const safeCount = suggestions.filter(item => item.suggestion.confidence === "High").length;
+  const reviewCount = suggestions.length - safeCount;
+
   panel.innerHTML = `
     <div class="section-heading">
       <div>
-        <p class="eyebrow">INGREDIENT LIBRARIAN</p>
-        <h2>Safe global cleanup</h2>
+        <p class="eyebrow">INGREDIENT CLEANUP</p>
+        <h2>Review changes by recipe</h2>
       </div>
-      <strong>${count} meaningful match${count === 1 ? "" : "es"}</strong>
+      <strong>${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}</strong>
     </div>
-    <p class="muted global-intelligence-note">Capitalization-only differences are ignored. Preparation words such as grated, minced, shredded, diced, fresh, and powdered are preserved.</p>
+
+    <div class="ingredient-health-counts">
+      <span><strong>${safeCount}</strong> safe</span>
+      <span><strong>${reviewCount}</strong> review</span>
+      <span><strong>0</strong> risky</span>
+    </div>
+
+    <p class="muted global-intelligence-note">
+      Every recipe keeps its own quantity and unit. Stock stays stock; broth stays broth.
+      Open any recipe before approving it, then apply only the checked changes.
+    </p>
+
     ${globalIngredientMarkup()}
     <p class="import-status" id="globalIngredientStatus" aria-live="polite"></p>`;
 }
@@ -772,6 +823,7 @@ function intelligenceMarkup(recipe){
               <small class="intelligence-reason">${escapeHTML(item.reason || "Safe alias")}</small>
             </div>
             <div class="health-suggestion-actions">
+              <a class="secondary compact open-recipe-link" href="${escapeHTML(recipePageUrl(recipe))}" target="_blank" rel="noopener">Open Recipe ↗</a>
               <button type="button" class="primary compact" data-apply-intelligence>Apply</button>
               <button type="button" class="secondary compact" data-dismiss-intelligence>Dismiss</button>
             </div>
@@ -1010,23 +1062,47 @@ document.addEventListener("click", async event => {
   }
 
 
-  const globalButton = event.target.closest("[data-standardize-all]");
-  if(globalButton){
-    const row = globalButton.closest("[data-global-intelligence]");
-    const group = globalIngredientGroups().find(item => item.key === row.dataset.globalIntelligence);
-    if(!group || !group.items.length) return;
-    const ok = window.confirm(`Standardize ${group.items.length} ingredient line${group.items.length === 1 ? "" : "s"} across the vault?`);
-    if(!ok) return;
+  const selectionButton = event.target.closest("[data-select-review]");
+  if(selectionButton){
+    const groupElement = selectionButton.closest("[data-global-intelligence]");
+    const shouldCheck = selectionButton.dataset.selectReview === "all";
+    groupElement.querySelectorAll("[data-global-review-checkbox]").forEach(box => box.checked = shouldCheck);
+    return;
+  }
+
+  const applySelectedButton = event.target.closest("[data-apply-selected]");
+  if(applySelectedButton){
+    const groupElement = applySelectedButton.closest("[data-global-intelligence]");
+    const group = globalIngredientGroups().find(item => item.key === groupElement.dataset.globalIntelligence);
+    if(!group) return;
+
+    const selectedKeys = new Set(
+      [...groupElement.querySelectorAll("[data-global-review-checkbox]:checked")]
+        .map(box => `${box.dataset.recipeId}::${box.dataset.suggestionKey}`)
+    );
+    const selected = group.items.filter(({recipe, suggestion}) =>
+      selectedKeys.has(`${recipe.id}::${suggestion.key}`)
+    );
 
     const status = $("globalIngredientStatus");
-    globalButton.disabled = true;
+    if(!selected.length){
+      status.textContent = "Select at least one recipe first.";
+      status.className = "import-status error";
+      return;
+    }
+
+    const ok = window.confirm(`Apply ${selected.length} reviewed ingredient change${selected.length === 1 ? "" : "s"}? Each recipe keeps its own quantity and unit.`);
+    if(!ok) return;
+
+    applySelectedButton.disabled = true;
     let saved = 0;
     let failed = 0;
 
-    for(const {recipe, suggestion} of group.items){
+    for(const {recipe, suggestion} of selected){
       const updatedIngredients = [...(recipe.ingredients || [])];
       updatedIngredients[suggestion.index] = suggestion.replacement;
-      status.textContent = `Saving ${saved + failed + 1} of ${group.items.length}…`;
+      status.textContent = `Saving ${saved + failed + 1} of ${selected.length}…`;
+
       try{
         await postVault({
           action:"update",
@@ -1043,9 +1119,9 @@ document.addEventListener("click", async event => {
 
     status.textContent = failed
       ? `Finished: ${saved} updated, ${failed} could not be saved.`
-      : `Finished: ${saved} ingredient line${saved === 1 ? "" : "s"} standardized.`;
+      : `Finished: ${saved} reviewed change${saved === 1 ? "" : "s"} saved.`;
     status.className = failed ? "import-status error" : "import-status success";
-    setTimeout(render, 900);
+    setTimeout(render, 1000);
     return;
   }
 
