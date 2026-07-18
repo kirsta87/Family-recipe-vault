@@ -5,9 +5,9 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV142";
-const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV142";
-const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV142";
+const COMPLETENESS_DISMISS_KEY = "recipeVaultCompletenessDismissalsV143";
+const INTELLIGENCE_DISMISS_KEY = "recipeVaultIngredientIntelligenceDismissalsV143";
+const CATEGORY_DISMISS_KEY = "recipeVaultCategoryDismissalsV143";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
@@ -121,19 +121,12 @@ const EXPECTED_COMPONENT_RULES = [
 
 const INGREDIENT_STANDARDIZATION_RULES = [
   {key:"evoo", aliases:["evoo"], replacement:"olive oil"},
-  {key:"extra-virgin-olive-oil", aliases:["extra virgin olive oil","extra-virgin olive oil"], replacement:"olive oil"},
-  {key:"chicken-stock", aliases:["chicken stock"], replacement:"chicken broth"},
-  {key:"beef-stock", aliases:["beef stock"], replacement:"beef broth"},
-  {key:"vegetable-stock", aliases:["vegetable stock","veggie stock"], replacement:"vegetable broth"},
-  {key:"yellow-onion", aliases:["yellow onion","yellow onions"], replacement:"onion"},
-  {key:"white-onion", aliases:["white onion","white onions"], replacement:"onion"},
-  {key:"parmesan-cheese", aliases:["parmesan cheese"], replacement:"Parmesan"},
-  {key:"mozzarella-cheese", aliases:["mozzarella cheese"], replacement:"mozzarella"},
-  {key:"cheddar-cheese", aliases:["cheddar cheese"], replacement:"cheddar"},
-  {key:"cloves-of-garlic", aliases:["clove of garlic","cloves of garlic"], replacement:"garlic cloves"},
-  {key:"minced-garlic", aliases:["minced garlic"], replacement:"garlic"},
-  {key:"green-onions", aliases:["green onion","green onions"], replacement:"scallions"},
-  {key:"confectioners-sugar", aliases:["confectioners sugar","confectioner's sugar","confectioners' sugar"], replacement:"powdered sugar"}
+  {key:"confectioners-sugar", aliases:["confectioners sugar","confectioner's sugar","confectioners' sugar"], replacement:"powdered sugar"},
+  {key:"veggie-stock", aliases:["veggie stock"], replacement:"vegetable stock"},
+  {key:"green-onion-singular", aliases:["green onion"], replacement:"green onion"},
+  {key:"garlic-clove-wording", aliases:["clove of garlic"], replacement:"garlic clove"},
+  {key:"garlic-cloves-wording", aliases:["cloves of garlic"], replacement:"garlic cloves"},
+  {key:"parmesan-cheese", aliases:["parmesan cheese"], replacement:"Parmesan cheese"}
 ];
 
 const ANIMAL_PROTEIN_PATTERN = /\b(chicken|turkey|pork|bacon|ham|sausage|prosciutto|beef|steak|hamburger|ground beef|roast|shrimp|salmon|fish|tuna|cod|tilapia|crab|lobster|lamb)\b/i;
@@ -179,6 +172,41 @@ const CATEGORY_RULES = {
     {value:"Soups & Stews", test:text => /\b(soup|stew|chowder|bisque|chili)\b/i.test(text)}
   ]
 };
+
+
+const DEFAULT_CATEGORY_VALUES = {
+  protein:["Chicken","Beef","Pork","Turkey","Seafood","Vegetarian","Other"],
+  type:["Breakfast","Burgers","Bowls","Casserole","Dessert","Flatbread","Pasta","Pizza","Salad","Sandwiches","Soup","Tacos","Other"],
+  cuisine:["American","Asian-inspired","Italian-inspired","Mediterranean-inspired","Mexican-inspired","Other"]
+};
+
+function categoryOptions(field, currentValue="", suggestedValue=""){
+  return unique([
+    ...(DEFAULT_CATEGORY_VALUES[field] || []),
+    ...recipes.map(recipe => String(recipe[field] || "").trim()),
+    currentValue,
+    suggestedValue
+  ]);
+}
+
+function categorySelectOptions(field, currentValue="", suggestedValue=""){
+  const values = categoryOptions(field, currentValue, suggestedValue);
+  return [
+    ...values.map(value => `<option value="${escapeHTML(value)}"${sameCategoryValue(value, suggestedValue) ? " selected" : ""}>${escapeHTML(value)}</option>`),
+    '<option value="__new__">Add new…</option>'
+  ].join("");
+}
+
+function selectedHealthCategory(form, field){
+  const select = form.querySelector(`[data-health-category-select="${field}"]`);
+  const input = form.querySelector(`[data-health-category-new="${field}"]`);
+  if(!select) return String(form.elements[field]?.value || "").trim();
+  return select.value === "__new__" ? String(input?.value || "").trim() : select.value.trim();
+}
+
+function recipePageUrl(recipe){
+  return `index.html?recipe=${encodeURIComponent(String(recipe.id || ""))}`;
+}
 
 const ISSUE_DEFS = [
   {key:"completeness", label:"Possible missing ingredients", test:r => completenessSuggestions(r).length > 0},
@@ -648,11 +676,24 @@ function categorizationMarkup(recipe){
             <div class="health-category-copy">
               <small>${escapeHTML(item.label)}</small>
               ${item.current ? `<p class="health-current-value"><span>Current</span>${escapeHTML(item.current)}</p>` : ""}
-              <label class="health-suggested-value">
-                <span>${item.current ? "Suggested" : "Suggestion"}</span>
-                <input type="text" value="${escapeHTML(item.value)}" data-category-value-input
-                  ${item.field === "collections" ? `list="health-collection-options-${escapeHTML(String(recipe.id || "recipe"))}"` : ""}>
-              </label>
+              <div class="health-category-choice">
+                <label>
+                  <span>${item.current ? "Suggested" : "Suggestion"}</span>
+                  ${item.field === "collections"
+                    ? `<select data-category-value-select>
+                        ${allCollections().map(name => `<option value="${escapeHTML(name)}"${sameCategoryValue(name, item.value) ? " selected" : ""}>${escapeHTML(name)}</option>`).join("")}
+                        <option value="__new__">Add new…</option>
+                      </select>`
+                    : `<select data-category-value-select>
+                        ${categorySelectOptions(item.field, item.current, item.value)}
+                      </select>`
+                  }
+                </label>
+                <div class="health-category-new-row" data-category-new-row hidden>
+                  <input type="text" placeholder="New ${escapeHTML(item.label.toLowerCase())}" data-category-new-input>
+                  <button type="button" class="secondary compact" data-add-category-option>Add</button>
+                </div>
+              </div>
             </div>
             <div class="health-suggestion-actions">
               <button type="button" class="primary compact" data-apply-category>Apply</button>
@@ -661,9 +702,6 @@ function categorizationMarkup(recipe){
           </div>
         `).join("")}
       </div>
-      <datalist id="health-collection-options-${escapeHTML(String(recipe.id || "recipe"))}">
-        ${allCollections().map(name => `<option value="${escapeHTML(name)}"></option>`).join("")}
-      </datalist>
     </section>
   `;
 }
@@ -674,8 +712,9 @@ function healthCard(recipe){
     <article class="health-card" data-health-id="${escapeHTML(recipe.id)}">
       <div class="health-card-head">
         ${recipe.image ? `<img src="${escapeHTML(recipe.image)}" alt="">` : '<div class="health-image-placeholder">No image</div>'}
-        <div>
+        <div class="health-card-title-copy">
           <h3>${escapeHTML(recipe.name || "Untitled recipe")}</h3>
+          <a class="health-open-recipe" href="${escapeHTML(recipePageUrl(recipe))}" target="_blank" rel="noopener">Open recipe ↗</a>
           <div class="health-badges">${issues.map(key => `<span>${escapeHTML(ISSUE_DEFS.find(x => x.key === key).label)}</span>`).join("")}</div>
         </div>
       </div>
@@ -684,9 +723,33 @@ function healthCard(recipe){
         ${intelligenceMarkup(recipe)}
         ${categorizationMarkup(recipe)}
         <div class="health-form-grid">
-          <label class="field">Protein<input name="protein" value="${escapeHTML(recipe.protein || "")}" placeholder="Chicken"></label>
-          <label class="field">Meal type<input name="type" value="${escapeHTML(recipe.type || "")}" placeholder="Pasta"></label>
-          <label class="field">Cuisine<input name="cuisine" value="${escapeHTML(recipe.cuisine || "")}" placeholder="Italian-inspired"></label>
+          <label class="field">Protein
+            <select name="protein" data-health-category-select="protein">
+              ${categorySelectOptions("protein", recipe.protein || "", recipe.protein || "")}
+            </select>
+            <div class="health-inline-add" hidden>
+              <input type="text" data-health-category-new="protein" placeholder="New protein">
+              <button type="button" class="secondary compact" data-health-add-category="protein">Add</button>
+            </div>
+          </label>
+          <label class="field">Meal type
+            <select name="type" data-health-category-select="type">
+              ${categorySelectOptions("type", recipe.type || "", recipe.type || "")}
+            </select>
+            <div class="health-inline-add" hidden>
+              <input type="text" data-health-category-new="type" placeholder="New meal type">
+              <button type="button" class="secondary compact" data-health-add-category="type">Add</button>
+            </div>
+          </label>
+          <label class="field">Cuisine
+            <select name="cuisine" data-health-category-select="cuisine">
+              ${categorySelectOptions("cuisine", recipe.cuisine || "", recipe.cuisine || "")}
+            </select>
+            <div class="health-inline-add" hidden>
+              <input type="text" data-health-category-new="cuisine" placeholder="New cuisine">
+              <button type="button" class="secondary compact" data-health-add-category="cuisine">Add</button>
+            </div>
+          </label>
           <label class="field">Total minutes<input name="total_time" type="number" min="0" value="${recipe.total_time || ""}"></label>
           <label class="field health-image-field">Image URL<input name="image" type="url" value="${escapeHTML(recipe.image || "")}" placeholder="https://..."></label>
         </div>
@@ -750,9 +813,9 @@ function collectUpdates(form, recipe){
   return {
     collections,
     updates:{
-      protein:form.elements.protein.value.trim(),
-      type:form.elements.type.value.trim(),
-      cuisine:form.elements.cuisine ? form.elements.cuisine.value.trim() : String(recipe?.cuisine || ""),
+      protein:selectedHealthCategory(form, "protein"),
+      type:selectedHealthCategory(form, "type"),
+      cuisine:selectedHealthCategory(form, "cuisine") || String(recipe?.cuisine || ""),
       total_time:form.elements.total_time.value.trim(),
       image:form.elements.image.value.trim(),
       collections:collections.join("|"),
@@ -791,6 +854,37 @@ async function saveHealthForm(form, recipe, successMessage="Saved."){
 document.addEventListener("click", async event => {
   const issueButton = event.target.closest("[data-health-issue]");
   if(issueButton){ activeIssue = issueButton.dataset.healthIssue; render(); return; }
+
+  const addSuggestionOption = event.target.closest("[data-add-category-option]");
+  if(addSuggestionOption){
+    const row = addSuggestionOption.closest("[data-category-key]");
+    const select = row.querySelector("[data-category-value-select]");
+    const input = row.querySelector("[data-category-new-input]");
+    const value = String(input?.value || "").trim();
+    if(!value) return;
+    const option = new Option(value, value, true, true);
+    select.insertBefore(option, select.querySelector('option[value="__new__"]'));
+    select.value = value;
+    input.value = "";
+    row.querySelector("[data-category-new-row]").hidden = true;
+    return;
+  }
+
+  const addFormCategory = event.target.closest("[data-health-add-category]");
+  if(addFormCategory){
+    const form = addFormCategory.closest(".health-edit-form");
+    const field = addFormCategory.dataset.healthAddCategory;
+    const select = form.querySelector(`[data-health-category-select="${field}"]`);
+    const input = form.querySelector(`[data-health-category-new="${field}"]`);
+    const value = String(input?.value || "").trim();
+    if(!value) return;
+    const option = new Option(value, value, true, true);
+    select.insertBefore(option, select.querySelector('option[value="__new__"]'));
+    select.value = value;
+    input.value = "";
+    input.closest(".health-inline-add").hidden = true;
+    return;
+  }
 
 
   const intelligenceRow = event.target.closest("[data-intelligence-key]");
@@ -838,7 +932,9 @@ document.addEventListener("click", async event => {
 
     const apply = event.target.closest("[data-apply-category]");
     if(apply){
-      const value = categoryRow.querySelector("[data-category-value-input]")?.value.trim() || "";
+      const select = categoryRow.querySelector("[data-category-value-select]");
+      const newInput = categoryRow.querySelector("[data-category-new-input]");
+      const value = select?.value === "__new__" ? String(newInput?.value || "").trim() : String(select?.value || "").trim();
       if(!value) return;
       if(field === "collections"){
         const picker = form.querySelector("[data-health-collection-picker]");
@@ -847,8 +943,15 @@ document.addEventListener("click", async event => {
         if(![...chips.querySelectorAll("[data-health-remove-collection]")].some(chip => chip.dataset.healthRemoveCollection === value)){
           chips.insertAdjacentHTML("beforeend", `<button type="button" class="collection-chip" data-health-remove-collection="${escapeHTML(value)}">${escapeHTML(value)} ×</button>`);
         }
-      }else if(form.elements[field]){
-        form.elements[field].value = value;
+      }else{
+        const targetSelect = form.querySelector(`[data-health-category-select="${field}"]`);
+        if(targetSelect){
+          if(![...targetSelect.options].some(option => sameCategoryValue(option.value, value))){
+            const option = new Option(value, value);
+            targetSelect.insertBefore(option, targetSelect.querySelector('option[value="__new__"]'));
+          }
+          targetSelect.value = [...targetSelect.options].find(option => sameCategoryValue(option.value, value))?.value || value;
+        }
       }
       categoryRow.remove();
       const status = form.querySelector("[data-health-save-status]");
@@ -925,6 +1028,23 @@ document.addEventListener("click", async event => {
 });
 
 document.addEventListener("change", event => {
+  const suggestionSelect = event.target.closest("[data-category-value-select]");
+  if(suggestionSelect){
+    const row = suggestionSelect.closest("[data-category-key]");
+    const addRow = row.querySelector("[data-category-new-row]");
+    addRow.hidden = suggestionSelect.value !== "__new__";
+    if(!addRow.hidden) addRow.querySelector("input")?.focus();
+    return;
+  }
+
+  const healthCategorySelect = event.target.closest("[data-health-category-select]");
+  if(healthCategorySelect){
+    const addRow = healthCategorySelect.closest(".field").querySelector(".health-inline-add");
+    addRow.hidden = healthCategorySelect.value !== "__new__";
+    if(!addRow.hidden) addRow.querySelector("input")?.focus();
+    return;
+  }
+
   const select = event.target.closest("[data-health-collection-select]");
   if(!select) return;
   const picker = select.closest("[data-health-collection-picker]");

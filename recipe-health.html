@@ -34,6 +34,15 @@
     .health-current-value span,.health-suggested-value span{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
     .health-suggested-value{display:grid;gap:4px}
     .health-suggested-value input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit;font-weight:700}
+
+    .health-card-title-copy{min-width:0;flex:1}
+    .health-open-recipe{display:inline-block;margin:4px 0 8px;font-weight:800;text-decoration:none}
+    .health-category-choice{display:grid;gap:7px}
+    .health-category-choice label{display:grid;gap:4px}
+    .health-category-choice select,.health-form-grid select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit}
+    .health-category-new-row,.health-inline-add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:7px}
+    .health-category-new-row[hidden],.health-inline-add[hidden]{display:none}
+    .health-category-new-row input,.health-inline-add input{min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:11px;font:inherit}
   </style>
 </head>
 <body>
@@ -76,6 +85,6 @@
 </main>
 
 <script src="config.js?v=3"></script>
-<script src="recipe-health.js?v=142"></script>
+<script src="recipe-health.js?v=143"></script>
 </body>
 </html>
