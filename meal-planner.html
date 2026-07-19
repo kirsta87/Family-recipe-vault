@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=128">
+  <link rel="stylesheet" href="styles.css?v=130">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
   <div><p class="eyebrow">THE GLAISTER FAMILY</p><h1>Meal Planner</h1><p>Find a recipe once, then assign it to any day.</p></div>
   <div class="planner-page-top-actions">
     <button id="openShoppingList" class="primary shopping-list-header-button" type="button">Generate shopping list</button>
+    <a class="secondary linkbtn" href="pantry.html">Pantry</a>
     <a class="secondary linkbtn" href="index.html">Back to Recipe Vault</a>
   </div>
 </header>
@@ -23,6 +24,12 @@
     <div class="planner-week-actions"><button id="thisWeek" class="secondary" type="button">This week</button><button id="nextWeek" class="secondary" type="button">Next week</button></div>
   </section>
   <section id="plannerGrid" class="planner-week-grid" aria-label="Weekly meal plan"></section>
+
+  <section id="pantryPlannerPanel" class="panel pantry-planner-panel">
+    <div class="section-heading"><div><p class="eyebrow">PANTRY + THIS WEEK</p><h2>Use what you have</h2><p class="muted">Pantry items guide suggestions, but they never silently disappear from your shopping list.</p></div><a class="secondary linkbtn" href="pantry.html">Update pantry</a></div>
+    <div id="pantryPlannerReminder" class="pantry-planner-reminder" hidden></div>
+    <div id="pantryPlannerInsights" class="pantry-planner-insights"></div>
+  </section>
 
   <section class="planner-pool panel">
     <div class="section-heading">
@@ -82,13 +89,13 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=3"></script><script src="meal-planner.js?v=129"></script>
+<script src="config.js?v=3"></script><script src="meal-planner.js?v=130"></script>
 
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=127", {updateViaCache:"none"});
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=130", {updateViaCache:"none"});
       await registration.update();
     } catch (error) {
       console.warn("Service worker update failed:", error);

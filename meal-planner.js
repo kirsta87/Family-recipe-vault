@@ -4,6 +4,8 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const WEEKLY_PLANS_KEY = "recipeVaultWeeklyPlansV104";
 const PLANNER_RECIPE_CACHE_KEY = "recipeVaultPlannerRecipeCacheV118";
+const PANTRY_KEY = "recipeVaultPantryV130";
+const PANTRY_CHECKIN_KEY = "recipeVaultPantryCheckinV130";
 
 function readPlannerRecipeCache(){
   try{
@@ -149,9 +151,13 @@ function normalizePlanShape(plan, key){
   cleanPlan.pool = (Array.isArray(cleanPlan.pool) ? cleanPlan.pool : [])
     .map(value => normalizePlanReference(value, cleanPlan))
     .filter(Boolean);
-  cleanPlan.revision = Math.max(0, Number(cleanPlan.revision) || 0);
-  cleanPlan.baseRevision = Math.max(0, Number(cleanPlan.baseRevision) || cleanPlan.revision);
   return cleanPlan;
+}
+function planHasContent(plan){
+  return Boolean(
+    Object.values(plan?.days || {}).some(items => (Array.isArray(items) ? items : [items]).filter(Boolean).length) ||
+    (plan?.pool || []).length
+  );
 }
 function countPlannedMeals(allPlans){
   return Object.values(allPlans || {}).reduce((total, plan) => total + Object.values(plan?.days || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : (items ? 1 : 0)), 0), 0);
@@ -167,6 +173,10 @@ function readPlans(){
 }
 
 function savePlans(){ localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans)); }
+function planTimestamp(plan){
+  const value = Date.parse(plan?.updatedAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
 function setPlannerSyncStatus(state, message, detail){
   const status = $("weekStatus");
   if(!status) return;
@@ -234,26 +244,36 @@ async function loadSharedPlans(force = false){
   const remote = Object.fromEntries(Object.entries(rawRemote).map(([key, plan]) => {
     const normalized = normalizePlanShape(plan, key);
     normalized.pendingSync = false;
-    normalized.baseRevision = normalized.revision;
     return [key, normalized];
   }));
+  const local = Object.fromEntries(Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)]));
+  const merged = {...remote};
+  const plansToUpload = [];
 
-  const local = Object.fromEntries(
-    Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)])
-  );
-
-  plans = {...remote};
-
-  const pendingUploads = [];
   Object.entries(local).forEach(([key, localPlan]) => {
-    if(!localPlan.pendingSync) return;
-    plans[key] = localPlan;
-    pendingUploads.push([key, localPlan, localPlan.updatedAt || new Date().toISOString()]);
+    const remotePlan = remote[key];
+    const localTime = planTimestamp(localPlan);
+    const remoteTime = planTimestamp(remotePlan);
+
+    // A browser change always wins until the server confirms that exact version.
+    if(localPlan.pendingSync || localTime > remoteTime){
+      merged[key] = localPlan;
+      plansToUpload.push([key, localPlan]);
+      return;
+    }
+
+    if(!remotePlan && planHasContent(localPlan)){
+      merged[key] = localPlan;
+      plansToUpload.push([key, localPlan]);
+    }
   });
 
+  plans = merged;
   savePlans();
 
-  for(const [key, plan, versionBeingSaved] of pendingUploads){
+  for(const [key, plan] of plansToUpload){
+    const versionBeingSaved = plan.updatedAt || new Date().toISOString();
+    plan.updatedAt = versionBeingSaved;
     await queueSharedPlanSave(key, plan, versionBeingSaved);
   }
 
@@ -267,71 +287,16 @@ async function loadSharedPlans(force = false){
   return true;
 }
 
-function renderPlannerAfterSync(key){
-  if(key !== weekKey(activeWeek)) return;
-  renderPlanner();
-  renderResults();
-}
-
 function queueSharedPlanSave(key, plan, versionBeingSaved){
-  const queuedPlan = JSON.parse(JSON.stringify(normalizePlanShape(plan, key)));
-
-  sharedSaveQueue = sharedSaveQueue.catch(() => undefined).then(async () => {
-    const currentBeforeSave = plans[key];
-    const latestKnownRevision = Math.max(
-      0,
-      Number(currentBeforeSave?.revision) || 0,
-      Number(queuedPlan.revision) || 0
-    );
-
-    const sharedPlan = {
-      ...queuedPlan,
-      revision:latestKnownRevision,
-      baseRevision:latestKnownRevision,
-      pendingSync:false
-    };
-
-    const result = await plannerPost({
-      action:"saveMealPlan",
-      weekKey:key,
-      plan:sharedPlan,
-      baseRevision:sharedPlan.baseRevision
-    });
-
-    if(result.conflict){
-      const serverPlan = normalizePlanShape(result.currentPlan || {}, key);
-      serverPlan.pendingSync = false;
-      serverPlan.baseRevision = serverPlan.revision;
-      plans[key] = serverPlan;
-      savePlans();
-      renderPlannerAfterSync(key);
-      throw new Error("This meal plan changed on another device. The newest shared version was loaded.");
-    }
-
-    const returnedPlan = normalizePlanShape(result.plan || sharedPlan, key);
-    const returnedRevision = Math.max(
-      0,
-      Number(returnedPlan.revision) || 0,
-      Number(result.revision) || 0,
-      latestKnownRevision
-    );
-    returnedPlan.revision = returnedRevision;
-    returnedPlan.baseRevision = returnedRevision;
-    returnedPlan.pendingSync = false;
-
+  sharedSaveQueue = sharedSaveQueue.then(async () => {
+    const sharedPlan = {...plan, pendingSync:false};
+    await plannerPost({action:"saveMealPlan", weekKey:key, plan:sharedPlan});
     const current = plans[key];
     if(current && current.updatedAt === versionBeingSaved){
-      plans[key] = returnedPlan;
-    }else if(current){
-      current.revision = returnedRevision;
-      current.baseRevision = returnedRevision;
+      current.pendingSync = false;
+      savePlans();
     }
-
-    savePlans();
-    renderPlannerAfterSync(key);
-    return result;
   });
-
   return sharedSaveQueue;
 }
 
@@ -339,10 +304,8 @@ async function saveSharedWeek(date = activeWeek){
   const key = weekKey(date);
   const plan = normalizePlanShape(planFor(date), key);
   ensurePlanSnapshots(plan);
-
   const versionBeingSaved = new Date().toISOString();
   plan.updatedAt = versionBeingSaved;
-  plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.pendingSync = true;
   plans[key] = plan;
   savePlans();
@@ -352,22 +315,13 @@ async function saveSharedWeek(date = activeWeek){
     $("weekStatus").dataset.state = "connected";
     $("weekStatus").textContent = "Saved";
     $("weekStatus").title = "Saved to the shared meal planner.";
-    setTimeout(() => {
-      if($("weekStatus")?.textContent === "Saved") $("weekStatus").textContent = "";
-    }, 1800);
+    setTimeout(() => { if($("weekStatus")?.textContent === "Saved") $("weekStatus").textContent = ""; }, 1800);
     return true;
   }catch(error){
-    const current = plans[key];
-    if(current?.pendingSync){
-      $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
-    }else{
-      $("weekStatus").textContent = error.message || "The newest shared planner was loaded.";
-    }
-    $("weekStatus").title = error.message || "";
+    $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
     return false;
   }
 }
-
 function mondayOf(date){
   const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
   const day = copy.getDay();
@@ -495,6 +449,7 @@ function renderPlanner(){
   }));
   renderPool();
   renderHistory();
+  renderPantryPlannerInsights();
 }
 function renderPool(){
   const plan = planFor();
@@ -918,7 +873,7 @@ function renderShoppingOutput(selectedRecipes){
   const categoryOptions = SHOPPING_CATEGORIES.map(category => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`).join("");
   $("shoppingListOutput").innerHTML = `
     <div class="shopping-list-summary"><strong>${latestShoppingItems.length} ingredient${latestShoppingItems.length === 1 ? "" : "s"}</strong><span>From ${selectedRecipes.length} recipe${selectedRecipes.length === 1 ? "" : "s"}</span></div>
-    ${activeGroups.map(group => `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}"><h3>${escapeHTML(group)}</h3>${latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display)).map(item => `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox"><span>${escapeHTML(item.display)}</span></label><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`).join("")}</section>`).join("")}
+    ${activeGroups.map(group => `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}"><h3>${escapeHTML(group)}</h3>${latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display)).map(item => `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox"><span>${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`).join("")}</section>`).join("")}
     <section class="shopping-list-recipes"><h3>Generated from</h3><p>${selectedRecipes.map(recipe => escapeHTML(recipe.name || "Untitled recipe")).join(" • ")}</p></section>`;
 
   document.querySelectorAll("[data-shopping-item-key]").forEach(select => {
@@ -976,6 +931,80 @@ function buildShoppingList(){
   $("printShoppingList").hidden = false;
   $("shoppingListStatus").textContent = "Matching ingredients were combined. Move anything once and the list will remember next time.";
   $("shoppingListStatus").className = "import-status success";
+}
+
+
+function readPantryItems(){
+  try{
+    const items = JSON.parse(localStorage.getItem(PANTRY_KEY) || "[]");
+    return Array.isArray(items) ? items : [];
+  }catch(error){
+    return [];
+  }
+}
+function pantryKey(value){
+  return String(value || "").toLowerCase()
+    .replace(/\b(?:fresh|dried|chopped|sliced|diced|minced|shredded|grated|large|small|medium|optional|to taste)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function pantryMatchForName(name){
+  const wanted = pantryKey(name);
+  if(!wanted) return null;
+  return readPantryItems().find(item => {
+    const key = pantryKey(item.name);
+    return key && (wanted.includes(key) || key.includes(wanted));
+  }) || null;
+}
+function pantryNoteForShoppingItem(item){
+  const pantryItem = pantryMatchForName(item.name);
+  if(!pantryItem) return "";
+  const amount = [pantryItem.amount, pantryItem.unit].filter(Boolean).join(" ");
+  const stock = pantryItem.mode === "stocked" ? " · keep stocked" : pantryItem.mode === "staple" ? " · staple" : "";
+  return `<small class="pantry-shopping-note">Pantry says: ${escapeHTML(amount || "on hand")}${escapeHTML(stock)} — kept on list for review</small>`;
+}
+function plannedRecipesOnly(){
+  return plannedRecipesForWeek().map(entry => entry.recipe).filter(Boolean);
+}
+function ingredientNamesForRecipe(recipe){
+  return (recipe.ingredients || []).map(line => parseIngredientLine(line).name).filter(Boolean);
+}
+function recipePantryScore(recipe, pantryItems){
+  const names = ingredientNamesForRecipe(recipe).map(pantryKey);
+  const matches = pantryItems.filter(item => {
+    const key = pantryKey(item.name);
+    return key && names.some(name => name.includes(key) || key.includes(name));
+  });
+  return {score:matches.reduce((sum,item)=>sum+(item.status === "use-soon" ? 4 : item.mode === "perishable" ? 3 : 1),0), matches};
+}
+function renderPantryPlannerInsights(){
+  const output = $("pantryPlannerInsights");
+  if(!output) return;
+  const pantryItems = readPantryItems();
+  const lastCheck = Date.parse(localStorage.getItem(PANTRY_CHECKIN_KEY) || "");
+  const reminder = $("pantryPlannerReminder");
+  const stale = !Number.isFinite(lastCheck) || Date.now() - lastCheck > 30 * 86400000;
+  reminder.hidden = !stale;
+  if(stale) reminder.innerHTML = `<span><strong>Pantry check-in due.</strong> A quick microphone update will make these suggestions more accurate.</span><a class="secondary linkbtn" href="pantry.html">Update now</a>`;
+  if(!pantryItems.length){
+    output.innerHTML = `<div class="pantry-insight-card"><h3>No pantry list yet</h3><p class="muted">Add what you keep on hand and what needs using up. The planner will then compare it with this week’s meals.</p><a class="secondary linkbtn" href="pantry.html">Set up pantry</a></div>`;
+    return;
+  }
+  const planned = plannedRecipesOnly();
+  const used = pantryItems.map(item => {
+    const key = pantryKey(item.name);
+    const meals = planned.filter(recipe => ingredientNamesForRecipe(recipe).some(name => pantryKey(name).includes(key) || key.includes(pantryKey(name))));
+    return {...item, meals};
+  }).filter(item => item.meals.length);
+  const urgent = pantryItems.filter(item => item.status === "use-soon" || item.mode === "perishable").filter(item => !used.some(usedItem => usedItem.id === item.id));
+  const candidates = recipes.filter(recipe => !planned.some(p => String(p.id) === String(recipe.id)))
+    .map(recipe => ({recipe, ...recipePantryScore(recipe, urgent)})).filter(item => item.score > 0)
+    .sort((a,b)=>b.score-a.score || String(a.recipe.name).localeCompare(String(b.recipe.name))).slice(0,5);
+  const stocked = pantryItems.filter(item => item.mode === "stocked");
+  output.innerHTML = `
+    <div class="pantry-insight-card"><h3>This week already uses</h3>${used.length ? `<ul>${used.slice(0,8).map(item=>`<li><strong>${escapeHTML(item.name)}</strong> <small>${escapeHTML(item.meals.map(m=>m.name).join(" · "))}</small></li>`).join("")}</ul>` : '<p class="muted">None of your tracked pantry items clearly match this week’s recipes yet.</p>'}</div>
+    <div class="pantry-insight-card"><h3>Still worth using</h3>${urgent.length ? `<ul>${urgent.slice(0,8).map(item=>`<li><strong>${escapeHTML(item.name)}</strong> <small>${escapeHTML([item.amount,item.unit].filter(Boolean).join(" "))}</small></li>`).join("")}</ul>` : '<p class="muted">Nothing perishable is currently waiting for another meal.</p>'}</div>
+    <div class="pantry-insight-card"><h3>Recipes that help</h3>${candidates.length ? `<ul>${candidates.map(item=>`<li><a href="index.html?recipe=${encodeURIComponent(item.recipe.id)}"><strong>${escapeHTML(item.recipe.name)}</strong></a><small> uses ${escapeHTML(item.matches.map(m=>m.name).join(" + "))}</small></li>`).join("")}</ul>` : '<p class="muted">Add a few use-it-up items and suggestions will appear here.</p>'}</div>
+    ${stocked.length ? `<div class="pantry-insight-card"><h3>Keep-stocked rules</h3><ul>${stocked.slice(0,8).map(item=>`<li><strong>${escapeHTML(item.name)}</strong><small>${item.targetStock ? ` target ${escapeHTML(item.targetStock)}` : " keep on hand"}${item.packageSize ? ` · ${escapeHTML(item.packageSize)} ${escapeHTML(item.packageUnit||"")} package` : ""}</small></li>`).join("")}</ul></div>` : ""}`;
 }
 
 $("shoppingExtraSearch").addEventListener("input", renderExtraShoppingRecipes);

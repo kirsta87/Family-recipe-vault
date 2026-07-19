@@ -5,83 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Recipe Health · Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=128">
-  <style>
-    .health-completeness-panel{margin:0 0 16px;padding:14px;border:1px solid #d8c3a5;border-radius:16px;background:#faf6ee}
-    .health-completeness-heading{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}
-    .health-completeness-heading span{color:var(--muted);font-size:.8rem}
-    .health-suggestion-list{display:grid;gap:10px}
-    .health-suggestion{display:grid;gap:9px;padding:12px;border:1px solid var(--line);border-radius:13px;background:var(--paper)}
-    .health-suggestion p{margin:0;line-height:1.4}
-    .health-suggestion label{display:grid;gap:5px;font-size:.8rem;font-weight:800}
-    .health-suggestion input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:white;font:inherit}
-    .health-suggestion-actions{display:flex;flex-wrap:wrap;gap:8px}
-
-    .health-smart-panel{margin:0 0 16px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#f6f2e9}
-    .health-smart-heading{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}
-    .health-smart-heading span{color:var(--muted);font-size:.8rem}
-    .health-smart-list,.health-category-list{display:grid;gap:9px}
-    .health-smart-row,.health-category-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px;border:1px solid var(--line);border-radius:13px;background:var(--paper)}
-    .health-smart-row>div:first-child{min-width:0;flex:1}
-    .health-smart-row small,.health-category-row small{display:block;color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
-    .health-smart-row p{margin:2px 0 7px}
-    .health-smart-row input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit}
-    .health-category-row strong{display:block;margin-top:2px}
-    @media(max-width:620px){.health-smart-row,.health-category-row{align-items:stretch;flex-direction:column}.health-suggestion-actions{width:100%}}
-
-    .health-category-copy{min-width:0;flex:1}
-    .health-current-value{display:flex;gap:8px;align-items:baseline;margin:5px 0 8px}
-    .health-current-value span,.health-suggested-value span{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
-    .health-suggested-value{display:grid;gap:4px}
-    .health-suggested-value input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit;font-weight:700}
-
-    .health-card-title-copy{min-width:0;flex:1}
-    .health-open-recipe{display:inline-block;margin:4px 0 8px;font-weight:800;text-decoration:none}
-    .health-category-choice{display:grid;gap:7px}
-    .health-category-choice label{display:grid;gap:4px}
-    .health-category-choice select,.health-form-grid select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:white;font:inherit}
-    .health-category-new-row,.health-inline-add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:7px}
-    .health-category-new-row[hidden],.health-inline-add[hidden]{display:none}
-    .health-category-new-row input,.health-inline-add input{min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:11px;font:inherit}
-
-    .global-intelligence-panel{margin-top:18px}
-    .global-intelligence-note{margin:-4px 0 14px}
-    .global-intelligence-list{display:grid;gap:10px}
-    .global-intelligence-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--paper)}
-    .global-intelligence-row>div{min-width:0}
-    .global-intelligence-row p{margin:4px 0;color:var(--text)}
-    .global-intelligence-row small{color:var(--muted)}
-    .confidence-badge{display:inline-block;margin-bottom:5px;padding:3px 7px;border-radius:999px;background:#e8eee1;font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
-    .intelligence-reason{margin-top:6px;text-transform:none!important;letter-spacing:0!important}
-    .compact-clear{display:flex;flex-direction:column;gap:4px;padding:14px}
-    @media(max-width:620px){.global-intelligence-row{align-items:stretch;flex-direction:column}.global-intelligence-row button{width:100%}}
-
-    .ingredient-health-counts{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
-    .ingredient-health-counts span{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--paper);font-size:.84rem}
-    .global-intelligence-group{border:1px solid var(--line);border-radius:14px;background:var(--paper);overflow:hidden}
-    .global-intelligence-group summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;cursor:pointer;list-style:none}
-    .global-intelligence-group summary::-webkit-details-marker{display:none}
-    .global-intelligence-group summary>span:first-child{display:grid;gap:4px}
-    .global-intelligence-group summary small{color:var(--muted)}
-    .review-group-count{font-weight:800;white-space:nowrap}
-    .global-review-list{display:grid;gap:10px;padding:0 14px 14px}
-    .global-review-item{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--background)}
-    .global-review-check{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700}
-    .global-review-title-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
-    .ingredient-change-preview{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .ingredient-change-preview>div{padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
-    .ingredient-change-preview small{display:block;margin-bottom:4px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}
-    .ingredient-change-preview p{margin:0}
-    .global-review-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--line)}
-    .open-recipe-link{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
-    @media(max-width:620px){
-      .global-intelligence-group summary,.global-review-title-row{align-items:stretch;flex-direction:column}
-      .ingredient-change-preview{grid-template-columns:1fr}
-      .global-review-actions>*{flex:1}
-      .open-recipe-link{width:100%}
-    }
-
-  </style>
+  <link rel="stylesheet" href="styles.css?v=130">
 </head>
 <body>
 <header class="hero health-hero">
@@ -110,8 +34,6 @@
     <p id="healthStatus" class="import-status" aria-live="polite"></p>
   </section>
 
-  <section id="globalIngredientPanel" class="health-summary panel-wide global-intelligence-panel"></section>
-
   <section class="health-results-section">
     <div class="section-heading">
       <div>
@@ -125,6 +47,6 @@
 </main>
 
 <script src="config.js?v=3"></script>
-<script src="recipe-health.js?v=145"></script>
+<script src="recipe-health.js?v=128"></script>
 </body>
 </html>

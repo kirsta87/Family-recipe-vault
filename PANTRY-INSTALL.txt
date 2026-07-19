@@ -1,0 +1,35 @@
+RECIPE VAULT PANTRY + MEAL PLANNING v130
+
+Upload the entire contents of the Family-recipe-vault folder to GitHub, replacing matching files and adding:
+- pantry.html
+- pantry.js
+
+What is included
+- Separate Pantry page linked from the Vault and Meal Planner.
+- Giant voice/type kitchen brain-dump.
+- Speech-to-list review before anything is saved.
+- Add/update/remove phrases.
+- Editable pantry inventory.
+- Item types: Use it up, Keep stocked, Pantry staple.
+- Preferred stock, normal package size, package unit, store, and brand fields.
+- Monthly pantry check-in reminder.
+- Meal Planner pantry panel showing:
+  * pantry ingredients already used by planned meals
+  * perishable items still waiting to be used
+  * recipes that use those items
+  * keep-stocked rules
+- Shopping lists NEVER silently remove pantry items. Matching items remain on the list with a Pantry says note for review.
+
+Important current behavior
+- Pantry information is stored in this browser's local storage in this version.
+- Chrome/Edge microphone dictation generally works best. Typing/pasting always works.
+- Ingredient matching is intentionally conservative and advisory.
+
+Quick test
+1. Open Pantry.
+2. Say or type: Half a carton of chicken broth, two jars pasta sauce, unopened cream cheese, and throw out the cilantro.
+3. Click Turn into a list.
+4. Review and Apply these updates.
+5. Edit chicken broth: Keep stocked, preferred stock 2, package 32 oz, Walmart, Great Value.
+6. Open Meal Planner and confirm the Pantry + This Week panel appears.
+7. Generate a shopping list and confirm pantry-matched ingredients stay on the list with a note.

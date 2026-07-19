@@ -1,11 +1,12 @@
 "use strict";
 
-const CACHE_NAME = "recipe-vault-v128";
+const CACHE_NAME = "recipe-vault-v130";
 const APP_SHELL = [
-  "./", "./index.html", "./styles.css?v=128", "./app.js?v=128",
-  "./meal-planner.html", "./meal-planner.js?v=128",
-  "./manage-collections.html", "./manage-collections.js?v=128",
-  "./recipe-health.html", "./recipe-health.js?v=128",
+  "./", "./index.html", "./styles.css?v=130", "./app.js?v=130",
+  "./meal-planner.html", "./meal-planner.js?v=130",
+  "./pantry.html", "./pantry.js?v=130",
+  "./manage-collections.html", "./manage-collections.js?v=130",
+  "./recipe-health.html", "./recipe-health.js?v=130",
   "./config.js?v=3", "./recipe-pack-schema.js", "./sample-recipe-pack.zip", "./manifest.webmanifest"
 ];
 

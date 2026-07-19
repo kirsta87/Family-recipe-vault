@@ -715,3 +715,19 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .recipe-pack-duplicate label{display:flex;gap:6px;align-items:center;margin:0}
 .recipe-pack-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 @media(max-width:700px){.recipe-pack-item{grid-template-columns:auto 72px 1fr}.recipe-pack-item img,.recipe-pack-placeholder{width:72px;height:72px}.recipe-pack-item .three-column-form{grid-template-columns:1fr}}
+
+/* Pantry v130 */
+.pantry-page{max-width:1180px;margin:0 auto;padding:24px;display:grid;gap:20px}
+.pantry-page-hero{background:linear-gradient(135deg,#697454,#505b40)}
+.pantry-reminder,.pantry-planner-reminder{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:16px 18px;border:1px solid #d6b169;border-radius:16px;background:#fff6df}
+.pantry-reminder p{margin:4px 0 0}.pantry-capture-panel{background:#faf6ee}
+.pantry-big-note textarea{min-height:180px;font-size:1.08rem;line-height:1.55;border-width:2px}
+.pantry-capture-actions{display:flex;flex-wrap:wrap;gap:10px}.pantry-mic-button{min-width:180px}
+.pantry-review{margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
+.pantry-review-rows{display:grid;gap:8px}.pantry-review-row{display:grid;grid-template-columns:auto minmax(170px,1fr) 110px 110px 145px;gap:8px;align-items:center}
+.pantry-review-row input,.pantry-review-row select,.pantry-filter-row input,.pantry-filter-row select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;font:inherit}
+.pantry-filter-row{display:grid;grid-template-columns:1fr 230px;gap:10px;margin:14px 0}.pantry-summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}.pantry-summary span{padding:8px 11px;border-radius:999px;background:#eee5d6}
+.pantry-items{display:grid;gap:10px}.pantry-item-card{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--paper);cursor:pointer}.pantry-item-card:hover{border-color:var(--sage)}
+.pantry-item-card h3{margin:0 0 4px}.pantry-item-card p{margin:0;color:var(--muted)}.pantry-item-meta{display:grid;justify-items:end;gap:3px}.pantry-mode-badge{padding:5px 9px;border-radius:999px;background:#e9eddc;font-size:.8rem;font-weight:800}.pantry-item-meta small{color:var(--muted)}
+.pantry-planner-panel{margin-top:18px}.pantry-planner-insights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.pantry-insight-card{padding:14px;border:1px solid var(--line);border-radius:14px;background:#faf6ee}.pantry-insight-card h3{margin:0 0 7px}.pantry-insight-card ul{margin:8px 0 0;padding-left:18px}.pantry-insight-card li{margin:5px 0}.pantry-shopping-note{display:block;margin-top:4px;color:var(--sage-dark);font-size:.78rem;font-weight:750}
+@media(max-width:760px){.pantry-review-row{grid-template-columns:1fr 1fr}.pantry-review-row .check{grid-column:1/-1}.pantry-item-card{grid-template-columns:1fr auto}.pantry-item-meta{grid-column:1/-1;justify-items:start}.pantry-planner-insights{grid-template-columns:1fr}.pantry-filter-row{grid-template-columns:1fr}.pantry-reminder{align-items:flex-start;flex-direction:column}}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#697454">
+  <title>Pantry · Glaister Family Recipe Vault</title>
+  <link rel="stylesheet" href="styles.css?v=130">
+</head>
+<body>
+<header class="subpage-hero pantry-page-hero">
+  <div><p class="eyebrow">THE GLAISTER FAMILY</p><h1>Pantry</h1><p>Talk, type, review, done. No barcode-scanning lifestyle required.</p></div>
+  <div class="planner-page-top-actions"><a class="secondary linkbtn" href="meal-planner.html">Meal planner</a><a class="secondary linkbtn" href="index.html">Back to Recipe Vault</a></div>
+</header>
+<div id="fatalError" class="fatal" hidden></div>
+<main class="pantry-page">
+  <section id="pantryReminder" class="pantry-reminder" hidden>
+    <div><strong>Pantry check-in due</strong><p>Give the list a quick voice update so meal planning stays useful.</p></div>
+    <button id="dismissReminder" class="secondary" type="button">Remind me next month</button>
+  </section>
+
+  <section class="panel pantry-capture-panel">
+    <div class="section-heading"><div><p class="eyebrow">QUICK UPDATE</p><h2>Tell me what changed</h2><p class="muted">Example: “Half a carton of chicken broth, two jars pasta sauce, unopened cream cheese, and throw out the cilantro.”</p></div></div>
+    <label class="field pantry-big-note">Kitchen brain-dump
+      <textarea id="pantrySpeechText" rows="7" placeholder="Tap the microphone and ramble, or type/paste a messy list…"></textarea>
+    </label>
+    <div class="pantry-capture-actions">
+      <button id="pantryMic" class="primary pantry-mic-button" type="button">Start microphone</button>
+      <button id="parsePantry" class="secondary" type="button">Turn into a list</button>
+      <button id="clearPantryText" class="secondary" type="button">Clear</button>
+    </div>
+    <p id="micStatus" class="import-status" aria-live="polite"></p>
+    <div id="pantryReview" class="pantry-review" hidden>
+      <div class="section-heading"><div><p class="eyebrow">REVIEW FIRST</p><h2>Here’s what I heard</h2></div><button id="savePantryReview" class="primary" type="button">Apply these updates</button></div>
+      <div id="pantryReviewRows" class="pantry-review-rows"></div>
+    </div>
+  </section>
+
+  <section class="panel pantry-inventory-panel">
+    <div class="section-heading"><div><p class="eyebrow">WHAT WE HAVE</p><h2>Your kitchen list</h2><p class="muted">The pantry helps recommendations. It never silently removes an ingredient from your shopping list.</p></div><button id="addPantryItem" class="secondary" type="button">Add item</button></div>
+    <div class="pantry-filter-row">
+      <input id="pantrySearch" type="search" placeholder="Search pantry…">
+      <select id="pantryModeFilter"><option value="">All item types</option><option value="perishable">Use-it-up items</option><option value="stocked">Keep stocked</option><option value="staple">Pantry staples</option></select>
+    </div>
+    <div id="pantrySummary" class="pantry-summary"></div>
+    <div id="pantryItems" class="pantry-items"></div>
+  </section>
+</main>
+<dialog id="pantryItemDialog">
+  <button id="closePantryItem" class="close" type="button">×</button>
+  <h2 id="pantryItemDialogTitle">Pantry item</h2>
+  <form id="pantryItemForm">
+    <input id="pantryItemId" type="hidden">
+    <label class="field">Item name<input id="pantryItemName" required type="text" placeholder="Chicken broth"></label>
+    <div class="three-column-form">
+      <label class="field">Amount<input id="pantryItemAmount" type="text" placeholder="Half, 2, almost full"></label>
+      <label class="field">Unit<input id="pantryItemUnit" type="text" placeholder="carton, oz, jars"></label>
+      <label class="field">Status<select id="pantryItemStatus"><option value="open">Open / in use</option><option value="unopened">Unopened</option><option value="frozen">Frozen</option><option value="use-soon">Use soon</option></select></label>
+    </div>
+    <label class="field">How should the vault treat it?<select id="pantryItemMode"><option value="perishable">Use-it-up item</option><option value="stocked">Keep stocked</option><option value="staple">Pantry staple</option></select></label>
+    <div id="stockFields" class="three-column-form">
+      <label class="field">Preferred stock<input id="pantryItemTarget" type="number" min="0" step="0.25" placeholder="2"></label>
+      <label class="field">Normal package size<input id="pantryItemPackageSize" type="number" min="0" step="0.01" placeholder="32"></label>
+      <label class="field">Package unit<input id="pantryItemPackageUnit" type="text" placeholder="oz"></label>
+    </div>
+    <div class="two-column-form">
+      <label class="field">Store<input id="pantryItemStore" type="text" placeholder="Walmart"></label>
+      <label class="field">Brand<input id="pantryItemBrand" type="text" placeholder="Great Value"></label>
+    </div>
+    <label class="field">Notes<input id="pantryItemNotes" type="text" placeholder="Usually buy the normal carton"></label>
+    <div class="actions"><button class="primary" type="submit">Save item</button><button id="deletePantryItem" class="secondary" type="button" hidden>Remove item</button></div>
+  </form>
+</dialog>
+<script src="pantry.js?v=130"></script>
+</body>
+</html>
