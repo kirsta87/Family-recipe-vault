@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Pantry · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=130">
+  <link rel="stylesheet" href="styles.css?v=131">
 </head>
 <body>
 <header class="subpage-hero pantry-page-hero">
@@ -20,7 +20,7 @@
   </section>
 
   <section class="panel pantry-capture-panel">
-    <div class="section-heading"><div><p class="eyebrow">QUICK UPDATE</p><h2>Tell me what changed</h2><p class="muted">Example: “Half a carton of chicken broth, two jars pasta sauce, unopened cream cheese, and throw out the cilantro.”</p></div></div>
+    <div class="section-heading"><div><p class="eyebrow">QUICK UPDATE</p><h2>Tell me what changed</h2><p class="muted">Talk naturally—commas are optional. Example: “I bought chicken broth and mozzarella. We’re out of tortillas, and we still have half a tub of sour cream.”</p></div></div>
     <label class="field pantry-big-note">Kitchen brain-dump
       <textarea id="pantrySpeechText" rows="7" placeholder="Tap the microphone and ramble, or type/paste a messy list…"></textarea>
     </label>
@@ -55,7 +55,7 @@
     <div class="three-column-form">
       <label class="field">Amount<input id="pantryItemAmount" type="text" placeholder="Half, 2, almost full"></label>
       <label class="field">Unit<input id="pantryItemUnit" type="text" placeholder="carton, oz, jars"></label>
-      <label class="field">Status<select id="pantryItemStatus"><option value="open">Open / in use</option><option value="unopened">Unopened</option><option value="frozen">Frozen</option><option value="use-soon">Use soon</option></select></label>
+      <label class="field">Status<select id="pantryItemStatus"><option value="unopened">Unopened / new</option><option value="open">Open / in use</option><option value="frozen">Frozen</option><option value="use-soon">Use soon</option></select></label>
     </div>
     <label class="field">How should the vault treat it?<select id="pantryItemMode"><option value="perishable">Use-it-up item</option><option value="stocked">Keep stocked</option><option value="staple">Pantry staple</option></select></label>
     <div id="stockFields" class="three-column-form">
@@ -71,6 +71,6 @@
     <div class="actions"><button class="primary" type="submit">Save item</button><button id="deletePantryItem" class="secondary" type="button" hidden>Remove item</button></div>
   </form>
 </dialog>
-<script src="pantry.js?v=130"></script>
+<script src="pantry.js?v=131"></script>
 </body>
 </html>
