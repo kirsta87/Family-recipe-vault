@@ -5,6 +5,8 @@ const PANTRY_KEY = "recipeVaultPantryV130";
 const CHECKIN_KEY = "recipeVaultPantryCheckinV130";
 let pantry = readPantry();
 let reviewUpdates = [];
+let bulkEditMode = false;
+const selectedPantryIds = new Set();
 
 window.addEventListener("error", event => { const box=$("fatalError"); box.hidden=false; box.textContent=`Pantry error: ${event.message}`; });
 function escapeHTML(value){ return String(value ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]); }
@@ -165,14 +167,49 @@ function render(){
   const visible=pantry.filter(item=>(!query||slug(item.name).includes(query))&&(!mode||item.mode===mode)).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   const useSoon=pantry.filter(x=>x.status==="use-soon"||x.mode==="perishable").length;
   $("pantrySummary").innerHTML=`<span><strong>${pantry.length}</strong> items tracked</span><span><strong>${useSoon}</strong> use-it-up items</span><span><strong>${pantry.filter(x=>x.mode==="stocked").length}</strong> kept stocked</span>`;
-  $("pantryItems").innerHTML=visible.length?visible.map(item=>`<article class="pantry-item-card" data-edit-pantry="${escapeHTML(item.id)}">
+  $("pantryItems").innerHTML=visible.length?visible.map(item=>`<article class="pantry-item-card ${bulkEditMode?"is-bulk-editing":""}" data-edit-pantry="${escapeHTML(item.id)}">
+    ${bulkEditMode?`<label class="pantry-select-check" aria-label="Select ${escapeHTML(item.name)}"><input type="checkbox" data-select-pantry="${escapeHTML(item.id)}" ${selectedPantryIds.has(item.id)?"checked":""}></label>`:""}
     <div><h3>${escapeHTML(item.name)}</h3><p>${escapeHTML([item.amount,item.unit,item.status==="unopened"?"unopened":item.status==="frozen"?"frozen":item.status==="use-soon"?"use soon":"open"].filter(Boolean).join(" · "))}</p></div>
     <div class="pantry-item-meta"><span class="pantry-mode-badge">${escapeHTML(modeLabel(item.mode))}</span>${item.mode==="stocked"&&item.targetStock?`<small>Keep ${escapeHTML(item.targetStock)} on hand</small>`:""}${item.packageSize?`<small>${escapeHTML(item.packageSize)} ${escapeHTML(item.packageUnit||"")} package</small>`:""}</div>
-    <button class="secondary" type="button">Edit</button>
+    ${bulkEditMode?"":'<button class="secondary" type="button">Edit</button>'}
   </article>`).join(""):'<p class="muted">No pantry items match this view.</p>';
-  document.querySelectorAll("[data-edit-pantry]").forEach(card=>card.addEventListener("click",()=>openItem(card.dataset.editPantry)));
+  document.querySelectorAll("[data-edit-pantry]").forEach(card=>card.addEventListener("click",event=>{ if(bulkEditMode){ const checkbox=card.querySelector("[data-select-pantry]"); if(event.target!==checkbox) checkbox.checked=!checkbox.checked; setPantrySelected(card.dataset.editPantry,checkbox.checked); return; } openItem(card.dataset.editPantry); }));
+  document.querySelectorAll("[data-select-pantry]").forEach(box=>box.addEventListener("click",event=>{event.stopPropagation();setPantrySelected(box.dataset.selectPantry,box.checked);}));
+  updateBulkToolbar(visible);
   checkReminder();
 }
+
+function setPantrySelected(id, selected){
+  if(selected) selectedPantryIds.add(id); else selectedPantryIds.delete(id);
+  updateBulkToolbar();
+}
+function visiblePantryItems(){
+  const query=slug($("pantrySearch")?.value), mode=$("pantryModeFilter")?.value||"";
+  return pantry.filter(item=>(!query||slug(item.name).includes(query))&&(!mode||item.mode===mode));
+}
+function updateBulkToolbar(visible=visiblePantryItems()){
+  const toolbar=$("pantryBulkToolbar");
+  toolbar.hidden=!bulkEditMode;
+  $("editPantryItems").textContent=bulkEditMode?"Editing…":"Edit pantry";
+  $("addPantryItem").hidden=bulkEditMode;
+  if(!bulkEditMode) return;
+  const shownIds=visible.map(item=>item.id);
+  const selectedShown=shownIds.filter(id=>selectedPantryIds.has(id)).length;
+  $("selectAllPantryItems").checked=shownIds.length>0&&selectedShown===shownIds.length;
+  $("selectAllPantryItems").indeterminate=selectedShown>0&&selectedShown<shownIds.length;
+  $("pantrySelectedCount").textContent=`${selectedPantryIds.size} selected`;
+  $("deleteSelectedPantryItems").disabled=!selectedPantryIds.size;
+}
+function enterBulkEdit(){ bulkEditMode=true; selectedPantryIds.clear(); render(); }
+function exitBulkEdit(){ bulkEditMode=false; selectedPantryIds.clear(); render(); }
+function removeSelectedPantryItems(){
+  const count=selectedPantryIds.size;
+  if(!count) return;
+  if(!window.confirm(`Remove ${count} pantry item${count===1?"":"s"}? This cannot be undone.`)) return;
+  pantry=pantry.filter(item=>!selectedPantryIds.has(item.id));
+  bulkEditMode=false; selectedPantryIds.clear(); savePantry();
+}
+
 function openItem(id=""){
   const item=pantry.find(x=>x.id===id)||{};
   $("pantryItemDialogTitle").textContent=id?"Edit pantry item":"Add pantry item"; $("pantryItemId").value=id;
@@ -203,7 +240,7 @@ function startMic(){
   recognition.onerror=e=>{ recognition=null; $("pantryMic").textContent="Start microphone"; $("micStatus").textContent=`Microphone stopped: ${e.error}. You can type instead.`; };
   recognition.start();
 }
-$("pantryMic").addEventListener("click",startMic); $("parsePantry").addEventListener("click",parseText); $("clearPantryText").addEventListener("click",()=>{$("pantrySpeechText").value="";$("pantryReview").hidden=true;}); $("savePantryReview").addEventListener("click",applyReview); $("pantrySearch").addEventListener("input",render); $("pantryModeFilter").addEventListener("change",render); $("addPantryItem").addEventListener("click",()=>openItem()); $("closePantryItem").addEventListener("click",()=>$("pantryItemDialog").close()); $("pantryItemForm").addEventListener("submit",saveItem); $("deletePantryItem").addEventListener("click",()=>{ pantry=pantry.filter(x=>x.id!==$("pantryItemId").value); savePantry(); $("pantryItemDialog").close(); }); $("dismissReminder").addEventListener("click",()=>{localStorage.setItem(CHECKIN_KEY,new Date().toISOString());checkReminder();});
+$("pantryMic").addEventListener("click",startMic); $("parsePantry").addEventListener("click",parseText); $("clearPantryText").addEventListener("click",()=>{$("pantrySpeechText").value="";$("pantryReview").hidden=true;}); $("savePantryReview").addEventListener("click",applyReview); $("pantrySearch").addEventListener("input",render); $("pantryModeFilter").addEventListener("change",render); $("addPantryItem").addEventListener("click",()=>openItem()); $("editPantryItems").addEventListener("click",()=>bulkEditMode?exitBulkEdit():enterBulkEdit()); $("cancelPantryEdit").addEventListener("click",exitBulkEdit); $("selectAllPantryItems").addEventListener("change",event=>{visiblePantryItems().forEach(item=>event.target.checked?selectedPantryIds.add(item.id):selectedPantryIds.delete(item.id));render();}); $("deleteSelectedPantryItems").addEventListener("click",removeSelectedPantryItems); $("closePantryItem").addEventListener("click",()=>$("pantryItemDialog").close()); $("pantryItemForm").addEventListener("submit",saveItem); $("deletePantryItem").addEventListener("click",()=>{ pantry=pantry.filter(x=>x.id!==$("pantryItemId").value); savePantry(); $("pantryItemDialog").close(); }); $("dismissReminder").addEventListener("click",()=>{localStorage.setItem(CHECKIN_KEY,new Date().toISOString());checkReminder();});
 document.querySelectorAll("dialog").forEach(d=>d.addEventListener("click",e=>{if(e.target===d)d.close();}));
 window.__pantryParserTest=parsePantryInput;
 render();

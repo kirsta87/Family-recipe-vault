@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Pantry · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=132">
+  <link rel="stylesheet" href="styles.css?v=135">
 </head>
 <body>
 <header class="subpage-hero pantry-page-hero">
@@ -37,7 +37,12 @@
   </section>
 
   <section class="panel pantry-inventory-panel">
-    <div class="section-heading"><div><p class="eyebrow">WHAT WE HAVE</p><h2>Your kitchen list</h2><p class="muted">The pantry helps recommendations. It never silently removes an ingredient from your shopping list.</p></div><button id="addPantryItem" class="secondary" type="button">Add item</button></div>
+    <div class="section-heading"><div><p class="eyebrow">WHAT WE HAVE</p><h2>Your kitchen list</h2><p class="muted">The pantry helps recommendations. It never silently removes an ingredient from your shopping list.</p></div><div class="pantry-heading-actions"><button id="editPantryItems" class="secondary" type="button">Edit pantry</button><button id="addPantryItem" class="secondary" type="button">Add item</button></div></div>
+    <div id="pantryBulkToolbar" class="pantry-bulk-toolbar" hidden>
+      <label class="check"><input id="selectAllPantryItems" type="checkbox"> Select all shown</label>
+      <span id="pantrySelectedCount">0 selected</span>
+      <div class="pantry-bulk-actions"><button id="deleteSelectedPantryItems" class="secondary danger" type="button" disabled>Remove selected</button><button id="cancelPantryEdit" class="secondary" type="button">Done</button></div>
+    </div>
     <div class="pantry-filter-row">
       <input id="pantrySearch" type="search" placeholder="Search pantry…">
       <select id="pantryModeFilter"><option value="">All item types</option><option value="perishable">Use-it-up items</option><option value="stocked">Keep stocked</option><option value="staple">Pantry staples</option></select>
@@ -71,6 +76,6 @@
     <div class="actions"><button class="primary" type="submit">Save item</button><button id="deletePantryItem" class="secondary" type="button" hidden>Remove item</button></div>
   </form>
 </dialog>
-<script src="pantry.js?v=134"></script>
+<script src="pantry.js?v=135"></script>
 </body>
 </html>
