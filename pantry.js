@@ -15,10 +15,10 @@ function uid(){ return `pantry-${Date.now()}-${Math.random().toString(36).slice(
 function titleCase(value){ return String(value||"").trim().replace(/\b\w/g,c=>c.toUpperCase()); }
 function defaultMode(name){ const n=slug(name); if(/salt|pepper|flour|sugar|oil|seasoning|spice|rice/.test(n)) return "staple"; if(/sauce|broth|stock|pasta|beans|tomato|rotel|soup|tortilla/.test(n)) return "stocked"; return "perishable"; }
 function normalizeName(name){ return String(name||"").replace(/^(?:some|the|about|roughly|approximately)\s+/i,"").replace(/\s+/g," ").trim(); }
-const PACKAGE_UNITS = "cartons?|jars?|cans?|bags?|boxes?|bottles?|tubs?|containers?|packs?|packages?|blocks?|bunches?|heads?|loaves?|cups?|ounces?|oz|pounds?|lbs?|pieces?|slices?|trays?|tubes?|rolls?|dozens?";
+const PACKAGE_UNITS = "cartons?|jars?|cans?|bags?|box(?:es)?|bottles?|tubs?|containers?|packs?|packages?|blocks?|bunch(?:es)?|heads?|loaf|loaves|cups?|ounces?|oz|pounds?|lbs?|pieces?|slices?|trays?|tubes?|rolls?|dozens?";
 const NUMBER_WORDS = "one|two|three|four|five|six|seven|eight|nine|ten|a|an|couple|a couple";
 const FRACTION_WORDS = "half|a half|quarter|a quarter|three quarters|most|almost full|mostly full|almost empty|nearly empty|a little|some";
-const ACTION_MARKER = /\b(i\s+(?:bought|picked up|got|have|still have|threw away|tossed|finished|used up)|we\s+(?:bought|picked up|got|have|still have|are out of)|we(?:'|’)re\s+out\s+of|there(?:'|’)s|there\s+is|out\s+of|no\s+more|throw\s+away|toss|remove|delete)\b/gi;
+const ACTION_MARKER = /\b(i\s+(?:bought|picked up|got|have|still have|threw away|tossed|finished|used up|used)|we\s+(?:bought|picked up|got|have|still have|are out of|used)|we(?:'|’)re\s+out\s+of|there(?:'|’)s|there\s+is|out\s+of|no\s+more|throw\s+away|toss|remove|delete|used)\b/gi;
 const COMMON_ITEMS = [
   "heavy cream","sour cream","cream cheese","cheddar cheese","mozzarella cheese","parmesan cheese","black beans","kidney beans","pinto beans","refried beans","green beans","chicken broth","beef broth","vegetable broth","chicken stock","beef stock","vegetable stock","pasta sauce","tomato sauce","tomato paste","diced tomatoes","crushed tomatoes","coconut milk","evaporated milk","condensed milk","olive oil","vegetable oil","brown sugar","powdered sugar","all purpose flour","bread flour","corn starch","baking soda","baking powder","peanut butter","maple syrup","soy sauce","hot sauce","worcestershire sauce","bbq sauce","ranch dressing","poppyseed dressing","taco seasoning","italian seasoning","baby spinach","romaine lettuce","iceberg lettuce","green onions","yellow onions","red onions","bell peppers","black pepper","garlic powder","onion powder",
   "cilantro","tortillas","spinach","lettuce","broccoli","cauliflower","carrots","celery","onions","garlic","potatoes","tomatoes","avocado","avocados","limes","lemons","apples","bananas","berries","strawberries","blueberries","raspberries","grapes","watermelon","milk","butter","eggs","yogurt","cheese","mozzarella","parmesan","cheddar","rice","pasta","flour","sugar","salt","pepper","beans","corn","salsa","bread","buns","crackers","cereal","oats","chicken","beef","pork","turkey","bacon","sausage"
@@ -31,7 +31,7 @@ function cleanLeadIn(text){
     .trim();
 }
 function actionForMarker(marker){
-  return /out\s+of|no\s+more|threw\s+away|tossed|finished|used\s+up|throw\s+away|remove|delete/i.test(marker||"") ? "remove" : "upsert";
+  return /out\s+of|no\s+more|threw\s+away|tossed|finished|used(?:\s+up)?|throw\s+away|remove|delete/i.test(marker||"") ? "remove" : "upsert";
 }
 function splitActionEvents(text){
   const cleaned=cleanLeadIn(text).replace(/[.!?;]+/g,"\n").replace(/\s+/g," ").trim();
@@ -71,7 +71,8 @@ function splitByStructuredStarts(text){
   const startPattern=new RegExp(`(?:^|\\s)(?:${FRACTION_WORDS}|\\d+(?:\\.\\d+)?|${NUMBER_WORDS})\\s+(?:(?:of\\s+)?(?:a|an)\\s+)?(?:${PACKAGE_UNITS})\\b`,"gi");
   const starts=[]; let match;
   while((match=startPattern.exec(text))){ starts.push(match.index+(match[0].match(/^\\s/) ? 1 : 0)); }
-  if(starts.length<2) return [text.trim()];
+  if(!starts.length) return [text.trim()];
+  if(starts.length===1 && starts[0]===0) return [text.trim()];
   const out=[];
   if(starts[0]>0) out.push(text.slice(0,starts[0]).trim());
   for(let i=0;i<starts.length;i++) out.push(text.slice(starts[i],starts[i+1]??text.length).trim());

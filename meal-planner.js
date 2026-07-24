@@ -41,6 +41,7 @@ let assigningRecipe = null;
 let syncReady = false;
 let sharedLoadSequence = 0;
 let sharedSaveQueue = Promise.resolve();
+let currentMealMade = null;
 
 window.addEventListener("error", event => {
   const box = $("fatalError");
@@ -424,7 +425,10 @@ function renderPlanner(){
             <a class="planner-recipe-link" href="index.html?recipe=${encodeURIComponent(recipe.id)}">${escapeHTML(recipe.name || "Open recipe")}</a>
             <p class="planner-recipe-meta">${escapeHTML([recipe.protein, recipe.type, recipe.total_time ? `${recipe.total_time} min` : ""].filter(Boolean).join(" • "))}</p>
           </div>
-          <button class="planner-remove-meal" type="button" data-remove-day="${day}" data-remove-recipe="${escapeHTML(id)}" aria-label="Remove ${escapeHTML(recipe.name || "meal")}">×</button>
+          <div class="planner-meal-actions">
+            <button class="planner-made-meal ${plan.made?.[`${day}|${id}`] ? "is-made" : ""}" type="button" data-made-day="${day}" data-made-recipe="${escapeHTML(id)}">${plan.made?.[`${day}|${id}`] ? "Made ✓" : "Meal made"}</button>
+            <button class="planner-remove-meal" type="button" data-remove-day="${day}" data-remove-recipe="${escapeHTML(id)}" aria-label="Remove ${escapeHTML(recipe.name || "meal")}">×</button>
+          </div>
         </div>`).join("") : `<p class="muted planner-empty">Nothing planned yet.</p>`}
       </div>
     </article>`;
@@ -434,6 +438,11 @@ function renderPlanner(){
     $("plannerSearch").focus();
     $("plannerSearch").scrollIntoView({behavior:"smooth", block:"center"});
     $("weekStatus").textContent = `Choose a recipe below, then assign it to ${button.dataset.addDay}.`;
+  }));
+
+  document.querySelectorAll("[data-made-day]").forEach(button => button.addEventListener("click", () => {
+    const recipe = recipeForPlan(button.dataset.madeRecipe, plan);
+    if(recipe) openMealMadeDialog(button.dataset.madeDay, button.dataset.madeRecipe, recipe);
   }));
 
   document.querySelectorAll("[data-remove-day]").forEach(button => button.addEventListener("click", async () => {
@@ -851,6 +860,7 @@ function openShoppingListDialog(){
   $("backToShoppingRecipes").hidden = true;
   $("copyShoppingList").hidden = true;
   $("printShoppingList").hidden = true;
+  $("finishShopping").hidden = true;
   $("shoppingListStatus").textContent = "";
   $("shoppingListDialog").showModal();
 }
@@ -873,7 +883,7 @@ function renderShoppingOutput(selectedRecipes){
   const categoryOptions = SHOPPING_CATEGORIES.map(category => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`).join("");
   $("shoppingListOutput").innerHTML = `
     <div class="shopping-list-summary"><strong>${latestShoppingItems.length} ingredient${latestShoppingItems.length === 1 ? "" : "s"}</strong><span>From ${selectedRecipes.length} recipe${selectedRecipes.length === 1 ? "" : "s"}</span></div>
-    ${activeGroups.map(group => `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}"><h3>${escapeHTML(group)}</h3>${latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display)).map(item => `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox"><span>${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`).join("")}</section>`).join("")}
+    ${activeGroups.map(group => `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}"><h3>${escapeHTML(group)}</h3>${latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display)).map(item => `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" checked><span>${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`).join("")}</section>`).join("")}
     <section class="shopping-list-recipes"><h3>Generated from</h3><p>${selectedRecipes.map(recipe => escapeHTML(recipe.name || "Untitled recipe")).join(" • ")}</p></section>`;
 
   document.querySelectorAll("[data-shopping-item-key]").forEach(select => {
@@ -929,10 +939,94 @@ function buildShoppingList(){
   $("backToShoppingRecipes").hidden = false;
   $("copyShoppingList").hidden = false;
   $("printShoppingList").hidden = false;
+  $("finishShopping").hidden = false;
   $("shoppingListStatus").textContent = "Matching ingredients were combined. Move anything once and the list will remember next time.";
   $("shoppingListStatus").className = "import-status success";
 }
 
+
+function savePantryItems(items){
+  localStorage.setItem(PANTRY_KEY, JSON.stringify(items));
+  localStorage.setItem(PANTRY_CHECKIN_KEY, new Date().toISOString());
+}
+function pantryUid(){ return `pantry-${Date.now()}-${Math.random().toString(36).slice(2,8)}`; }
+function pantryDefaultMode(name){
+  const key=pantryKey(name);
+  if(/salt|pepper|flour|sugar|oil|seasoning|spice|rice/.test(key)) return "staple";
+  if(/sauce|broth|stock|pasta|beans|tomato|rotel|soup|tortilla/.test(key)) return "stocked";
+  return "perishable";
+}
+function normalizedUnit(unit){
+  return String(unit||"").toLowerCase().replace(/\b(packages?|pkg)\b/,"package").replace(/s$/,"").trim();
+}
+function numericAmount(value){
+  if(typeof value === "number") return value;
+  const text=String(value||"").trim().toLowerCase();
+  if(!text) return null;
+  const fractions={"half":.5,"1/2":.5,"quarter":.25,"1/4":.25,"three quarters":.75,"3/4":.75};
+  if(text in fractions) return fractions[text];
+  const n=Number(text); return Number.isFinite(n)?n:null;
+}
+function addShoppingToPantry(){
+  const purchasedKeys=new Set([...document.querySelectorAll('[data-shopping-purchased]:checked')].map(input=>input.dataset.shoppingPurchased));
+  const purchased=latestShoppingItems.filter(item=>purchasedKeys.has(item.itemKey));
+  if(!purchased.length){ $("shoppingListStatus").textContent="Check at least one item you purchased."; return; }
+  const items=readPantryItems();
+  purchased.forEach(entry=>{
+    const existing=items.find(item=>{
+      const a=pantryKey(item.name), b=pantryKey(entry.name); return a && b && (a===b || a.includes(b) || b.includes(a));
+    });
+    const amount=entry.amount===null?1:entry.amount;
+    const unit=entry.unit||"";
+    if(existing){
+      const old=numericAmount(existing.amount);
+      if(old!==null && normalizedUnit(existing.unit)===normalizedUnit(unit)) existing.amount=String(Math.round((old+amount)*100)/100);
+      else { existing.amount=String(amount); existing.unit=unit; }
+      existing.status="unopened"; existing.updatedAt=new Date().toISOString();
+    }else{
+      items.push({id:pantryUid(),name:String(entry.name||"").replace(/\b\w/g,c=>c.toUpperCase()),amount:String(amount),unit,status:"unopened",mode:pantryDefaultMode(entry.name),updatedAt:new Date().toISOString()});
+    }
+  });
+  savePantryItems(items);
+  $("shoppingListStatus").textContent=`Added ${purchased.length} purchased item${purchased.length===1?"":"s"} to the pantry.`;
+  $("shoppingListStatus").className="import-status success";
+  renderPantryPlannerInsights();
+}
+function openMealMadeDialog(day, recipeId, recipe){
+  currentMealMade={day,recipeId,recipe};
+  const pantry=readPantryItems();
+  const rows=(recipe.ingredients||[]).map((line,index)=>{
+    const parsed=parseIngredientLine(line); const match=pantryMatchForName(parsed.name); const checked=match?"checked":"";
+    return `<label class="meal-made-row"><input type="checkbox" data-meal-used="${index}" ${checked}><span><strong>${escapeHTML(shoppingItemDisplay(parsed))}</strong><small>${match?`Pantry: ${escapeHTML([match.amount,match.unit].filter(Boolean).join(" ")||"on hand")}`:"Not currently tracked"}</small></span></label>`;
+  });
+  $("mealMadeTitle").textContent=`${recipe.name || "Meal"} is made`;
+  $("mealMadeRows").innerHTML=rows.length?rows.join(""):'<p class="muted">This recipe has no ingredient list to update.</p>';
+  $("mealMadeStatus").textContent="";
+  $("mealMadeDialog").showModal();
+}
+async function finalizeMealMade(updatePantry){
+  if(!currentMealMade) return;
+  const {day,recipeId,recipe}=currentMealMade;
+  if(updatePantry){
+    let pantry=readPantryItems();
+    const selected=new Set([...document.querySelectorAll('[data-meal-used]:checked')].map(x=>Number(x.dataset.mealUsed)));
+    (recipe.ingredients||[]).forEach((line,index)=>{
+      if(!selected.has(index)) return;
+      const parsed=parseIngredientLine(line); const match=pantryMatchForName(parsed.name); if(!match) return;
+      const current=numericAmount(match.amount), used=parsed.amount===null?1:parsed.amount;
+      if(current!==null && normalizedUnit(match.unit)===normalizedUnit(parsed.unit)){
+        const next=Math.round((current-used)*100)/100;
+        if(next<=0) pantry=pantry.filter(item=>item.id!==match.id); else { const real=pantry.find(item=>item.id===match.id); real.amount=String(next); real.status="open"; real.updatedAt=new Date().toISOString(); }
+      }else{
+        pantry=pantry.filter(item=>item.id!==match.id);
+      }
+    });
+    savePantryItems(pantry);
+  }
+  const plan=planFor(); plan.made=plan.made||{}; plan.made[`${day}|${recipeId}`]=true;
+  await saveSharedWeek(activeWeek);
+  $("mealMadeDialog").close(); currentMealMade=null; renderPlanner();
+}
 
 function readPantryItems(){
   try{
@@ -1034,6 +1128,7 @@ $("backToShoppingRecipes").addEventListener("click", () => {
   $("backToShoppingRecipes").hidden = true;
   $("copyShoppingList").hidden = true;
   $("printShoppingList").hidden = true;
+  $("finishShopping").hidden = true;
 });
 $("copyShoppingList").addEventListener("click", async () => {
   try{
@@ -1044,6 +1139,10 @@ $("copyShoppingList").addEventListener("click", async () => {
   }
 });
 $("printShoppingList").addEventListener("click", () => window.print());
+$("finishShopping").addEventListener("click", addShoppingToPantry);
+$("closeMealMade").addEventListener("click", () => $("mealMadeDialog").close());
+$("confirmMealMade").addEventListener("click", () => finalizeMealMade(true));
+$("markMadeOnly").addEventListener("click", () => finalizeMealMade(false));
 
 
 let automaticSyncInProgress = false;

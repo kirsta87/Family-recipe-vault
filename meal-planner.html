@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=130">
+  <link rel="stylesheet" href="styles.css?v=133">
 </head>
 <body>
 <header class="subpage-hero planner-page-hero">
@@ -77,9 +77,24 @@
     <button id="backToShoppingRecipes" class="secondary" type="button" hidden>Change recipes</button>
     <button id="copyShoppingList" class="secondary" type="button" hidden>Copy list</button>
     <button id="printShoppingList" class="secondary" type="button" hidden>Print</button>
+    <button id="finishShopping" class="primary" type="button" hidden>I finished shopping</button>
   </div>
   <p id="shoppingListStatus" class="import-status" aria-live="polite"></p>
   <section id="shoppingListOutput" class="shopping-list-output" hidden></section>
+</dialog>
+
+
+<dialog id="mealMadeDialog" class="meal-made-dialog wide">
+  <button id="closeMealMade" class="close" type="button">×</button>
+  <p class="eyebrow">MEAL MADE</p>
+  <h2 id="mealMadeTitle">Update pantry?</h2>
+  <p class="muted">Review what was used. Only checked ingredients will change your pantry.</p>
+  <div id="mealMadeRows" class="meal-made-rows"></div>
+  <div class="shopping-list-actions">
+    <button id="confirmMealMade" class="primary" type="button">Mark made + update pantry</button>
+    <button id="markMadeOnly" class="secondary" type="button">Mark made only</button>
+  </div>
+  <p id="mealMadeStatus" class="import-status" aria-live="polite"></p>
 </dialog>
 
 <dialog id="plannerAssignDialog" class="meal-plan-dialog">
@@ -89,13 +104,13 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=3"></script><script src="meal-planner.js?v=130"></script>
+<script src="config.js?v=3"></script><script src="meal-planner.js?v=133"></script>
 
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=130", {updateViaCache:"none"});
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=133", {updateViaCache:"none"});
       await registration.update();
     } catch (error) {
       console.warn("Service worker update failed:", error);
