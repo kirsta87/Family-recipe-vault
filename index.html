@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=130">
+  <link rel="stylesheet" href="styles.css?v=140">
 </head>
 <body>
 <header class="hero">
@@ -41,6 +41,31 @@
       <div><p class="eyebrow">FIND RECIPES</p><h2>Search your cookbook</h2></div>
       <button id="clearBtn" class="secondary">Clear</button>
     </div>
+
+    <section class="vibe-finder" aria-labelledby="vibeHeading">
+      <div class="vibe-heading-row">
+        <div>
+          <p class="eyebrow">DINNER BY VIBE</p>
+          <h3 id="vibeHeading">What sounds good tonight?</h3>
+        </div>
+        <button id="vibeSurpriseBtn" class="secondary" type="button">Pick one for me</button>
+      </div>
+      <label class="search-field vibe-text-field">
+        <span>Describe the mood</span>
+        <input id="vibeInput" type="search" placeholder="cold and fresh, cozy but not heavy, easy summer dinner…">
+      </label>
+      <div id="vibeChips" class="vibe-chips" aria-label="Dinner vibe shortcuts">
+        <button type="button" class="vibe-chip" data-vibe="cold">Cold & fresh</button>
+        <button type="button" class="vibe-chip" data-vibe="cozy">Cozy</button>
+        <button type="button" class="vibe-chip" data-vibe="light">Light</button>
+        <button type="button" class="vibe-chip" data-vibe="hearty">Hearty</button>
+        <button type="button" class="vibe-chip" data-vibe="easy">Low effort</button>
+        <button type="button" class="vibe-chip" data-vibe="summer">Summer / grilled</button>
+        <button type="button" class="vibe-chip" data-vibe="creamy">Creamy & cheesy</button>
+        <button type="button" class="vibe-chip" data-vibe="comfort">Comfort food</button>
+      </div>
+      <p id="vibeStatus" class="vibe-status" aria-live="polite"></p>
+    </section>
 
     <label class="search-field">
       <span>Search everything</span>
@@ -101,31 +126,29 @@
   <h2>Add recipes</h2>
 
   <div class="add-tabs" role="tablist" aria-label="Recipe entry options">
-    <button type="button" class="add-tab active" data-add-tab="url">Import URL</button>
-    <button type="button" class="add-tab" data-add-tab="bulk">Bulk HelloFresh</button>
+    <button type="button" class="add-tab active" data-add-tab="url">Import URL(s)</button>
     <button type="button" class="add-tab" data-add-tab="manual">Manual recipe</button>
     <button type="button" class="add-tab" data-add-tab="pack">Import Recipe Pack (.zip)</button>
   </div>
 
   <section id="addPanelUrl" class="add-panel active">
     <form id="urlImportForm">
-      <label class="field">Paste a recipe website URL
-        <input id="importUrl" type="url" required placeholder="HelloFresh, Allrecipes, Budget Bytes, etc.">
+      <label class="field">Paste one recipe URL or up to 100 URLs — one per line
+        <textarea id="importUrl" rows="10" required placeholder="https://www.allrecipes.com/recipe/...
+https://www.hellofresh.com/recipes/...
+https://www.budgetbytes.com/..."></textarea>
       </label>
-      <p class="muted">The importer looks for standard structured recipe data: title, image, times, ingredients, instructions, and nutrition.</p>
-      <button class="primary" type="submit">Import recipe</button>
+      <p class="muted">Mix websites in the same batch. The importer looks for standard structured recipe data: title, image, times, ingredients, instructions, and nutrition.</p>
+      <label class="field">When a duplicate is found
+        <select id="urlDuplicatePolicy">
+          <option value="skip">Skip it</option>
+          <option value="refresh">Refresh the saved recipe</option>
+          <option value="keep">Keep another copy</option>
+        </select>
+      </label>
+      <button id="urlImportSubmit" class="primary" type="submit">Import recipe(s)</button>
       <div id="urlImportStatus" class="import-status" aria-live="polite"></div>
-    </form>
-  </section>
-
-  <section id="addPanelBulk" class="add-panel">
-    <form id="bulkImportForm">
-      <label class="field">HelloFresh URLs — one per line
-        <textarea id="bulkUrls" rows="10" placeholder="https://www.hellofresh.com/recipes/..."></textarea>
-      </label>
-      <button class="primary" type="submit">Import batch</button>
-      <div id="bulkProgress" class="import-status" aria-live="polite"></div>
-      <div id="bulkResults" class="bulk-results"></div>
+      <div id="urlImportResults" class="bulk-results"></div>
     </form>
   </section>
 
@@ -398,6 +421,6 @@
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="recipe-pack-schema.js"></script>
 <script src="config.js?v=3"></script>
-<script src="app.js?v=130"></script>
+<script src="app.js?v=140"></script>
 </body>
 </html>

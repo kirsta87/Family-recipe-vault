@@ -21,6 +21,8 @@ let active = null;
 let planner = JSON.parse(localStorage.getItem(PLANNER_KEY) || "{}");
 let mealPlanRecipe = null;
 let plannerSyncLoaded = false;
+let selectedVibes = new Set();
+let surpriseRecipeId = null;
 
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
@@ -548,6 +550,111 @@ function searchScore(recipe, query){
   return {score, reason};
 }
 
+
+const VIBE_PROFILES = {
+  cold: {
+    label: "cold & fresh",
+    words: ["salad","pasta salad","cold","chilled","no cook","no-cook","sandwich","wrap","bruschetta","caprese","fruit","cucumber","lettuce","slaw","summer roll","poke"],
+    avoid: ["soup","stew","casserole","pot roast"]
+  },
+  cozy: {
+    label: "cozy",
+    words: ["soup","stew","casserole","baked","roast","pot pie","chili","creamy","bisque","dumpling","noodle","mac and cheese","comfort","slow cooker","crockpot"],
+    avoid: ["cold salad","chilled"]
+  },
+  light: {
+    label: "light",
+    words: ["salad","grilled chicken","vegetable","veggie","fresh","lemon","citrus","herb","bowl","lettuce","cucumber","zucchini","shrimp","fruit","bruschetta"],
+    avoid: ["heavy cream","fried","loaded","mac and cheese","alfredo"]
+  },
+  hearty: {
+    label: "hearty",
+    words: ["beef","pork","potato","pasta","rice","burger","roast","stew","chili","casserole","sausage","meatball","loaded","biscuits","gravy"],
+    avoid: []
+  },
+  easy: {
+    label: "low effort",
+    words: ["sheet pan","one pan","one pot","slow cooker","crockpot","air fryer","skillet","easy","quick","dump","no cook","no-cook","grilled","sandwich","quesadilla"],
+    avoid: ["homemade dough","from scratch"],
+    maxMinutes: 35
+  },
+  summer: {
+    label: "summer / grilled",
+    words: ["grill","grilled","bbq","barbecue","summer","peach","corn","tomato","bruschetta","lemon","lime","salad","burger","kabob","skewer","watermelon","fresh"],
+    avoid: ["stew","pot pie"]
+  },
+  creamy: {
+    label: "creamy & cheesy",
+    words: ["cream","creamy","cheese","cheesy","alfredo","parmesan","mozzarella","gouda","cheddar","burrata","cream cheese","quesadilla","mac and cheese"],
+    avoid: []
+  },
+  comfort: {
+    label: "comfort food",
+    words: ["comfort","fried","burger","mashed potato","gravy","mac and cheese","casserole","pot pie","meatloaf","biscuits","pasta","cheesy","creamy","loaded","smothered"],
+    avoid: []
+  }
+};
+
+function recipeVibeText(recipe){
+  return normalizeSearchText([
+    recipe.name, recipe.protein, recipe.type, recipe.cuisine, recipe.notes, recipe.torrin_notes,
+    ...(recipe.tags || []), ...(recipe.collections || []),
+    ...(recipe.ingredients || []), ...(recipe.instructions || [])
+  ].filter(Boolean).join(" "));
+}
+
+function inferredVibesFromText(value){
+  const text = normalizeSearchText(value);
+  const found = new Set();
+  const aliases = {
+    cold:["cold","chilled","fresh","no cook","salad"],
+    cozy:["cozy","warm","warming","soup weather"],
+    light:["light","not heavy","healthyish","healthy ish"],
+    hearty:["hearty","filling","substantial","hungry"],
+    easy:["easy","quick","lazy","low effort","dont want to cook","do not want to cook"],
+    summer:["summer","grill","grilled","hot outside","heat wave"],
+    creamy:["creamy","cheesy","cheese"],
+    comfort:["comfort","comforting","indulgent"]
+  };
+  Object.entries(aliases).forEach(([key, phrases]) => {
+    if(phrases.some(phrase => text.includes(normalizeSearchText(phrase)))) found.add(key);
+  });
+  return found;
+}
+
+function activeVibes(){
+  const combined = new Set(selectedVibes);
+  inferredVibesFromText($("vibeInput")?.value || "").forEach(vibe => combined.add(vibe));
+  return combined;
+}
+
+function vibeScore(recipe, vibes){
+  if(!vibes.size) return 0;
+  const text = recipeVibeText(recipe);
+  let score = 0;
+  vibes.forEach(key => {
+    const profile = VIBE_PROFILES[key];
+    if(!profile) return;
+    profile.words.forEach((word, index) => {
+      if(text.includes(normalizeSearchText(word))) score += Math.max(4, 15 - Math.floor(index / 3));
+    });
+    profile.avoid.forEach(word => { if(text.includes(normalizeSearchText(word))) score -= 15; });
+    if(profile.maxMinutes && Number(recipe.total_time || 0) > 0){
+      if(Number(recipe.total_time) <= profile.maxMinutes) score += 18;
+      else if(Number(recipe.total_time) > 60) score -= 8;
+    }
+  });
+  return score;
+}
+
+function updateVibeUI(){
+  document.querySelectorAll("[data-vibe]").forEach(button => {
+    const active = selectedVibes.has(button.dataset.vibe);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
 function parseDateValue(value){
   const text = String(value || "").trim();
   if(!text) return 0;
@@ -616,6 +723,7 @@ function renderInlineEditor(recipe){
 
 function render(){
   const query = $("searchInput").value.trim().toLowerCase();
+  const vibes = activeVibes();
   const protein = $("proteinSelect").value;
   const type = $("typeSelect").value;
   const cuisine = $("cuisineSelect").value;
@@ -626,12 +734,14 @@ function render(){
   let visible = recipes
     .map(recipe => {
       const match = searchScore(recipe, query);
-      return {recipe, score:match.score, reason:match.reason};
+      const moodScore = vibeScore(recipe, vibes);
+      return {recipe, score:match.score, reason:match.reason, moodScore};
     })
     .filter(item => {
       const recipe = item.recipe;
 
       return (!query || item.score > 0)
+        && (!vibes.size || item.moodScore > 0)
         && (!protein || recipe.protein === protein)
         && (!type || recipe.type === type)
         && (!cuisine || recipe.cuisine === cuisine)
@@ -647,11 +757,18 @@ function render(){
     if(sortMode === "newest") return parseDateValue(b.recipe.added) - parseDateValue(a.recipe.added);
     if(sortMode === "az") return String(a.recipe.name).localeCompare(String(b.recipe.name));
     if(sortMode === "lastMade") return parseDateValue(b.recipe.last_made) - parseDateValue(a.recipe.last_made);
+    if(vibes.size && b.moodScore !== a.moodScore) return b.moodScore - a.moodScore;
     if(query && b.score !== a.score) return b.score - a.score;
     return String(a.recipe.name).localeCompare(String(b.recipe.name));
   });
 
   $("count").textContent = `${visible.length} recipe${visible.length === 1 ? "" : "s"}`;
+  if($("vibeStatus")){
+    const labels = [...vibes].map(key => VIBE_PROFILES[key]?.label).filter(Boolean);
+    $("vibeStatus").textContent = labels.length
+      ? `${visible.length} recipe${visible.length === 1 ? "" : "s"} match ${labels.join(" + ")}. Best matches are first.`
+      : "Pick a shortcut or describe the mood in your own words.";
+  }
   $("grid").classList.toggle("has-inline-editor", Boolean(inlineEditingId));
 
   $("grid").innerHTML = visible.map(item => {
@@ -662,7 +779,7 @@ function render(){
     }
 
     return `
-      <article class="card" data-id="${escapeHTML(recipe.id)}" role="button" tabindex="0" aria-label="Open ${escapeHTML(recipe.name || "recipe")}">
+      <article class="card${surpriseRecipeId === recipe.id ? " vibe-pick" : ""}" data-id="${escapeHTML(recipe.id)}" role="button" tabindex="0" aria-label="Open ${escapeHTML(recipe.name || "recipe")}">
         <button class="card-pencil-edit" type="button" data-inline-card-edit="${escapeHTML(recipe.id)}" aria-label="Edit ${escapeHTML(recipe.name || "recipe")}" title="Edit recipe">✎</button>
         <button class="card-meal-plan" type="button" data-add-to-meal-plan="${escapeHTML(recipe.id)}" aria-label="Add ${escapeHTML(recipe.name || "recipe")} to meal plan">Add to meal plan</button>
         ${recipe.image ? `<img class="recipe-card-image" src="${escapeHTML(recipe.image)}" alt="${escapeHTML(recipe.name || "Recipe")}">` : ""}
@@ -1527,7 +1644,7 @@ function switchAddTab(tabName){
     button.classList.toggle("active", button.dataset.addTab === tabName);
   });
 
-  ["url","bulk","manual","pack"].forEach(name => {
+  ["url","manual","pack"].forEach(name => {
     const panelId = `addPanel${name.charAt(0).toUpperCase()}${name.slice(1)}`;
     const panel = $(panelId);
     if(panel) panel.classList.toggle("active", name === tabName);
@@ -1546,113 +1663,114 @@ on("closeAdd", "click", () => $("addDialog").close());
 
 on("urlImportForm", "submit", async event => {
   event.preventDefault();
-  const rawUrl = $("importUrl").value.trim();
 
-  const localDuplicate = recipes.find(recipe =>
-    recipe.url && normalizeDuplicateUrl(recipe.url) === normalizeDuplicateUrl(rawUrl)
-  );
-
-  if(localDuplicate){
-    setImportStatus("urlImportStatus", "Duplicate found. Choose what to do next.");
-    showDuplicateDialog({
-      action: "duplicate",
-      matchType: "url",
-      row: "",
-      existing: {
-        name: localDuplicate.name || "Existing recipe",
-        id: localDuplicate.id || "",
-        url: localDuplicate.url || "",
-        source: localDuplicate.source || ""
-      }
-    }, {
-      action: "importUrl",
-      url: rawUrl
-    });
-    return;
-  }
-
-  setImportStatus("urlImportStatus", "Importing recipe…");
-
-  try{
-    const result = await postVault({
-      action: "importUrl",
-      url: rawUrl
-    });
-
-    if(!result) return;
-
-    if(result.action === "duplicate"){
-      setImportStatus("urlImportStatus", "Duplicate found. Choose what to do next.");
-      showDuplicateDialog(result, {
-        action: "importUrl",
-        url: rawUrl
-      });
-      return;
-    }
-
-    $("importUrl").value = "";
-    setImportStatus(
-      "urlImportStatus",
-      `${result.action === "refreshed" ? "Refreshed" : "Imported"} ${result.recipe?.name || "recipe"}.`,
-      "success"
-    );
-    await loadRecipes();
-  }catch(error){
-    setImportStatus("urlImportStatus", `Could not import: ${error.message}`, "error");
-  }
-});
-
-on("bulkImportForm", "submit", async event => {
-  event.preventDefault();
-
-  const urls = $("bulkUrls").value
+  const rawValues = $("importUrl").value
     .split(/\r?\n/)
     .map(value => value.trim())
     .filter(Boolean);
 
-  if(!urls.length){
-    setImportStatus("bulkProgress", "Paste at least one HelloFresh URL.", "error");
+  const uniqueUrls = [];
+  const seen = new Set();
+  const invalid = [];
+
+  rawValues.forEach(value => {
+    try{
+      const parsed = new URL(value);
+      if(!/^https?:$/.test(parsed.protocol)) throw new Error("Unsupported protocol");
+      const key = normalizeDuplicateUrl(parsed.href);
+      if(!seen.has(key)){
+        seen.add(key);
+        uniqueUrls.push(parsed.href);
+      }
+    }catch(error){
+      invalid.push(value);
+    }
+  });
+
+  if(!uniqueUrls.length){
+    setImportStatus("urlImportStatus", "Paste at least one valid recipe URL.", "error");
     return;
   }
 
-  $("bulkResults").innerHTML = "";
-  setImportStatus("bulkProgress", `Importing 0 of ${urls.length}…`);
-
-  let successful = 0;
-
-  for(let index = 0; index < urls.length; index++){
-    const url = urls[index];
-    let item;
-
-    try{
-      const result = await postVault({
-        action: "importHelloFresh",
-        url
-      });
-
-      if(!result) return;
-
-      successful++;
-      item = document.createElement("div");
-      item.className = "bulk-result success";
-      item.textContent = `✓ ${result.action === "refreshed" ? "Refreshed" : "Imported"}: ${result.recipe?.name || url}`;
-    }catch(error){
-      item = document.createElement("div");
-      item.className = "bulk-result error";
-      item.textContent = `✕ ${url} — ${error.message}`;
-    }
-
-    $("bulkResults").appendChild(item);
-    setImportStatus("bulkProgress", `Importing ${index + 1} of ${urls.length}…`);
+  if(uniqueUrls.length > 100){
+    setImportStatus("urlImportStatus", "Please import no more than 100 URLs at one time.", "error");
+    return;
   }
 
-  setImportStatus(
-    "bulkProgress",
-    `Finished: ${successful} of ${urls.length} imported or refreshed.`,
-    successful === urls.length ? "success" : ""
-  );
+  const duplicatePolicy = $("urlDuplicatePolicy")?.value || "skip";
+  const submitButton = $("urlImportSubmit");
+  submitButton.disabled = true;
+  $("urlImportResults").innerHTML = "";
 
-  await loadRecipes();
+  let imported = 0;
+  let refreshed = 0;
+  let skipped = 0;
+  let failed = invalid.length;
+
+  const appendResult = (message, type = "") => {
+    const item = document.createElement("div");
+    item.className = `bulk-result ${type}`.trim();
+    item.textContent = message;
+    $("urlImportResults").appendChild(item);
+  };
+
+  invalid.forEach(value => appendResult(`✕ Invalid URL: ${value}`, "error"));
+
+  try{
+    for(let index = 0; index < uniqueUrls.length; index++){
+      const url = uniqueUrls[index];
+      setImportStatus("urlImportStatus", `Importing ${index + 1} of ${uniqueUrls.length}…`);
+
+      try{
+        let result = await postVault({action: "importUrl", url});
+        if(!result) return;
+
+        if(result.action === "duplicate"){
+          if(duplicatePolicy === "skip"){
+            skipped++;
+            appendResult(`— Skipped duplicate: ${result.existing?.name || url}`);
+            continue;
+          }
+
+          result = await postVault({
+            action: "importUrl",
+            url,
+            duplicateAction: duplicatePolicy,
+            duplicateRow: result.row
+          });
+          if(!result) return;
+        }
+
+        if(result.action === "refreshed"){
+          refreshed++;
+          appendResult(`✓ Refreshed: ${result.recipe?.name || url}`, "success");
+        }else{
+          imported++;
+          appendResult(`✓ Imported: ${result.recipe?.name || url}`, "success");
+        }
+      }catch(error){
+        failed++;
+        appendResult(`✕ ${url} — ${error.message}`, "error");
+      }
+    }
+
+    const parts = [];
+    if(imported) parts.push(`${imported} imported`);
+    if(refreshed) parts.push(`${refreshed} refreshed`);
+    if(skipped) parts.push(`${skipped} skipped`);
+    if(failed) parts.push(`${failed} failed`);
+
+    setImportStatus(
+      "urlImportStatus",
+      `Finished: ${parts.join(", ") || "no changes"}.`,
+      failed ? "" : "success"
+    );
+
+    if(!failed) $("importUrl").value = "";
+    await loadRecipes();
+  }finally{
+    submitButton.disabled = false;
+  }
 });
 
 on("manualRecipeForm", "submit", async event => {
@@ -1889,6 +2007,51 @@ on("toggleSearchBtn", "click", () => {
   panel.classList.toggle("collapsed", isOpen);
 });
 
+
+document.addEventListener("click", event => {
+  const chip = event.target.closest("[data-vibe]");
+  if(!chip) return;
+  const vibe = chip.dataset.vibe;
+  if(selectedVibes.has(vibe)) selectedVibes.delete(vibe);
+  else selectedVibes.add(vibe);
+  surpriseRecipeId = null;
+  updateVibeUI();
+  render();
+});
+
+on("vibeInput", "input", () => { surpriseRecipeId = null; render(); });
+
+on("vibeSurpriseBtn", "click", () => {
+  const vibes = activeVibes();
+  const protein = $("proteinSelect").value;
+  const type = $("typeSelect").value;
+  const cuisine = $("cuisineSelect").value;
+  const collection = $("collectionSelect").value;
+  let choices = recipes.filter(recipe =>
+    (!vibes.size || vibeScore(recipe, vibes) > 0) &&
+    (!protein || recipe.protein === protein) &&
+    (!type || recipe.type === type) &&
+    (!cuisine || recipe.cuisine === cuisine) &&
+    (!collection || (recipe.collections || []).includes(collection)) &&
+    !recipe.hidden
+  );
+  if(!choices.length){
+    $("vibeStatus").textContent = "Nothing matches that combination yet. Try removing one filter.";
+    return;
+  }
+  const best = choices
+    .map(recipe => ({recipe, score:vibeScore(recipe, vibes)}))
+    .sort((a,b) => b.score - a.score);
+  const pool = best.slice(0, Math.min(8, best.length));
+  const pick = pool[Math.floor(Math.random() * pool.length)].recipe;
+  surpriseRecipeId = pick.id;
+  render();
+  requestAnimationFrame(() => {
+    document.querySelector(`[data-id="${CSS.escape(pick.id)}"]`)?.scrollIntoView({behavior:"smooth", block:"center"});
+  });
+  $("vibeStatus").textContent = `Tonight's pick: ${pick.name}.`;
+});
+
 on("searchInput", "input", render);
 
 [
@@ -1911,6 +2074,10 @@ on("clearBtn", "click", () => {
   $("cuisineSelect").value = "";
   $("collectionSelect").value = "";
   $("sortSelect").value = "relevance";
+  if($("vibeInput")) $("vibeInput").value = "";
+  selectedVibes.clear();
+  surpriseRecipeId = null;
+  updateVibeUI();
 
   [
     "kirstaFav",

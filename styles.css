@@ -813,3 +813,16 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 #deleteSelectedPantryItems.danger{background:#914b43!important;color:#fff!important;border:0!important}
 .pantry-bulk-toolbar .danger:hover,
 #deleteSelectedPantryItems.danger:hover{background:#743b35!important;color:#fff!important}
+/* Dinner by vibe -------------------------------------------------------- */
+.vibe-finder{margin-bottom:18px;padding:16px;border:1px solid var(--line);border-radius:18px;background:#faf6ee}
+.vibe-heading-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:10px}
+.vibe-heading-row h3{margin:0;font-family:Georgia,serif;font-size:1.25rem}
+.vibe-heading-row .eyebrow{margin-bottom:3px}
+.vibe-text-field{margin-bottom:10px}
+.vibe-chips{display:flex;flex-wrap:wrap;gap:8px}
+.vibe-chip{border:1px solid var(--line);border-radius:999px;background:white;color:var(--ink);padding:9px 13px;font:inherit;font-weight:750;cursor:pointer}
+.vibe-chip:hover{border-color:var(--green)}
+.vibe-chip.active{background:var(--green);border-color:var(--green);color:white}
+.vibe-status{min-height:1.25em;margin:10px 0 0;color:var(--muted);font-size:.88rem}
+.card.vibe-pick{outline:4px solid rgba(105,116,84,.24);outline-offset:2px}
+@media(max-width:560px){.vibe-heading-row{display:block}.vibe-heading-row button{margin-top:10px;width:100%}.vibe-chip{flex:1 1 auto}}

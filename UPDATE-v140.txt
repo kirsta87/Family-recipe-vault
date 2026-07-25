@@ -1,0 +1,11 @@
+Recipe Vault v1.4.0 — Inspire Me
+
+Adds a dinner-by-vibe discovery section to the main recipe page while preserving the v1.3.9 planner and shopping layout polish.
+
+Included:
+- Natural-language vibe search (for example: "cold and fresh but filling")
+- Quick vibe buttons for cold & fresh, cozy, light, hearty, low effort, summer/grilled, creamy & cheesy, and comfort food
+- Multiple vibes can be combined
+- Best matches rank first
+- "Pick one for me" highlights a strong match
+- Existing recipe filters still work alongside vibe matching
