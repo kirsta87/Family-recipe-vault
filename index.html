@@ -101,29 +101,31 @@
   <h2>Add recipes</h2>
 
   <div class="add-tabs" role="tablist" aria-label="Recipe entry options">
-    <button type="button" class="add-tab active" data-add-tab="url">Import URL(s)</button>
+    <button type="button" class="add-tab active" data-add-tab="url">Import URL</button>
+    <button type="button" class="add-tab" data-add-tab="bulk">Bulk HelloFresh</button>
     <button type="button" class="add-tab" data-add-tab="manual">Manual recipe</button>
     <button type="button" class="add-tab" data-add-tab="pack">Import Recipe Pack (.zip)</button>
   </div>
 
   <section id="addPanelUrl" class="add-panel active">
     <form id="urlImportForm">
-      <label class="field">Paste one recipe URL or up to 100 URLs — one per line
-        <textarea id="importUrl" rows="10" required placeholder="https://www.allrecipes.com/recipe/...
-https://www.hellofresh.com/recipes/...
-https://www.budgetbytes.com/..."></textarea>
+      <label class="field">Paste a recipe website URL
+        <input id="importUrl" type="url" required placeholder="HelloFresh, Allrecipes, Budget Bytes, etc.">
       </label>
-      <p class="muted">Mix websites in the same batch. The importer looks for standard structured recipe data: title, image, times, ingredients, instructions, and nutrition.</p>
-      <label class="field">When a duplicate is found
-        <select id="urlDuplicatePolicy">
-          <option value="skip">Skip it</option>
-          <option value="refresh">Refresh the saved recipe</option>
-          <option value="keep">Keep another copy</option>
-        </select>
-      </label>
-      <button id="urlImportSubmit" class="primary" type="submit">Import recipe(s)</button>
+      <p class="muted">The importer looks for standard structured recipe data: title, image, times, ingredients, instructions, and nutrition.</p>
+      <button class="primary" type="submit">Import recipe</button>
       <div id="urlImportStatus" class="import-status" aria-live="polite"></div>
-      <div id="urlImportResults" class="bulk-results"></div>
+    </form>
+  </section>
+
+  <section id="addPanelBulk" class="add-panel">
+    <form id="bulkImportForm">
+      <label class="field">HelloFresh URLs — one per line
+        <textarea id="bulkUrls" rows="10" placeholder="https://www.hellofresh.com/recipes/..."></textarea>
+      </label>
+      <button class="primary" type="submit">Import batch</button>
+      <div id="bulkProgress" class="import-status" aria-live="polite"></div>
+      <div id="bulkResults" class="bulk-results"></div>
     </form>
   </section>
 
@@ -396,6 +398,6 @@ https://www.budgetbytes.com/..."></textarea>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="recipe-pack-schema.js"></script>
 <script src="config.js?v=3"></script>
-<script src="app.js?v=137"></script>
+<script src="app.js?v=130"></script>
 </body>
 </html>

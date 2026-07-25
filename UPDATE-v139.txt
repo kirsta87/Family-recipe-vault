@@ -1,0 +1,8 @@
+Recipe Vault v1.3.9 — Planner + Shopping Layout Cleanup
+
+- Reflows planner meal cards so titles, images, and buttons no longer overlap.
+- Makes meal actions a dedicated bottom row.
+- Reorganizes each shopping ingredient into a clean item row with brand and category controls below it.
+- Preserves unchecked-by-default shopping items and per-section Select all.
+- Fixes Remove selected to use white text on a dark red button.
+- Bumps cached CSS/JS versions so the browser loads the update.

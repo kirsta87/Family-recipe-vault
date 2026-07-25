@@ -1527,7 +1527,7 @@ function switchAddTab(tabName){
     button.classList.toggle("active", button.dataset.addTab === tabName);
   });
 
-  ["url","manual","pack"].forEach(name => {
+  ["url","bulk","manual","pack"].forEach(name => {
     const panelId = `addPanel${name.charAt(0).toUpperCase()}${name.slice(1)}`;
     const panel = $(panelId);
     if(panel) panel.classList.toggle("active", name === tabName);
@@ -1546,114 +1546,113 @@ on("closeAdd", "click", () => $("addDialog").close());
 
 on("urlImportForm", "submit", async event => {
   event.preventDefault();
+  const rawUrl = $("importUrl").value.trim();
 
-  const rawValues = $("importUrl").value
+  const localDuplicate = recipes.find(recipe =>
+    recipe.url && normalizeDuplicateUrl(recipe.url) === normalizeDuplicateUrl(rawUrl)
+  );
+
+  if(localDuplicate){
+    setImportStatus("urlImportStatus", "Duplicate found. Choose what to do next.");
+    showDuplicateDialog({
+      action: "duplicate",
+      matchType: "url",
+      row: "",
+      existing: {
+        name: localDuplicate.name || "Existing recipe",
+        id: localDuplicate.id || "",
+        url: localDuplicate.url || "",
+        source: localDuplicate.source || ""
+      }
+    }, {
+      action: "importUrl",
+      url: rawUrl
+    });
+    return;
+  }
+
+  setImportStatus("urlImportStatus", "Importing recipe…");
+
+  try{
+    const result = await postVault({
+      action: "importUrl",
+      url: rawUrl
+    });
+
+    if(!result) return;
+
+    if(result.action === "duplicate"){
+      setImportStatus("urlImportStatus", "Duplicate found. Choose what to do next.");
+      showDuplicateDialog(result, {
+        action: "importUrl",
+        url: rawUrl
+      });
+      return;
+    }
+
+    $("importUrl").value = "";
+    setImportStatus(
+      "urlImportStatus",
+      `${result.action === "refreshed" ? "Refreshed" : "Imported"} ${result.recipe?.name || "recipe"}.`,
+      "success"
+    );
+    await loadRecipes();
+  }catch(error){
+    setImportStatus("urlImportStatus", `Could not import: ${error.message}`, "error");
+  }
+});
+
+on("bulkImportForm", "submit", async event => {
+  event.preventDefault();
+
+  const urls = $("bulkUrls").value
     .split(/\r?\n/)
     .map(value => value.trim())
     .filter(Boolean);
 
-  const uniqueUrls = [];
-  const seen = new Set();
-  const invalid = [];
+  if(!urls.length){
+    setImportStatus("bulkProgress", "Paste at least one HelloFresh URL.", "error");
+    return;
+  }
 
-  rawValues.forEach(value => {
+  $("bulkResults").innerHTML = "";
+  setImportStatus("bulkProgress", `Importing 0 of ${urls.length}…`);
+
+  let successful = 0;
+
+  for(let index = 0; index < urls.length; index++){
+    const url = urls[index];
+    let item;
+
     try{
-      const parsed = new URL(value);
-      if(!/^https?:$/.test(parsed.protocol)) throw new Error("Unsupported protocol");
-      const key = normalizeDuplicateUrl(parsed.href);
-      if(!seen.has(key)){
-        seen.add(key);
-        uniqueUrls.push(parsed.href);
-      }
+      const result = await postVault({
+        action: "importHelloFresh",
+        url
+      });
+
+      if(!result) return;
+
+      successful++;
+      item = document.createElement("div");
+      item.className = "bulk-result success";
+      item.textContent = `✓ ${result.action === "refreshed" ? "Refreshed" : "Imported"}: ${result.recipe?.name || url}`;
     }catch(error){
-      invalid.push(value);
-    }
-  });
-
-  if(!uniqueUrls.length){
-    setImportStatus("urlImportStatus", "Paste at least one valid recipe URL.", "error");
-    return;
-  }
-
-  if(uniqueUrls.length > 100){
-    setImportStatus("urlImportStatus", "Please import no more than 100 URLs at one time.", "error");
-    return;
-  }
-
-  const duplicatePolicy = $("urlDuplicatePolicy")?.value || "skip";
-  const submitButton = $("urlImportSubmit");
-  submitButton.disabled = true;
-  $("urlImportResults").innerHTML = "";
-
-  let imported = 0;
-  let refreshed = 0;
-  let skipped = 0;
-  let failed = invalid.length;
-
-  const appendResult = (message, type = "") => {
-    const item = document.createElement("div");
-    item.className = `bulk-result ${type}`.trim();
-    item.textContent = message;
-    $("urlImportResults").appendChild(item);
-  };
-
-  invalid.forEach(value => appendResult(`✕ Invalid URL: ${value}`, "error"));
-
-  try{
-    for(let index = 0; index < uniqueUrls.length; index++){
-      const url = uniqueUrls[index];
-      setImportStatus("urlImportStatus", `Importing ${index + 1} of ${uniqueUrls.length}…`);
-
-      try{
-        let result = await postVault({action: "importUrl", url});
-        if(!result) return;
-
-        if(result.action === "duplicate"){
-          if(duplicatePolicy === "skip"){
-            skipped++;
-            appendResult(`— Skipped duplicate: ${result.existing?.name || url}`);
-            continue;
-          }
-
-          result = await postVault({
-            action: "importUrl",
-            url,
-            duplicateAction: duplicatePolicy,
-            duplicateRow: result.row
-          });
-          if(!result) return;
-        }
-
-        if(result.action === "refreshed"){
-          refreshed++;
-          appendResult(`✓ Refreshed: ${result.recipe?.name || url}`, "success");
-        }else{
-          imported++;
-          appendResult(`✓ Imported: ${result.recipe?.name || url}`, "success");
-        }
-      }catch(error){
-        failed++;
-        appendResult(`✕ ${url} — ${error.message}`, "error");
-      }
+      item = document.createElement("div");
+      item.className = "bulk-result error";
+      item.textContent = `✕ ${url} — ${error.message}`;
     }
 
-    const parts = [];
-    if(imported) parts.push(`${imported} imported`);
-    if(refreshed) parts.push(`${refreshed} refreshed`);
-    if(skipped) parts.push(`${skipped} skipped`);
-    if(failed) parts.push(`${failed} failed`);
-
-    setImportStatus(
-      "urlImportStatus",
-      `Finished: ${parts.join(", ") || "no changes"}.`,
-      failed ? "" : "success"
-    );
-
-    if(!failed) $("importUrl").value = "";
-    await loadRecipes();
-  }finally{
-    submitButton.disabled = false;
+    $("bulkResults").appendChild(item);
+    setImportStatus("bulkProgress", `Importing ${index + 1} of ${urls.length}…`);
   }
+
+  setImportStatus(
+    "bulkProgress",
+    `Finished: ${successful} of ${urls.length} imported or refreshed.`,
+    successful === urls.length ? "success" : ""
+  );
+
+  await loadRecipes();
 });
 
 on("manualRecipeForm", "submit", async event => {

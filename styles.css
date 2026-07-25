@@ -746,3 +746,70 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .pantry-item-card.is-bulk-editing:has(input:checked){border-color:var(--sage);background:#f1f3e8}
 .pantry-select-check{display:grid;place-items:center;padding:8px;margin:-8px}
 @media(max-width:760px){.pantry-bulk-toolbar{align-items:flex-start;flex-direction:column}.pantry-bulk-actions{width:100%}.pantry-bulk-actions button{flex:1}.pantry-heading-actions{width:100%}.pantry-heading-actions button{flex:1}.pantry-item-card.is-bulk-editing{grid-template-columns:auto 1fr}.pantry-item-card.is-bulk-editing .pantry-item-meta{grid-column:2}}
+
+/* Planner + shopping layout cleanup v139 */
+.shopping-list-dialog{width:min(1120px,calc(100% - 24px))}
+.shopping-category-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:8px}
+.shopping-category-heading h3{margin:0}
+.shopping-select-all{display:flex;align-items:center;gap:7px;font-size:.9rem;font-weight:750;white-space:nowrap}
+.shopping-select-all input{width:18px;height:18px;margin:0;accent-color:var(--sage)}
+.shopping-item-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(150px,.55fr);
+  grid-template-areas:
+    "item item"
+    "brand category";
+  gap:7px 10px;
+  align-items:center;
+  padding:12px 0;
+  border-top:1px solid var(--line);
+}
+.shopping-item-row:first-of-type{border-top:0}
+.shopping-item-row .shopping-item{grid-area:item;display:flex!important;align-items:flex-start;gap:9px!important;min-width:0}
+.shopping-item-row .shopping-item input{flex:0 0 auto;width:19px;height:19px;margin-top:2px;accent-color:var(--sage)}
+.shopping-item-row .shopping-item span{min-width:0;line-height:1.35}
+.shopping-brand-input{grid-area:brand;width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font:inherit;font-size:.86rem}
+.shopping-section-select{grid-area:category;width:100%;min-width:0;font-size:.86rem;padding:9px 10px}
+@media(max-width:620px){
+  .shopping-list-dialog{width:min(96vw,1120px)}
+  .shopping-item-row{grid-template-columns:1fr;grid-template-areas:"item" "brand" "category";gap:7px}
+  .shopping-category-heading{align-items:flex-start}
+}
+@media print{.shopping-brand-input,.shopping-section-select,.shopping-select-all{display:none!important}.shopping-item-row{display:block;border-top:0;padding:4px 0}}
+
+/* Keep weekly cards compact without allowing meal contents to overlap neighboring days. */
+.planner-day-card{overflow:hidden;padding:11px}
+.planner-day-header{align-items:flex-start}
+.planner-add-meal{flex:0 0 auto;padding:6px 9px;font-size:.78rem;line-height:1.15}
+.planner-day-meal{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:8px;
+  align-items:stretch;
+  padding:9px;
+  overflow:hidden;
+}
+.planner-day-meal .planner-recipe-image{width:100%;height:88px;margin:0;object-fit:cover;border-radius:10px}
+.planner-day-meal-copy{min-width:0}
+.planner-day-meal-copy .planner-recipe-link{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;margin:0;font-size:.9rem;line-height:1.18;overflow-wrap:anywhere}
+.planner-day-meal-copy .planner-recipe-meta{margin:5px 0 0;font-size:.74rem;line-height:1.3}
+.planner-meal-actions{display:flex;align-items:center;justify-content:space-between;gap:7px;width:100%;margin-top:2px}
+.planner-made-meal{flex:1;min-width:0;padding:7px 8px;font-size:.76rem;text-align:center}
+.planner-remove-meal{flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:999px;background:#f3e6df;color:var(--clay);padding:0;font-size:1.15rem}
+.planner-remove-meal:hover{background:#ead3ca}
+@media(max-width:1050px){
+  .planner-day-meal{grid-template-columns:76px minmax(0,1fr);grid-template-areas:"image copy" "actions actions"}
+  .planner-day-meal .planner-recipe-image{grid-area:image;height:72px}
+  .planner-day-meal-copy{grid-area:copy}
+  .planner-meal-actions{grid-area:actions}
+}
+@media(max-width:480px){
+  .planner-day-card{display:block}
+  .planner-day-meal{grid-template-columns:76px minmax(0,1fr);grid-template-areas:"image copy" "actions actions"}
+}
+
+/* High-contrast destructive bulk action. */
+.pantry-bulk-toolbar .danger,
+#deleteSelectedPantryItems.danger{background:#914b43!important;color:#fff!important;border:0!important}
+.pantry-bulk-toolbar .danger:hover,
+#deleteSelectedPantryItems.danger:hover{background:#743b35!important;color:#fff!important}
