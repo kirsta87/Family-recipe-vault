@@ -826,3 +826,9 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .vibe-status{min-height:1.25em;margin:10px 0 0;color:var(--muted);font-size:.88rem}
 .card.vibe-pick{outline:4px solid rgba(105,116,84,.24);outline-offset:2px}
 @media(max-width:560px){.vibe-heading-row{display:block}.vibe-heading-row button{margin-top:10px;width:100%}.vibe-chip{flex:1 1 auto}}
+
+/* v1.4.1 recipe intelligence */
+.recipe-intelligence-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border, #ddd)}
+.recipe-intelligence-status{margin:0;font-size:.82rem;opacity:.75;line-height:1.35}
+.compact-button{padding:7px 10px;font-size:.78rem;white-space:nowrap}
+@media (max-width:650px){.recipe-intelligence-row{align-items:flex-start;flex-direction:column}.compact-button{width:100%}}

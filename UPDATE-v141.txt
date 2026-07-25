@@ -1,0 +1,9 @@
+Recipe Vault v1.4.1 — Recipe Intelligence Engine
+
+- Automatically analyzes all existing recipes on first load.
+- Reanalyzes any recipe whenever its title, ingredients, instructions, metadata, or time changes.
+- Automatically performs a full-library recheck every 14 days so improved rules can add or remove inferred traits.
+- Adds a manual “Recheck recipes now” control.
+- Stores Recipe DNA locally without changing recipe categories or requiring manual tagging.
+- Makes Cold & Fresh strict: hot cooking methods, crockpot meals, soups, stews, casseroles, and warm-serving instructions are strongly excluded unless the finished recipe is explicitly chilled.
+- Requires every selected vibe to pass its own confidence threshold.

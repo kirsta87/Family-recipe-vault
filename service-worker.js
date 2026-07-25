@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "recipe-vault-v140";
+const CACHE_NAME = "recipe-vault-v141";
 const APP_SHELL = [
   "./", "./index.html", "./styles.css?v=140", "./app.js?v=140",
   "./meal-planner.html", "./meal-planner.js?v=140",

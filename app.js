@@ -27,6 +27,10 @@ let surpriseRecipeId = null;
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
 const RECIPE_CACHE_KEY = "recipeVaultRecipeCacheV118";
+const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
+const RECIPE_DNA_ENGINE_VERSION = 1;
+const RECIPE_DNA_FULL_RECHECK_MS = 14 * 24 * 60 * 60 * 1000;
+let recipeDNAStore = readRecipeDNAStore();
 
 function readRecipeCache(){
   try{
@@ -53,6 +57,7 @@ function writeRecipeCache(rows){
 
 function applyRecipeRows(rows, statusText){
   recipes = applyCollectionOverrides(rows.map(clean));
+  refreshRecipeIntelligence({automatic:true});
   renderFilters();
   refreshEntryCategoryMenus();
   render();
@@ -552,48 +557,34 @@ function searchScore(recipe, query){
 
 
 const VIBE_PROFILES = {
-  cold: {
-    label: "cold & fresh",
-    words: ["salad","pasta salad","cold","chilled","no cook","no-cook","sandwich","wrap","bruschetta","caprese","fruit","cucumber","lettuce","slaw","summer roll","poke"],
-    avoid: ["soup","stew","casserole","pot roast"]
-  },
-  cozy: {
-    label: "cozy",
-    words: ["soup","stew","casserole","baked","roast","pot pie","chili","creamy","bisque","dumpling","noodle","mac and cheese","comfort","slow cooker","crockpot"],
-    avoid: ["cold salad","chilled"]
-  },
-  light: {
-    label: "light",
-    words: ["salad","grilled chicken","vegetable","veggie","fresh","lemon","citrus","herb","bowl","lettuce","cucumber","zucchini","shrimp","fruit","bruschetta"],
-    avoid: ["heavy cream","fried","loaded","mac and cheese","alfredo"]
-  },
-  hearty: {
-    label: "hearty",
-    words: ["beef","pork","potato","pasta","rice","burger","roast","stew","chili","casserole","sausage","meatball","loaded","biscuits","gravy"],
-    avoid: []
-  },
-  easy: {
-    label: "low effort",
-    words: ["sheet pan","one pan","one pot","slow cooker","crockpot","air fryer","skillet","easy","quick","dump","no cook","no-cook","grilled","sandwich","quesadilla"],
-    avoid: ["homemade dough","from scratch"],
-    maxMinutes: 35
-  },
-  summer: {
-    label: "summer / grilled",
-    words: ["grill","grilled","bbq","barbecue","summer","peach","corn","tomato","bruschetta","lemon","lime","salad","burger","kabob","skewer","watermelon","fresh"],
-    avoid: ["stew","pot pie"]
-  },
-  creamy: {
-    label: "creamy & cheesy",
-    words: ["cream","creamy","cheese","cheesy","alfredo","parmesan","mozzarella","gouda","cheddar","burrata","cream cheese","quesadilla","mac and cheese"],
-    avoid: []
-  },
-  comfort: {
-    label: "comfort food",
-    words: ["comfort","fried","burger","mashed potato","gravy","mac and cheese","casserole","pot pie","meatloaf","biscuits","pasta","cheesy","creamy","loaded","smothered"],
-    avoid: []
-  }
+  cold: {label:"cold & fresh", minimum:58},
+  cozy: {label:"cozy", minimum:35},
+  light: {label:"light", minimum:32},
+  hearty: {label:"hearty", minimum:32},
+  easy: {label:"low effort", minimum:30},
+  summer: {label:"summer / grilled", minimum:34},
+  creamy: {label:"creamy & cheesy", minimum:30},
+  comfort: {label:"comfort food", minimum:34}
 };
+
+function readRecipeDNAStore(){
+  try{
+    const stored = JSON.parse(localStorage.getItem(RECIPE_DNA_KEY) || "null");
+    if(!stored || typeof stored !== "object") return {engineVersion:RECIPE_DNA_ENGINE_VERSION,lastFullCheck:0,recipes:{}};
+    return {
+      engineVersion:Number(stored.engineVersion || 0),
+      lastFullCheck:Number(stored.lastFullCheck || 0),
+      recipes:stored.recipes && typeof stored.recipes === "object" ? stored.recipes : {}
+    };
+  }catch(error){
+    return {engineVersion:RECIPE_DNA_ENGINE_VERSION,lastFullCheck:0,recipes:{}};
+  }
+}
+
+function writeRecipeDNAStore(){
+  try{ localStorage.setItem(RECIPE_DNA_KEY, JSON.stringify(recipeDNAStore)); }
+  catch(error){ console.warn("Recipe intelligence could not be saved:", error); }
+}
 
 function recipeVibeText(recipe){
   return normalizeSearchText([
@@ -603,20 +594,137 @@ function recipeVibeText(recipe){
   ].filter(Boolean).join(" "));
 }
 
+function recipeDNAFingerprint(recipe){
+  const source = JSON.stringify({
+    name:recipe.name || "", protein:recipe.protein || "", type:recipe.type || "", cuisine:recipe.cuisine || "",
+    tags:recipe.tags || [], collections:recipe.collections || [], ingredients:recipe.ingredients || [],
+    instructions:recipe.instructions || [], total_time:Number(recipe.total_time || 0)
+  });
+  let hash = 2166136261;
+  for(let index=0; index<source.length; index++){
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function phraseHits(text, phrases){
+  return phrases.reduce((count, phrase) => count + (text.includes(normalizeSearchText(phrase)) ? 1 : 0), 0);
+}
+
+function analyzeRecipeDNA(recipe){
+  const text = recipeVibeText(recipe);
+  const title = normalizeSearchText(recipe.name || "");
+  const instructions = normalizeSearchText((recipe.instructions || []).join(" "));
+  const ingredients = normalizeSearchText((recipe.ingredients || []).join(" "));
+  const type = normalizeSearchText(recipe.type || "");
+  const minutes = Number(recipe.total_time || 0);
+  const scores = {cold:0,cozy:0,light:0,hearty:0,easy:0,summer:0,creamy:0,comfort:0};
+  const traits = {temperature:[],method:[],texture:[],season:[],effort:[],style:[]};
+
+  const coldStrong = ["serve chilled","served chilled","chill before serving","refrigerate before serving","cold pasta salad","pasta salad","chicken salad","tuna salad","egg salad","no cook","no-cook","overnight oats","smoothie","cold noodles","chilled soup","poke bowl","ceviche"];
+  const coldMedium = ["salad","slaw","caprese","summer roll","lettuce wrap","fruit salad","sandwich","wrap"];
+  const hotStrong = ["serve hot","serve warm","crockpot","slow cooker","cook on low","cook on high","bake at","preheat oven","roast for","simmer","boil","casserole","soup","stew","pot roast","braise"];
+  const cookingMethods = ["crockpot","slow cooker","bake","baked","roast","roasted","simmer","boil","fry","fried","air fryer","grill","grilled","skillet","stovetop"];
+  const coldStrongHits = phraseHits(text,coldStrong);
+  const coldMediumHits = phraseHits(title + " " + type,coldMedium);
+  const hotHits = phraseHits(instructions + " " + title,hotStrong);
+  const activeCookingHits = phraseHits(instructions,cookingMethods);
+
+  scores.cold += coldStrongHits * 38 + coldMediumHits * 20;
+  if(phraseHits(title,["salad","slaw","caprese","smoothie","cold","chilled"])) scores.cold += 24;
+  if(phraseHits(instructions,["refrigerate","chill","serve cold","serve chilled"])) scores.cold += 30;
+  if(hotHits) scores.cold -= hotHits * 34;
+  if(activeCookingHits && !coldStrongHits && !phraseHits(instructions,["cool completely","chill","refrigerate"])) scores.cold -= 30;
+  if(phraseHits(text,["fresh","lemon","lime","cucumber","tomato","herbs"])) scores.cold += 3; // garnish alone cannot qualify.
+  if(scores.cold >= 58){ traits.temperature.push("cold"); traits.style.push("fresh"); }
+  else if(hotHits || activeCookingHits) traits.temperature.push("hot");
+
+  scores.cozy += phraseHits(text,["soup","stew","casserole","pot pie","chili","bisque","dumpling","roast","slow cooker","crockpot","baked pasta","mac and cheese"]) * 18;
+  scores.cozy += phraseHits(text,["creamy","warming","comfort"]) * 8;
+  scores.cozy -= coldStrongHits * 24;
+
+  scores.light += phraseHits(text,["salad","lettuce","cucumber","zucchini","vegetable","veggie","lemon","citrus","herb","fruit","bruschetta","grilled chicken","shrimp"]) * 8;
+  scores.light += coldStrongHits * 12;
+  scores.light -= phraseHits(text,["heavy cream","fried","loaded","alfredo","mac and cheese","gravy","cream cheese"]) * 15;
+
+  scores.hearty += phraseHits(text,["beef","pork","potato","pasta","rice","burger","roast","stew","chili","casserole","sausage","meatball","biscuits","gravy"]) * 9;
+  scores.hearty += phraseHits(title,["loaded","smothered","hearty"]) * 15;
+
+  scores.easy += phraseHits(text,["sheet pan","one pan","one pot","slow cooker","crockpot","air fryer","skillet","dump and go","no cook","no-cook","sandwich","quesadilla"]) * 13;
+  if(minutes > 0 && minutes <= 20) scores.easy += 30;
+  else if(minutes > 0 && minutes <= 35) scores.easy += 20;
+  else if(minutes > 60) scores.easy -= 10;
+  scores.easy -= phraseHits(text,["homemade dough","from scratch","marinate overnight"]) * 15;
+
+  scores.summer += phraseHits(text,["grill","grilled","bbq","barbecue","summer","peach","corn","tomato","bruschetta","lemon","lime","watermelon","kabob","skewer"]) * 10;
+  scores.summer += coldStrongHits * 16;
+  scores.summer -= phraseHits(text,["stew","pot pie","heavy casserole","braise"]) * 18;
+
+  scores.creamy += phraseHits(ingredients + " " + title,["heavy cream","cream cheese","sour cream","alfredo","parmesan","mozzarella","gouda","cheddar","burrata","cheese sauce","mac and cheese"]) * 12;
+  scores.creamy += phraseHits(title,["creamy","cheesy"]) * 25;
+
+  scores.comfort += phraseHits(text,["fried","burger","mashed potato","gravy","mac and cheese","casserole","pot pie","meatloaf","biscuits","cheesy","creamy","loaded","smothered","comfort"]) * 10;
+  scores.comfort += scores.cozy * .35;
+
+  if(phraseHits(text,["crockpot","slow cooker"])) traits.method.push("crockpot");
+  if(phraseHits(text,["grill","grilled","bbq"])) traits.method.push("grill");
+  if(phraseHits(text,["no cook","no-cook"]) || (coldStrongHits && !activeCookingHits)) traits.method.push("no cook");
+  if(phraseHits(text,["air fryer"])) traits.method.push("air fryer");
+  if(phraseHits(text,["bake","baked","oven","roast"])) traits.method.push("oven");
+  if(scores.creamy >= 30) traits.texture.push("creamy or cheesy");
+  if(scores.light >= 32) traits.style.push("light");
+  if(scores.hearty >= 32) traits.style.push("hearty");
+  if(scores.cozy >= 35) traits.style.push("cozy");
+  if(scores.summer >= 34) traits.season.push("summer");
+  if(scores.easy >= 30) traits.effort.push("low effort");
+
+  Object.keys(scores).forEach(key => scores[key] = Math.round(scores[key]));
+  return {fingerprint:recipeDNAFingerprint(recipe), analyzedAt:Date.now(), scores, traits};
+}
+
+function refreshRecipeIntelligence({force=false,automatic=false}={}){
+  const now = Date.now();
+  const engineChanged = recipeDNAStore.engineVersion !== RECIPE_DNA_ENGINE_VERSION;
+  const fullCheckDue = now - Number(recipeDNAStore.lastFullCheck || 0) >= RECIPE_DNA_FULL_RECHECK_MS;
+  let analyzed = 0;
+  const liveIds = new Set(recipes.map(recipe => String(recipe.id || recipe.name || "")));
+
+  recipes.forEach(recipe => {
+    const id = String(recipe.id || recipe.name || "");
+    const current = recipeDNAStore.recipes[id];
+    const fingerprint = recipeDNAFingerprint(recipe);
+    if(force || engineChanged || fullCheckDue || !current || current.fingerprint !== fingerprint){
+      recipeDNAStore.recipes[id] = analyzeRecipeDNA(recipe);
+      analyzed++;
+    }
+  });
+  Object.keys(recipeDNAStore.recipes).forEach(id => { if(!liveIds.has(id)) delete recipeDNAStore.recipes[id]; });
+  recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
+  if(force || engineChanged || fullCheckDue) recipeDNAStore.lastFullCheck = now;
+  if(analyzed || engineChanged || fullCheckDue) writeRecipeDNAStore();
+
+  const status = $("recipeIntelligenceStatus");
+  if(status){
+    status.textContent = analyzed
+      ? `${analyzed} recipe${analyzed===1?"":"s"} analyzed automatically. Full library rechecks every 14 days.`
+      : `Recipe intelligence is current. Automatic full recheck every 14 days.`;
+  }
+  if(!automatic) render();
+  return analyzed;
+}
+
 function inferredVibesFromText(value){
   const text = normalizeSearchText(value);
   const found = new Set();
   const aliases = {
-    cold:["cold","chilled","fresh","no cook","salad"],
-    cozy:["cozy","warm","warming","soup weather"],
-    light:["light","not heavy","healthyish","healthy ish"],
-    hearty:["hearty","filling","substantial","hungry"],
+    cold:["cold","chilled","fresh","no cook","salad"], cozy:["cozy","warm","warming","soup weather"],
+    light:["light","not heavy","healthyish","healthy ish"], hearty:["hearty","filling","substantial","hungry"],
     easy:["easy","quick","lazy","low effort","dont want to cook","do not want to cook"],
-    summer:["summer","grill","grilled","hot outside","heat wave"],
-    creamy:["creamy","cheesy","cheese"],
+    summer:["summer","grill","grilled","hot outside","heat wave"], creamy:["creamy","cheesy","cheese"],
     comfort:["comfort","comforting","indulgent"]
   };
-  Object.entries(aliases).forEach(([key, phrases]) => {
+  Object.entries(aliases).forEach(([key,phrases]) => {
     if(phrases.some(phrase => text.includes(normalizeSearchText(phrase)))) found.add(key);
   });
   return found;
@@ -630,21 +738,21 @@ function activeVibes(){
 
 function vibeScore(recipe, vibes){
   if(!vibes.size) return 0;
-  const text = recipeVibeText(recipe);
-  let score = 0;
-  vibes.forEach(key => {
+  const id = String(recipe.id || recipe.name || "");
+  let dna = recipeDNAStore.recipes[id];
+  if(!dna || dna.fingerprint !== recipeDNAFingerprint(recipe)){
+    dna = analyzeRecipeDNA(recipe);
+    recipeDNAStore.recipes[id] = dna;
+    writeRecipeDNAStore();
+  }
+  let total = 0;
+  for(const key of vibes){
     const profile = VIBE_PROFILES[key];
-    if(!profile) return;
-    profile.words.forEach((word, index) => {
-      if(text.includes(normalizeSearchText(word))) score += Math.max(4, 15 - Math.floor(index / 3));
-    });
-    profile.avoid.forEach(word => { if(text.includes(normalizeSearchText(word))) score -= 15; });
-    if(profile.maxMinutes && Number(recipe.total_time || 0) > 0){
-      if(Number(recipe.total_time) <= profile.maxMinutes) score += 18;
-      else if(Number(recipe.total_time) > 60) score -= 8;
-    }
-  });
-  return score;
+    const score = Number(dna.scores?.[key] || 0);
+    if(!profile || score < profile.minimum) return -999; // every selected vibe must genuinely match.
+    total += score;
+  }
+  return total;
 }
 
 function updateVibeUI(){
@@ -2326,5 +2434,10 @@ document.querySelectorAll("dialog").forEach(dialog => {
 });
 
 mountMultiCollectionPicker("manualCollectionPicker", []);
+on("recheckRecipeIntelligence", "click", () => {
+  const count = refreshRecipeIntelligence({force:true});
+  const status = $("recipeIntelligenceStatus");
+  if(status) status.textContent = `Rechecked ${count || recipes.length} recipe${recipes.length===1?"":"s"} with the latest intelligence rules.`;
+});
 loadRecipes();
 })();
