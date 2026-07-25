@@ -877,7 +877,9 @@ function plannerRecipeName(id, plan){
 function plannerSlot(date){
   const monday=plannerMonday(date), key=plannerWeekKey(monday), day=plannerDayName(date);
   const plans=planner;
-  return {plans,key,day,recipeId:plans[key]?.days?.[day] || ""};
+  const raw=plans[key]?.days?.[day];
+  const recipeIds=Array.isArray(raw)?raw.filter(Boolean):raw?[raw]:[];
+  return {plans,key,day,recipeIds,recipeId:recipeIds[0]||""};
 }
 async function assignRecipeToDate(recipe, date){
   const slot=plannerSlot(date);
@@ -888,7 +890,7 @@ async function assignRecipeToDate(recipe, date){
   }
   if(!slot.plans[slot.key]) slot.plans[slot.key]={days:{},updatedAt:null};
   if(!slot.plans[slot.key].days) slot.plans[slot.key].days={};
-  slot.plans[slot.key].days[slot.day]=recipe.id;
+  slot.plans[slot.key].days[slot.day]=[...slot.recipeIds,recipe.id];
   if(!slot.plans[slot.key].recipeSnapshots) slot.plans[slot.key].recipeSnapshots={};
   slot.plans[slot.key].recipeSnapshots[String(recipe.id)]={id:String(recipe.id),name:recipe.name||"Untitled recipe",image:recipe.image||"",protein:recipe.protein||"",type:recipe.type||"",total_time:Number(recipe.total_time)||0};
   slot.plans[slot.key].updatedAt=new Date().toISOString();
@@ -901,9 +903,11 @@ function renderMealPlanWeekGroup(start,label){
     <div class="meal-plan-week-heading"><span>${escapeHTML(label)}</span><strong>${escapeHTML(plannerWeekLabel(start))}</strong></div>
     <div class="meal-plan-week-days">
       ${Array.from({length:7},(_,index)=>{
-        const date=plannerAddDays(start,index), slot=plannerSlot(date), existing=slot.recipeId ? plannerRecipeName(slot.recipeId, slot.plans[slot.key]) : "Empty";
-        const isCurrentRecipe = slot.recipeId && mealPlanRecipe && String(slot.recipeId) === String(mealPlanRecipe.id);
-        const stateClass = isCurrentRecipe ? "current-recipe" : (slot.recipeId ? "occupied" : "");
+        const date=plannerAddDays(start,index), slot=plannerSlot(date);
+        const names=slot.recipeIds.map(id=>plannerRecipeName(id,slot.plans[slot.key]));
+        const existing=names.length?names.join(" • "):"Empty";
+        const isCurrentRecipe = mealPlanRecipe && slot.recipeIds.some(id=>String(id)===String(mealPlanRecipe.id));
+        const stateClass = isCurrentRecipe ? "current-recipe" : (slot.recipeIds.length ? "occupied" : "");
         const detail = isCurrentRecipe ? `${existing} • Already planned` : existing;
         return `<button class="meal-plan-date-choice ${stateClass}" type="button" data-meal-plan-date="${date.toISOString().slice(0,10)}">
           <strong>${escapeHTML(plannerDateLabel(date))}</strong>

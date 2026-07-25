@@ -688,6 +688,12 @@ const SHOPPING_CATEGORY_MEMORY_KEY = "recipeVaultShoppingCategoryMemoryV121";
 let latestShoppingText = "";
 let latestShoppingItems = [];
 let shoppingCategoryMemory = readShoppingCategoryMemory();
+const SHOPPING_BRAND_MEMORY_KEY = "recipe-vault-shopping-brand-memory-v1";
+function readShoppingBrandMemory(){
+  try{ const value=JSON.parse(localStorage.getItem(SHOPPING_BRAND_MEMORY_KEY)||"{}"); return value&&typeof value==="object"?value:{}; }catch(error){ return {}; }
+}
+let shoppingBrandMemory = readShoppingBrandMemory();
+function saveShoppingBrandMemory(){ localStorage.setItem(SHOPPING_BRAND_MEMORY_KEY, JSON.stringify(shoppingBrandMemory)); }
 let extraShoppingRecipeIds = new Set();
 
 function readShoppingCategoryMemory(){
@@ -883,7 +889,13 @@ function renderShoppingOutput(selectedRecipes){
   const categoryOptions = SHOPPING_CATEGORIES.map(category => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`).join("");
   $("shoppingListOutput").innerHTML = `
     <div class="shopping-list-summary"><strong>${latestShoppingItems.length} ingredient${latestShoppingItems.length === 1 ? "" : "s"}</strong><span>From ${selectedRecipes.length} recipe${selectedRecipes.length === 1 ? "" : "s"}</span></div>
-    ${activeGroups.map(group => `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}"><h3>${escapeHTML(group)}</h3>${latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display)).map(item => `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" checked><span>${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`).join("")}</section>`).join("")}
+    ${activeGroups.map(group => {
+      const groupItems=latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display));
+      return `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}">
+        <div class="shopping-category-heading"><h3>${escapeHTML(group)}</h3><label class="shopping-select-all"><input type="checkbox" data-shopping-select-all="${escapeHTML(group)}"> Select all</label></div>
+        ${groupItems.map(item => { const memoryKey=ingredientMemoryKey(item.name); const rememberedBrand=shoppingBrandMemory[memoryKey]||""; return `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}"><span>${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label><input class="shopping-brand-input" type="text" data-shopping-brand="${escapeHTML(item.itemKey)}" value="${escapeHTML(rememberedBrand)}" placeholder="Brand (optional)" aria-label="Brand for ${escapeHTML(item.display)}"><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`; }).join("")}
+      </section>`;
+    }).join("")}
     <section class="shopping-list-recipes"><h3>Generated from</h3><p>${selectedRecipes.map(recipe => escapeHTML(recipe.name || "Untitled recipe")).join(" • ")}</p></section>`;
 
   document.querySelectorAll("[data-shopping-item-key]").forEach(select => {
@@ -903,6 +915,23 @@ function renderShoppingOutput(selectedRecipes){
       $("shoppingListStatus").className = "import-status success";
     });
   });
+
+  document.querySelectorAll("[data-shopping-select-all]").forEach(selectAll => {
+    const category=selectAll.dataset.shoppingSelectAll;
+    const boxes=[...document.querySelectorAll(`[data-shopping-category="${CSS.escape(category)}"] [data-shopping-purchased]`)];
+    selectAll.addEventListener("change",()=>boxes.forEach(box=>box.checked=selectAll.checked));
+    boxes.forEach(box=>box.addEventListener("change",()=>{
+      const checked=boxes.filter(item=>item.checked).length;
+      selectAll.checked=checked===boxes.length&&boxes.length>0;
+      selectAll.indeterminate=checked>0&&checked<boxes.length;
+    }));
+  });
+  document.querySelectorAll("[data-shopping-brand]").forEach(input=>input.addEventListener("change",()=>{
+    const item=latestShoppingItems.find(entry=>entry.itemKey===input.dataset.shoppingBrand);
+    if(!item) return;
+    const key=ingredientMemoryKey(item.name), brand=input.value.trim();
+    if(key){ if(brand) shoppingBrandMemory[key]=brand; else delete shoppingBrandMemory[key]; saveShoppingBrandMemory(); }
+  }));
 
   latestShoppingText += `\n\nGenerated from: ${selectedRecipes.map(recipe => recipe.name || "Untitled recipe").join(", ")}`;
 }
@@ -978,13 +1007,16 @@ function addShoppingToPantry(){
     });
     const amount=entry.amount===null?1:entry.amount;
     const unit=entry.unit||"";
+    const brandInput=document.querySelector(`[data-shopping-brand="${CSS.escape(entry.itemKey)}"]`);
+    const brand=(brandInput?.value||shoppingBrandMemory[ingredientMemoryKey(entry.name)]||"").trim();
+    if(brand){ shoppingBrandMemory[ingredientMemoryKey(entry.name)]=brand; saveShoppingBrandMemory(); }
     if(existing){
       const old=numericAmount(existing.amount);
       if(old!==null && normalizedUnit(existing.unit)===normalizedUnit(unit)) existing.amount=String(Math.round((old+amount)*100)/100);
       else { existing.amount=String(amount); existing.unit=unit; }
-      existing.status="unopened"; existing.updatedAt=new Date().toISOString();
+      existing.status="unopened"; existing.updatedAt=new Date().toISOString(); existing.store=existing.store||"Walmart"; if(brand) existing.brand=brand;
     }else{
-      items.push({id:pantryUid(),name:String(entry.name||"").replace(/\b\w/g,c=>c.toUpperCase()),amount:String(amount),unit,status:"unopened",mode:pantryDefaultMode(entry.name),updatedAt:new Date().toISOString()});
+      items.push({id:pantryUid(),name:String(entry.name||"").replace(/\b\w/g,c=>c.toUpperCase()),amount:String(amount),unit,status:"unopened",mode:pantryDefaultMode(entry.name),store:"Walmart",brand,source:"shopping",updatedAt:new Date().toISOString()});
     }
   });
   savePantryItems(items);
@@ -1016,7 +1048,7 @@ async function finalizeMealMade(updatePantry){
       const current=numericAmount(match.amount), used=parsed.amount===null?1:parsed.amount;
       if(current!==null && normalizedUnit(match.unit)===normalizedUnit(parsed.unit)){
         const next=Math.round((current-used)*100)/100;
-        if(next<=0) pantry=pantry.filter(item=>item.id!==match.id); else { const real=pantry.find(item=>item.id===match.id); real.amount=String(next); real.status="open"; real.updatedAt=new Date().toISOString(); }
+        if(next<=0) pantry=pantry.filter(item=>item.id!==match.id); else { const real=pantry.find(item=>item.id===match.id); real.amount=String(next); real.status="open"; real.source=`meal:${recipe.name||"Meal"}`; real.updatedAt=new Date().toISOString(); }
       }else{
         pantry=pantry.filter(item=>item.id!==match.id);
       }
