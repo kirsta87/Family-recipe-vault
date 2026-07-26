@@ -1,0 +1,6 @@
+BUILD 174 — SPLIT-PAGE TITLE REGION FIX
+
+- Adds a dedicated parser path for cookbook pages with stacked ingredients/instructions on the left and title/yield/description on the right.
+- Left-column instruction fragments can no longer compete for the recipe title.
+- Rejects continuation fragments beginning with “for” as title candidates.
+- Keeps prior deployment badge, cache refresh, descriptions, yield, ingredient reconstruction, photos, and tutorial-link handling.

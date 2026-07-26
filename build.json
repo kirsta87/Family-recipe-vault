@@ -1,8 +1,8 @@
 {
-  "build": 173,
-  "version": "1.7.3",
-  "label": "Strict recipe column and title anchor fix",
-  "builtAt": "2026-07-26T12:45:00-06:00",
-  "cookbookEngine": "2.4",
-  "parser": "Region Parser v5"
+  "build": 174,
+  "version": "1.7.4",
+  "label": "Split-page title region fix",
+  "builtAt": "2026-07-26T12:55:00-06:00",
+  "cookbookEngine": "2.5",
+  "parser": "Region Parser v6"
 }

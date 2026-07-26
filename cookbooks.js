@@ -368,7 +368,7 @@ function titleRejected(line){
   const roleText=text.replace(/[\s:;–—-]+$/g,"").trim();
   const ingredientTerms=(text.match(/\b(?:salt|pepper|paprika|garlic powder|onion powder|seasoning|oil|broth|cream|cheese|flour|sugar)\b/gi)||[]).length;
   const ingredientFragment=/[,;:]/.test(text)&&ingredientTerms>=2;
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:and|or|but|with|from|to|until|then|both|into|onto|over|under)\b/i.test(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:and|or|but|with|from|to|for|until|then|both|into|onto|over|under)\b/i.test(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -403,6 +403,34 @@ function findTitleLineFromPage(page,regions){
   const rich=(page.richLines||[]).filter(line=>!titleRejected(line.text));
   if(!rich.length)return null;
   const W=page.width||600,H=page.height||800;
+
+  // Split-page template used by Soul Fuel and similar digital cookbooks:
+  // ingredients + instructions are stacked in the left column, while the hero
+  // photo, recipe title, yield and description live in the right column.
+  // In this layout, never allow left-column instruction fragments to compete
+  // for the title—even when PDF extraction loses the yield anchor.
+  const ing=regions?.ingredients, ins=regions?.instructions;
+  const stackedLeft=ing&&ins&&ing.x<W*.44&&ins.x<W*.44&&Math.abs(ing.x-ins.x)<W*.22;
+  if(stackedLeft){
+    const rightHeadings=rich.filter(line=>{
+      const center=(line.x||0)+(line.width||0)/2;
+      const text=cleanLine(line.text);
+      const words=text.split(/\s+/).filter(Boolean).length;
+      const inRightColumn=(line.x||0)>W*.43&&center>W*.55;
+      const inTitleBand=(line.y||0)>H*.28&&(line.y||0)<H*.68;
+      const headingSized=(line.fontSize||0)>=Math.max(18,(ins.fontSize||12)*1.25);
+      const titleLength=words>=2&&words<=8&&text.length<=70;
+      return inRightColumn&&inTitleBand&&headingSized&&titleLength;
+    });
+    if(rightHeadings.length){
+      return rightHeadings.sort((a,b)=>{
+        const size=(b.fontSize||0)-(a.fontSize||0);
+        if(Math.abs(size)>1)return size;
+        return titleScore(b,page,regions)-titleScore(a,page,regions);
+      })[0];
+    }
+  }
+
   const yieldLine=findLikelyYieldLine(page);
   if(yieldLine){
     // Digital cookbooks usually place the recipe title immediately above the
