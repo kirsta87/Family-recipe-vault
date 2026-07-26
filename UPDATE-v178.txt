@@ -1,0 +1,15 @@
+RECIPE VAULT BUILD 178
+
+FIXES
+- Separates text objects from neighboring PDF columns before reconstructing titles and descriptions.
+- Prevents instruction text sharing a baseline with a title from being merged into the title.
+- Prevents left-column instructions from being merged into right-column descriptions.
+- Updates every HTML asset query to Build 178.
+- Uses an explicit page build marker so the upper-left badge cannot remain stuck on the prior build number.
+
+TEST
+1. Confirm badge says Build 178 · Up to date.
+2. Reanalyze Soul Fuel.
+3. Honey Garlic Shrimp title should be correct.
+4. Yield should be 2 servings.
+5. Description should begin: You can make this using an air fryer or simply sautéing...

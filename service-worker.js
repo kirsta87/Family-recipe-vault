@@ -1,5 +1,5 @@
 "use strict";
-const BUILD = 177;
+const BUILD = 178;
 const CACHE_NAME = `recipe-vault-v${BUILD}`;
 const APP_SHELL = [
   "./", "./index.html", `./styles.css?v=${BUILD}`, `./app.js?v=${BUILD}`,

@@ -1,8 +1,8 @@
 {
-  "build": 177,
-  "version": "1.7.7",
-  "label": "TOC Intelligence & Parser Diagnostics",
-  "builtAt": "2026-07-26T13:35:00-06:00",
-  "cookbookEngine": "3.2",
-  "parser": "Coordinate Region Collector v2"
+  "build": 178,
+  "version": "1.7.8",
+  "label": "PDF Column Separation & Build Badge Fix",
+  "builtAt": "2026-07-26T14:10:00-06:00",
+  "cookbookEngine": "3.3",
+  "parser": "Coordinate Region Collector v3"
 }

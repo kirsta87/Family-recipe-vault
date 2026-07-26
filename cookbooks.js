@@ -203,7 +203,7 @@ function applyTocTitles(candidates,tocMap){
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:177,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:178,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -401,7 +401,7 @@ function itemsToStructuredLines(items){
       const prevEnd=prev ? prev.x+(prev.width||prev.text.length*(prev.fontSize||10)*.45) : 0;
       const gap=prev ? item.x-prevEnd : 0;
       // Large visual gap means a new column/region, even if PDF extraction order interleaves them.
-      if(prev && gap>Math.max(34,(prev.fontSize||10)*3.1))flush();
+      if(prev && gap>Math.max(22,(prev.fontSize||10)*1.65))flush();
       segment.push(item);
     }
     flush();
