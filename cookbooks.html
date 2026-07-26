@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Cookbook Library · Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=179">
+  <link rel="stylesheet" href="styles.css?v=180">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
 </head>
 <body>
@@ -48,13 +48,24 @@
       <div class="review-toolbar"><div><h3>Review detected recipes</h3><p id="reviewSummary" class="muted"></p></div><div class="actions"><button id="selectAllRecipes" class="secondary">Select all</button><button id="selectNoneRecipes" class="secondary">Select none</button><button id="importCookbookRecipes" class="primary">Import selected</button></div></div>
       <section id="importHealthPanel" class="import-health-panel" aria-live="polite"></section>
       <div id="recipeReviewList" class="cookbook-review-list"></div>
+      <button id="reviewBackToTop" class="review-back-to-top" type="button" hidden>↑ Back to top</button>
     </div>
 
     <div id="importResults" hidden class="cookbook-results"></div>
   </section>
 </main>
+<dialog id="sourcePageDialog" class="source-page-dialog">
+  <button id="closeSourcePage" class="close" type="button">×</button>
+  <div class="source-page-header">
+    <div><p class="eyebrow">ORIGINAL COOKBOOK PDF</p><h2 id="sourcePageTitle">Source page</h2></div>
+    <div class="source-page-actions"><button id="sourcePagePrev" class="secondary compact-button" type="button">← Previous</button><button id="sourcePageNext" class="secondary compact-button" type="button">Next →</button></div>
+  </div>
+  <p class="muted">Use this page to manually correct the recipe title, yield, description, ingredients, or instructions in the review card.</p>
+  <div id="sourcePageLoading" class="source-page-loading">Rendering original page…</div>
+  <img id="sourcePageImage" class="source-page-image" alt="Original cookbook PDF page" hidden>
+</dialog>
 <dialog id="deleteCookbookDialog"><button id="closeDeleteCookbook" class="close">×</button><h2>Remove cookbook?</h2><p id="deleteCookbookMessage"></p><div class="stacked-actions"><button id="removeCookbookOnly" class="secondary">Remove cookbook from shelf only</button><button id="removeCookbookAndRecipes" class="danger">Remove cookbook and its recipes</button><button id="cancelDeleteCookbook" class="secondary">Cancel</button></div><p class="muted">Removing recipes requires the connected Apps Script to support recipe deletion. If it does not, the cookbook will still be removed from the shelf and the recipes will remain in the vault.</p></dialog>
-<script src="config.js?v=179"></script>
-<script type="module" src="cookbooks.js?v=179"></script>
-  <script src="build-status.js?v=179"></script>
+<script src="config.js?v=180"></script>
+<script type="module" src="cookbooks.js?v=180"></script>
+  <script src="build-status.js?v=180"></script>
 </body></html>
