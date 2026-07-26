@@ -1,0 +1,9 @@
+BUILD 182 — BUG SQUASH
+
+- Cookbook title, author, and collection now save instantly without rewriting every recipe.
+- Entire recipe cards reliably open recipe details.
+- Imported description, yield, links, and source text are removed from Family Notes.
+- New cookbook imports start with empty Family Notes.
+- Original PDF page opens in its own viewer instead of refreshing the recipe card.
+- Closing the source page returns to the recipe.
+- Step numbers are stripped before ordered-list numbering is displayed.

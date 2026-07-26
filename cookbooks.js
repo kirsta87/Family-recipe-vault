@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_181 = true;
+const BUILD_182 = true;
 const COOKBOOK_ENGINE_VERSION = "3.2.0";
 window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
@@ -20,6 +20,7 @@ let activeCookbookId = null;
 let deleteTargetId = null;
 let activePdfDocument = null;
 let activeSourcePage = 1;
+let sourceReturnToRecipe = false;
 
 function escapeHTML(value){ return String(value ?? "").replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch])); }
 function readLibrary(){ try{return JSON.parse(localStorage.getItem(LIBRARY_KEY)||"[]")||[];}catch{return [];} }
@@ -85,15 +86,30 @@ function openCookbook(id){
   renderCookbookRecipes();
 }
 function stripStepNumber(text){return String(text||"").replace(/^\s*\d+[.)]\s*/,"").trim();}
+function cleanImportedFamilyNotes(recipe){
+  let text=String(recipe?.notes||"").trim();
+  if(!text)return "";
+  const description=String(recipe?.description||"").trim();
+  if(description&&text.startsWith(description))text=text.slice(description.length).replace(/^\s+/,"");
+  text=text
+    .replace(/(?:^|\n)\s*Yield:\s*[^\n]*(?=\n|$)/gi,"")
+    .replace(/(?:^|\n)\s*Video\s*\/\s*tutorial links:\s*(?:\n\s*https?:\/\/[^\n]+)+/gi,"")
+    .replace(/(?:^|\n)\s*Imported from [^\n]+(?:\n|$)/gi,"\n")
+    .replace(/^\s*https?:\/\/\S+\s*$/gim,"")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
+  return text;
+}
 function renderCookbookRecipes(){
   const cb=library.find(x=>x.id===activeCookbookId); if(!cb)return; const q=normalize($("cookbookRecipeSearch").value);
   const list=recipes.filter(r=>cookbookRecipeMatches(r,cb)).filter(r=>!q||normalize([r.name,r.ingredients,r.tags,r.cuisine].join(" ")).includes(q));
-  $("cookbookRecipeGrid").innerHTML=list.length?list.map(r=>`<article class="card cookbook-recipe-card" data-open-cookbook-recipe="${escapeHTML(r.id||"")}" role="button" tabindex="0" aria-label="Open ${escapeHTML(r.name||"recipe")}">${recipePhotoMarkup(r)}<div class="card-body"><h3>${escapeHTML(r.name||"Untitled recipe")}</h3><p>${escapeHTML(r.protein||r.type||r.cuisine||"")}</p></div></article>`).join(""):`<div class="empty-state"><strong>No matching recipes found.</strong><p>Recipes imported from this cookbook will appear here.</p></div>`;
+  $("cookbookRecipeGrid").innerHTML=list.length?list.map(r=>{const recipeIndex=recipes.indexOf(r);return `<article class="card cookbook-recipe-card" data-open-cookbook-recipe-index="${recipeIndex}" role="button" tabindex="0" aria-label="Open ${escapeHTML(r.name||"recipe")}">${recipePhotoMarkup(r)}<div class="card-body"><h3>${escapeHTML(r.name||"Untitled recipe")}</h3><p>${escapeHTML(r.protein||r.type||r.cuisine||"")}</p></div></article>`}).join(""):`<div class="empty-state"><strong>No matching recipes found.</strong><p>Recipes imported from this cookbook will appear here.</p></div>`;
 }
 function openCookbookRecipe(recipe){
   if(!recipe)return; activeCookbookRecipe=recipe;
   $("cookbookRecipeTitle").textContent=recipe.name||"Untitled recipe";
-  $("cookbookRecipeSource").textContent=[recipe.cookbook_title,recipe.cookbook_page?`Page ${recipe.cookbook_page}`:""].filter(Boolean).join(" · ");
+  const currentBook=library.find(cb=>String(cb.id)===String(recipe.cookbook_id));
+  $("cookbookRecipeSource").textContent=[currentBook?.title||recipe.cookbook_title,recipe.cookbook_page?`Page ${recipe.cookbook_page}`:""].filter(Boolean).join(" · ");
   $("cookbookRecipeTopMeta").innerHTML=[recipe.yield?`<span class="recipe-meta-chip">Servings: ${escapeHTML(recipe.yield)}</span>`:"",recipe.total_time?`<span class="recipe-meta-chip">${escapeHTML(recipe.total_time)} min</span>`:""] .filter(Boolean).join("");
   const img=$("cookbookRecipeImage"); if(recipe.image){img.src=recipe.image;img.alt=recipe.name||"Recipe";img.hidden=false}else img.hidden=true;
   const desc=$("cookbookRecipeDescription"); desc.textContent=recipe.description||"";desc.hidden=!recipe.description;
@@ -101,7 +117,7 @@ function openCookbookRecipe(recipe){
   const linkBox=$("cookbookRecipeLinks"); linkBox.innerHTML=links.map((url,i)=>`<a class="secondary linkbtn" href="${escapeHTML(url)}" target="_blank" rel="noopener">${i?`Tutorial link ${i+1}`:"Watch video tutorial"}</a>`).join("");linkBox.hidden=!links.length;
   $("cookbookRecipeIngredients").innerHTML=(recipe.ingredients||[]).map(x=>`<li>${escapeHTML(x)}</li>`).join("");
   $("cookbookRecipeInstructions").innerHTML=(recipe.instructions||[]).map(x=>`<li>${escapeHTML(stripStepNumber(x))}</li>`).join("");
-  $("cookbookRecipeNotes").value=recipe.notes||"";
+  $("cookbookRecipeNotes").value=cleanImportedFamilyNotes(recipe);
   $("viewCookbookSourcePage").disabled=!(recipe.source_page_image||activePdfDocument);
   $("cookbookRecipeDialog").showModal();
 }
@@ -995,30 +1011,55 @@ async function importSelected(){
   syncReviewFields(); const selected=importState.candidates.filter(r=>r.include); if(!selected.length)return alert("Select at least one recipe.");
   const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=makeId(); let imported=0,skipped=0,failed=0;
   const btn=$("importCookbookRecipes");btn.disabled=true;
-  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage=await renderImportedSourcePreview(r.page);const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:[r.description,`Yield: ${r.yieldText||""}`,(r.links||[]).length?`Video / tutorial links:\n${r.links.join("\n")}`:"",`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`].filter(Boolean).join("\n\n"),made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
+  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage=await renderImportedSourcePreview(r.page);const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
   library.unshift({id,title,author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
   $("reviewPanel").hidden=true;$("importResults").hidden=false;$("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(title)} is on your shelf</h2><p>${imported} recipes imported${skipped?`, ${skipped} duplicates skipped`:""}${failed?`, ${failed} failed`:""}.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;$("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(id));};
 }
 function beginEditCookbook(id){const cb=library.find(x=>x.id===id);if(!cb)return;$("editCookbookTitle").value=cb.title||"";$("editCookbookAuthor").value=cb.author||"";$("editCookbookCollection").value=cb.collection||cb.title||"";$("editCookbookDialog").dataset.id=id;$("editCookbookDialog").showModal();}
-async function saveCookbookMetadata(){const id=$("editCookbookDialog").dataset.id,cb=library.find(x=>x.id===id);if(!cb)return;const oldTitle=cb.title,newTitle=$("editCookbookTitle").value.trim()||oldTitle,newAuthor=$("editCookbookAuthor").value.trim(),newCollection=$("editCookbookCollection").value.trim()||newTitle;const btn=$("saveCookbookMetadata");btn.disabled=true;const matches=recipes.filter(r=>cookbookRecipeMatches(r,cb));for(let i=0;i<matches.length;i++){const r=matches[i];btn.textContent=`Saving ${i+1} of ${matches.length}…`;const updates={cookbook_title:newTitle,cookbook_author:newAuthor,source:`Cookbook: ${newTitle} · p. ${r.cookbook_page||""}`,collections:(r.collections||[]).map(x=>x===cb.collection?newCollection:x),tags:(r.tags||[]).map(x=>x===`Cookbook|${oldTitle}`?`Cookbook|${newTitle}`:x)};try{await postVault({action:"update",id:r.id,url:r.url,updates});Object.assign(r,updates);}catch(e){console.warn(e);}}cb.title=newTitle;cb.author=newAuthor;cb.collection=newCollection;saveLibrary();btn.disabled=false;btn.textContent="Save changes";$("editCookbookDialog").close();openCookbook(id);}
+async function saveCookbookMetadata(){
+  const id=$("editCookbookDialog").dataset.id,cb=library.find(x=>x.id===id);
+  if(!cb)return;
+  const newTitle=$("editCookbookTitle").value.trim()||cb.title;
+  const newAuthor=$("editCookbookAuthor").value.trim();
+  const newCollection=$("editCookbookCollection").value.trim()||newTitle;
+  cb.title=newTitle;cb.author=newAuthor;cb.collection=newCollection;saveLibrary();
+  const btn=$("saveCookbookMetadata");btn.textContent="Saved ✓";
+  setTimeout(()=>{btn.textContent="Save changes";},900);
+  $("editCookbookDialog").close();openCookbook(id);
+}
 async function saveActiveCookbookNotes(){if(!activeCookbookRecipe)return;const notes=$("cookbookRecipeNotes").value.trim();await postVault({action:"update",id:activeCookbookRecipe.id,url:activeCookbookRecipe.url,updates:{notes}});activeCookbookRecipe.notes=notes;}
-function showImportedSource(recipe){if(recipe?.source_page_image){$("sourcePageTitle").textContent=`${recipe.cookbook_title||"Cookbook"} · Page ${recipe.cookbook_page||""}`;$("sourcePagePrev").hidden=true;$("sourcePageNext").hidden=true;$("sourcePageLoading").hidden=true;$("sourcePageImage").src=recipe.source_page_image;$("sourcePageImage").hidden=false;$("sourcePageDialog").showModal();return;}if(activePdfDocument&&recipe?.cookbook_page){showSourcePage(recipe.cookbook_page);return;}alert("This recipe was imported before source-page previews were saved. Re-upload the cookbook to attach its original pages.");}
+function showImportedSource(recipe){
+  if(!recipe)return;
+  sourceReturnToRecipe=$("cookbookRecipeDialog").open;
+  if(sourceReturnToRecipe)$("cookbookRecipeDialog").close();
+  if(recipe.source_page_image){
+    const currentBook=library.find(cb=>String(cb.id)===String(recipe.cookbook_id));
+    $("sourcePageTitle").textContent=`${currentBook?.title||recipe.cookbook_title||"Cookbook"} · Page ${recipe.cookbook_page||""}`;
+    $("sourcePagePrev").hidden=true;$("sourcePageNext").hidden=true;$("sourcePageLoading").hidden=true;
+    $("sourcePageImage").src=recipe.source_page_image;$("sourcePageImage").hidden=false;
+    $("sourcePageDialog").showModal();return;
+  }
+  if(activePdfDocument&&recipe.cookbook_page){showSourcePage(recipe.cookbook_page);return;}
+  sourceReturnToRecipe=false;
+  alert("This recipe was imported before source-page previews were saved. Re-upload the cookbook to attach its original pages.");
+  if(activeCookbookRecipe)$("cookbookRecipeDialog").showModal();
+}
 async function deleteCookbook(removeRecipes){
   const cb=library.find(x=>x.id===deleteTargetId);if(!cb)return; let deletionFailed=false;
   if(removeRecipes){const matches=recipes.filter(r=>cookbookRecipeMatches(r,cb));for(const recipe of matches){try{await postVault({action:"delete",id:recipe.id,url:recipe.url});}catch{deletionFailed=true;break;}}}
   library=library.filter(x=>x.id!==cb.id);saveLibrary();$("deleteCookbookDialog").close();renderShelf();if(deletionFailed)alert("The cookbook was removed from the shelf, but your Apps Script does not appear to support permanent recipe deletion. Its recipes were left in the vault.");
 }
 
-document.addEventListener("click",e=>{const recipeCard=e.target.closest("[data-open-cookbook-recipe]");if(recipeCard){openCookbookRecipe(recipes.find(r=>String(r.id)===String(recipeCard.dataset.openCookbookRecipe)));return;}const editBook=e.target.closest("[data-edit-cookbook]");if(editBook){beginEditCookbook(editBook.dataset.editCookbook);return;}const source=e.target.closest("[data-view-source-page]");if(source){showSourcePage(Number(source.dataset.viewSourcePage));return;}const backTop=e.target.closest("[data-back-review-top]");if(backTop){scrollReviewTop();return;}const jump=e.target.closest("[data-jump-recipe]");if(jump){const card=document.getElementById(`recipe-review-${jump.dataset.jumpRecipe}`);card?.scrollIntoView({behavior:"smooth",block:"start"});card?.classList.add("health-highlight");setTimeout(()=>card?.classList.remove("health-highlight"),1800);return;}const reviewOnly=e.target.closest("[data-show-review-only]");if(reviewOnly){const active=reviewOnly.dataset.active==="true";document.querySelectorAll("[data-review-card]").forEach(card=>card.hidden=!active&&card.dataset.health==="good");reviewOnly.dataset.active=String(!active);reviewOnly.textContent=active?"Show only flagged":"Show all recipes";return;}const report=e.target.closest("[data-parser-report]");if(report){downloadParserReport(Number(report.dataset.parserReport));return;}const open=e.target.closest("[data-open-cookbook]");if(open&&!e.target.closest("[data-delete-cookbook]")){openCookbook(open.dataset.openCookbook);return;}const del=e.target.closest("[data-delete-cookbook]");if(del){e.stopPropagation();deleteTargetId=del.dataset.deleteCookbook;const cb=library.find(x=>x.id===deleteTargetId);$("deleteCookbookMessage").textContent=`Choose what should happen to ${cb?.title||"this cookbook"}.`;$("deleteCookbookDialog").showModal();}});
+document.addEventListener("click",e=>{const recipeCard=e.target.closest("[data-open-cookbook-recipe-index]");if(recipeCard){openCookbookRecipe(recipes[Number(recipeCard.dataset.openCookbookRecipeIndex)]);return;}const editBook=e.target.closest("[data-edit-cookbook]");if(editBook){beginEditCookbook(editBook.dataset.editCookbook);return;}const source=e.target.closest("[data-view-source-page]");if(source){showSourcePage(Number(source.dataset.viewSourcePage));return;}const backTop=e.target.closest("[data-back-review-top]");if(backTop){scrollReviewTop();return;}const jump=e.target.closest("[data-jump-recipe]");if(jump){const card=document.getElementById(`recipe-review-${jump.dataset.jumpRecipe}`);card?.scrollIntoView({behavior:"smooth",block:"start"});card?.classList.add("health-highlight");setTimeout(()=>card?.classList.remove("health-highlight"),1800);return;}const reviewOnly=e.target.closest("[data-show-review-only]");if(reviewOnly){const active=reviewOnly.dataset.active==="true";document.querySelectorAll("[data-review-card]").forEach(card=>card.hidden=!active&&card.dataset.health==="good");reviewOnly.dataset.active=String(!active);reviewOnly.textContent=active?"Show only flagged":"Show all recipes";return;}const report=e.target.closest("[data-parser-report]");if(report){downloadParserReport(Number(report.dataset.parserReport));return;}const open=e.target.closest("[data-open-cookbook]");if(open&&!e.target.closest("[data-delete-cookbook]")){openCookbook(open.dataset.openCookbook);return;}const del=e.target.closest("[data-delete-cookbook]");if(del){e.stopPropagation();deleteTargetId=del.dataset.deleteCookbook;const cb=library.find(x=>x.id===deleteTargetId);$("deleteCookbookMessage").textContent=`Choose what should happen to ${cb?.title||"this cookbook"}.`;$("deleteCookbookDialog").showModal();}});
 $("uploadCookbookBtn").onclick=showImport;$("emptyUploadBtn").onclick=showImport;$("cancelImport").onclick=cancelImport;$("choosePdfBtn").onclick=()=>$("cookbookFile").click();$("cookbookFile").onchange=e=>e.target.files?.[0]&&analyzePdf(e.target.files[0]);
 const drop=$("choosePdfPanel");["dragenter","dragover"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add("dragging")}));["dragleave","drop"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove("dragging")}));drop.addEventListener("drop",e=>e.dataTransfer.files?.[0]&&analyzePdf(e.dataTransfer.files[0]));
 $("selectAllRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=true);renderReview();};$("selectNoneRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=false);renderReview();};$("recipeReviewList").addEventListener("change",e=>{if(e.target.matches("[data-review-include]")){syncReviewFields();renderReview();}});$("importCookbookRecipes").onclick=importSelected;
 $("cookbookSearch").oninput=renderShelf;$("cookbookRecipeSearch").oninput=renderCookbookRecipes;$("backToShelf").onclick=()=>{$("cookbookDetailView").hidden=true;$("libraryView").hidden=false;renderShelf();};
 $("closeDeleteCookbook").onclick=()=>$("deleteCookbookDialog").close();$("cancelDeleteCookbook").onclick=()=>$("deleteCookbookDialog").close();$("removeCookbookOnly").onclick=()=>deleteCookbook(false);$("removeCookbookAndRecipes").onclick=()=>deleteCookbook(true);
 $("reviewBackToTop").onclick=scrollReviewTop;
-$("closeSourcePage").onclick=()=>$("sourcePageDialog").close();
+$("closeSourcePage").onclick=()=>{$("sourcePageDialog").close();if(sourceReturnToRecipe&&activeCookbookRecipe){sourceReturnToRecipe=false;$("cookbookRecipeDialog").showModal();}};
 $("sourcePagePrev").onclick=()=>showSourcePage(activeSourcePage-1);
 $("sourcePageNext").onclick=()=>showSourcePage(activeSourcePage+1);
 window.addEventListener("scroll",()=>{const btn=$("reviewBackToTop");if(btn)btn.hidden=$("reviewPanel").hidden||window.scrollY<700;},{passive:true});
@@ -1028,4 +1069,4 @@ $("closeCookbookRecipe").onclick=()=>$("cookbookRecipeDialog").close();
 $("saveCookbookRecipeNotes").onclick=async()=>{try{await saveActiveCookbookNotes();alert("Family notes saved.");}catch(e){alert(e.message);}};
 $("viewCookbookSourcePage").onclick=()=>showImportedSource(activeCookbookRecipe);
 $("closeEditCookbook").onclick=()=>$("editCookbookDialog").close();$("cancelEditCookbook").onclick=()=>$("editCookbookDialog").close();$("saveCookbookMetadata").onclick=saveCookbookMetadata;
-document.addEventListener("keydown",e=>{const card=e.target.closest?.("[data-open-cookbook-recipe]");if(card&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openCookbookRecipe(recipes.find(r=>String(r.id)===String(card.dataset.openCookbookRecipe)));}});
+document.addEventListener("keydown",e=>{const card=e.target.closest?.("[data-open-cookbook-recipe-index]");if(card&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openCookbookRecipe(recipes[Number(card.dataset.openCookbookRecipeIndex)]);}});

@@ -1,8 +1,6 @@
 {
-  "build": 181,
-  "version": "1.8.1",
-  "label": "Cookbook browsing polish",
-  "cookbookEngine": "3.0",
-  "parser": "Layout Engine v2",
-  "builtAt": "2026-07-26T20:30:00Z"
+  "build": 182,
+  "label": "Bug Squash",
+  "updated": "2026-07-26",
+  "notes": "Instant cookbook metadata saves, working recipe cards, clean family notes, and reliable source-page viewing."
 }
