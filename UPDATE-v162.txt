@@ -1,0 +1,10 @@
+Recipe Vault v1.6.2 — Recipe Reconstruction Polish
+
+Changes:
+- Reconstructs wrapped multi-line recipe titles, including quoted subtitle lines such as "Waffle".
+- Uses a wider but still contiguous title region so wrapped title text is merged without absorbing descriptions.
+- Displays extracted ingredients as a clean bulleted list in the cookbook review screen.
+- Removes bullet characters again when saving, preserving the vault's structured ingredient array.
+- Cookbook engine version bumped to 1.6.2 so newly analyzed PDFs use the updated reconstruction rules.
+
+Re-upload and analyze the original cookbook PDF after installing this build.

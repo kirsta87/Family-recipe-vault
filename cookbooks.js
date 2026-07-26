@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "1.6.1";
+const COOKBOOK_ENGINE_VERSION = "1.6.2";
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 2500;
 const PAGE_PREVIEW_SCALE = 1.25;
@@ -22,7 +22,7 @@ function readLibrary(){ try{return JSON.parse(localStorage.getItem(LIBRARY_KEY)|
 function saveLibrary(){ localStorage.setItem(LIBRARY_KEY, JSON.stringify(library)); }
 function makeId(){ return `cb_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
 function normalize(value){ return String(value||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); }
-function splitList(value){ return String(value||"").split(/\r?\n/).map(v=>v.trim()).filter(Boolean); }
+function splitList(value){ return String(value||"").split(/\r?\n/).map(v=>v.trim().replace(/^[-•▪◦]\s*/,"")).filter(Boolean); }
 
 async function loadRecipes(){
   try{
@@ -334,20 +334,34 @@ function sameVisualColumn(a,b,W){
 function buildTitle(page,titleLine,regions){
   if(!titleLine)return `Recipe on page ${page.page}`;
   const W=page.width||600;
-  const pool=(page.richLines||[]).filter(l=>l!==titleLine&&!titleRejected(l.text));
+  const titleSize=titleLine.fontSize||14;
+  const pool=(page.richLines||[]).filter(l=>l!==titleLine&&!SECTION_NOISE.test(cleanLine(l.text))&&!LINK_NOISE.test(l.text));
   const chosen=[titleLine];
   for(const line of pool){
-    const sizeRatio=(line.fontSize||1)/(titleLine.fontSize||1);
-    const nearby=verticalGap(line,titleLine)<=Math.max(44,(titleLine.fontSize||14)*2.7);
+    const text=cleanLine(line.text);
+    if(!text || ingredientLike(text) || instructionLike(text) || /^\d+[.)]?\s*/.test(text))continue;
+    const sizeRatio=(line.fontSize||1)/titleSize;
+    const gap=verticalGap(line,titleLine);
+    const nearby=gap<=Math.max(92,titleSize*5.4);
     const sameCol=sameVisualColumn(line,titleLine,W);
-    const shortEnough=line.text.length<=42 && line.text.split(/\s+/).length<=6;
-    if(nearby&&sameCol&&shortEnough&&sizeRatio>.68&&sizeRatio<1.38){
+    const quotedContinuation=/^["“”'][^"“”']{1,35}["“”']$/.test(text);
+    const shortContinuation=text.length<=48 && text.split(/\s+/).length<=7;
+    const aligned=Math.abs((line.x||0)-(titleLine.x||0))<Math.max(95,W*.18);
+    const fontMatch=sizeRatio>.54&&sizeRatio<1.45;
+    const looksLikeTitle=quotedContinuation || (shortContinuation&&fontMatch);
+    if(nearby&&(sameCol||aligned)&&looksLikeTitle){
       const blocked=[regions?.ingredients,regions?.instructions].some(h=>h&&verticalGap(line,h)<18);
       if(!blocked)chosen.push(line);
     }
   }
+  // Keep only a compact contiguous title stack so nearby description text is not absorbed.
   chosen.sort((a,b)=>b.y-a.y||a.x-b.x);
-  const title=chosen.map(l=>cleanLine(l.text).replace(/^['"]|['"]$/g,'')).join(' ').replace(/\s+/g,' ').trim();
+  const compact=[chosen[0]];
+  for(const line of chosen.slice(1)){
+    const prev=compact[compact.length-1];
+    if(verticalGap(line,prev)<=Math.max(56,titleSize*3.4))compact.push(line);
+  }
+  const title=compact.map(l=>cleanLine(l.text).replace(/^['"“”]+|['"“”]+$/g,'')).join(' ').replace(/\s+/g,' ').trim();
   return titleRejected(title)?cleanLine(titleLine.text):title;
 }
 function linesInHeaderColumn(lines,header,W){
@@ -444,7 +458,7 @@ function showReview(){
 }
 function renderReview(){
   const selected=importState.candidates.filter(x=>x.include).length;$("reviewSummary").textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
-  $("recipeReviewList").innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?"":"excluded"}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==="photo-crop"?"Cropped cookbook food photo":"Extracted cookbook photo"}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==="photo-crop"?"Cropped recipe photo":"Recipe photo"}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?"checked":""}><span>Use this image</span></label>`:""}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?"checked":""}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:""}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.join("\n"))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join("\n"))}</textarea></label></div></details></div></div></article>`).join("");
+  $("recipeReviewList").innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?"":"excluded"}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==="photo-crop"?"Cropped cookbook food photo":"Extracted cookbook photo"}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==="photo-crop"?"Cropped recipe photo":"Recipe photo"}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?"checked":""}><span>Use this image</span></label>`:""}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?"checked":""}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:""}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join("\n"))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join("\n"))}</textarea></label></div></details></div></div></article>`).join("");
 }
 function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title;r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join("\n"));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join("\n"));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
