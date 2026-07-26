@@ -1,10 +1,10 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "1.6.2";
+const COOKBOOK_ENGINE_VERSION = "1.6.3";
 const PHOTO_MIN_AREA = 42000;
-const PHOTO_RECIPE_TIMEOUT_MS = 2500;
-const PAGE_PREVIEW_SCALE = 1.25;
+const PHOTO_RECIPE_TIMEOUT_MS = 900;
+const PAGE_PREVIEW_SCALE = .82;
 const PHOTO_CROP_QUALITY = .82;
 const PHOTO_OBJECT_TIMEOUT_MS = 700;
 const CACHE_KEY = "recipeVaultRecipeCacheV118";
@@ -88,23 +88,23 @@ async function analyzePdf(file){
     }
     $("analyzeStatus").textContent="Separating recipes from the rest of the book…";$("analyzeProgress").value=92;
     const candidates=detectRecipes(pages);
-    $("analyzeStatus").textContent="Matching cookbook photos to recipes…";
-    for(let i=0;i<candidates.length;i++){
-      const candidate=candidates[i];
-      $("analyzeCurrent").textContent=`Checking photos for ${candidate.title}`;
-      $("analyzeProgress").value=92+Math.round(((i+1)/Math.max(1,candidates.length))*8);
-      candidate.image=await withTimeout(
-        extractRecipePhoto(pdf,candidate),
-        PHOTO_RECIPE_TIMEOUT_MS,
-        ""
-      ).catch(()=>"");
-      candidate.imageKind=candidate.image?"photo":"";
-      if(!candidate.image){
-        $("analyzeCurrent").textContent=`No separate image object found for ${candidate.title} — creating a page preview…`;
-        candidate.image=await withTimeout(renderRecipePhotoCrop(pdf,candidate),2200,"").catch(()=>"");
+    $("analyzeStatus").textContent="Creating recipe photos…";
+    // Digital cookbooks often contain dozens of PDF image objects per page. Scanning
+    // every object was much slower than rendering one small crop, so photo creation
+    // now uses a lightweight page render only. Process a few pages concurrently to
+    // keep large cookbooks moving without overwhelming the browser.
+    const concurrency=4;
+    let completed=0;
+    for(let start=0;start<candidates.length;start+=concurrency){
+      const batch=candidates.slice(start,start+concurrency);
+      await Promise.all(batch.map(async candidate=>{
+        candidate.image=await withTimeout(renderRecipePhotoCrop(pdf,candidate),PHOTO_RECIPE_TIMEOUT_MS,"").catch(()=>"");
         candidate.imageKind=candidate.image?"photo-crop":"";
-      }
-      candidate.useImage=Boolean(candidate.image);
+        candidate.useImage=Boolean(candidate.image);
+        completed++;
+        $("analyzeCurrent").textContent=`Created photos for ${completed} of ${candidates.length} recipes`;
+        $("analyzeProgress").value=92+Math.round((completed/Math.max(1,candidates.length))*8);
+      }));
       await nextFrame();
     }
     importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:""};
@@ -127,7 +127,7 @@ async function renderRecipePagePreview(pdf,pageNo){
 
 async function renderRecipePhotoCrop(pdf,candidate){
   const page=await pdf.getPage(candidate.page);
-  const scale=1.65;
+  const scale=.86;
   const viewport=page.getViewport({scale});
   const full=document.createElement("canvas");
   full.width=Math.round(viewport.width); full.height=Math.round(viewport.height);
@@ -335,33 +335,47 @@ function buildTitle(page,titleLine,regions){
   if(!titleLine)return `Recipe on page ${page.page}`;
   const W=page.width||600;
   const titleSize=titleLine.fontSize||14;
-  const pool=(page.richLines||[]).filter(l=>l!==titleLine&&!SECTION_NOISE.test(cleanLine(l.text))&&!LINK_NOISE.test(l.text));
-  const chosen=[titleLine];
-  for(const line of pool){
+  const candidates=(page.richLines||[])
+    .filter(l=>!SECTION_NOISE.test(cleanLine(l.text))&&!LINK_NOISE.test(l.text))
+    .filter(l=>{
+      const text=cleanLine(l.text);
+      if(!text||ingredientLike(text)||instructionLike(text)||/^\d+[.)]?\s*/.test(text))return false;
+      const ratio=(l.fontSize||1)/titleSize;
+      const sameBand=Math.abs((l.x||0)-(titleLine.x||0))<Math.max(115,W*.22) || sameVisualColumn(l,titleLine,W);
+      const compactGap=verticalGap(l,titleLine)<=Math.max(72,titleSize*3.2);
+      const titleFont=ratio>.72&&ratio<1.32;
+      const quoted=/^["“”'][^"“”']{1,50}["“”']$/.test(text);
+      return sameBand&&compactGap&&(titleFont||quoted);
+    })
+    .sort((a,b)=>b.y-a.y||a.x-b.x);
+
+  // Walk the actual visual title stack. This deliberately merges wrapped title
+  // lines such as LOW CARB CHEESY + “WAFFLE”, while stopping before yield or body copy.
+  const startIndex=Math.max(0,candidates.indexOf(titleLine));
+  const stack=[titleLine];
+  let previous=titleLine;
+  for(let i=startIndex+1;i<candidates.length;i++){
+    const line=candidates[i];
     const text=cleanLine(line.text);
-    if(!text || ingredientLike(text) || instructionLike(text) || /^\d+[.)]?\s*/.test(text))continue;
-    const sizeRatio=(line.fontSize||1)/titleSize;
-    const gap=verticalGap(line,titleLine);
-    const nearby=gap<=Math.max(92,titleSize*5.4);
-    const sameCol=sameVisualColumn(line,titleLine,W);
-    const quotedContinuation=/^["“”'][^"“”']{1,35}["“”']$/.test(text);
-    const shortContinuation=text.length<=48 && text.split(/\s+/).length<=7;
-    const aligned=Math.abs((line.x||0)-(titleLine.x||0))<Math.max(95,W*.18);
-    const fontMatch=sizeRatio>.54&&sizeRatio<1.45;
-    const looksLikeTitle=quotedContinuation || (shortContinuation&&fontMatch);
-    if(nearby&&(sameCol||aligned)&&looksLikeTitle){
-      const blocked=[regions?.ingredients,regions?.instructions].some(h=>h&&verticalGap(line,h)<18);
-      if(!blocked)chosen.push(line);
-    }
+    const gap=verticalGap(line,previous);
+    const ratio=(line.fontSize||1)/titleSize;
+    const aligned=Math.abs((line.x||0)-(titleLine.x||0))<Math.max(120,W*.23) || sameVisualColumn(line,titleLine,W);
+    const short=text.length<=55&&text.split(/\s+/).length<=8;
+    const quoted=/^["“”'][^"“”']{1,50}["“”']$/.test(text);
+    if(gap>Math.max(38,titleSize*1.8)||!aligned||(!quoted&&!(short&&ratio>.72&&ratio<1.32)))break;
+    stack.push(line); previous=line;
   }
-  // Keep only a compact contiguous title stack so nearby description text is not absorbed.
-  chosen.sort((a,b)=>b.y-a.y||a.x-b.x);
-  const compact=[chosen[0]];
-  for(const line of chosen.slice(1)){
-    const prev=compact[compact.length-1];
-    if(verticalGap(line,prev)<=Math.max(56,titleSize*3.4))compact.push(line);
+  // A continuation can occasionally sort immediately before the selected line.
+  for(let i=startIndex-1;i>=0;i--){
+    const line=candidates[i],text=cleanLine(line.text);
+    const gap=verticalGap(line,stack[0]);
+    const ratio=(line.fontSize||1)/titleSize;
+    if(gap<=Math.max(38,titleSize*1.8)&&ratio>.72&&ratio<1.32&&text.length<=55)stack.unshift(line);else break;
   }
-  const title=compact.map(l=>cleanLine(l.text).replace(/^['"“”]+|['"“”]+$/g,'')).join(' ').replace(/\s+/g,' ').trim();
+  const title=[...new Set(stack)]
+    .sort((a,b)=>b.y-a.y||a.x-b.x)
+    .map(l=>cleanLine(l.text).replace(/^['"“”]+|['"“”]+$/g,''))
+    .join(' ').replace(/\s+/g,' ').trim();
   return titleRejected(title)?cleanLine(titleLine.text):title;
 }
 function linesInHeaderColumn(lines,header,W){

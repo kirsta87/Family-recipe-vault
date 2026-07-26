@@ -1,0 +1,11 @@
+Recipe Vault v1.6.3 — Fast Photo Scan & Wrapped Title Fix
+
+Changes:
+- Removes the slow PDF image-object scan and creates lightweight recipe-photo crops directly from rendered pages.
+- Processes up to four recipe pages at once and uses a lower render scale, dramatically reducing cookbook photo-analysis time.
+- Rewrites wrapped-title reconstruction around the actual visual title stack.
+- Merges matching title lines such as LOW CARB CHEESY + "WAFFLE" while stopping before yield and description text.
+- Keeps ingredient bullets in the review screen and strips them safely when saving.
+- Cookbook engine and service-worker cache bumped to v1.6.3.
+
+Re-upload and analyze the original PDF after installing this build.
