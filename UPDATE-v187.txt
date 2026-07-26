@@ -1,0 +1,6 @@
+Recipe Vault Build 187
+
+- Restores cookbook author notes from legacy Notes data
+- Recovers servings/yield from legacy field names and labeled notes
+- Recovers tutorial links from legacy field names and labeled notes
+- Keeps Family Notes reserved for user-entered notes

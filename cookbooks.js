@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_185 = true;
+const BUILD_187 = true;
 const COOKBOOK_ENGINE_VERSION = "3.2.0";
 window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
@@ -185,8 +185,32 @@ function normalizeRecipeList(value){
     .map(x=>x.replace(/^\s*[•▪◦-]\s*/,"").trim())
     .filter(Boolean);
 }
+function recipeField(recipe,...names){
+  if(!recipe||typeof recipe!=="object")return "";
+  for(const name of names){
+    if(recipe[name]!=null&&String(recipe[name]).trim()!=="")return recipe[name];
+    const wanted=String(name).toLowerCase().replace(/[^a-z0-9]/g,"");
+    const key=Object.keys(recipe).find(k=>String(k).toLowerCase().replace(/[^a-z0-9]/g,"")===wanted);
+    if(key&&recipe[key]!=null&&String(recipe[key]).trim()!=="")return recipe[key];
+  }
+  return "";
+}
+function legacyCookbookNotes(recipe){
+  return String(recipeField(recipe,"notes","author_note","author_notes","description")||"").trim();
+}
+function extractLabeledNoteValue(notes,labelPattern){
+  const match=String(notes||"").match(new RegExp(`(?:^|\\n)\\s*(?:${labelPattern})\\s*:\\s*([^\\n]+)`,`i`));
+  return match?.[1]?.trim()||"";
+}
 function normalizeRecipeLinks(recipe){
-  const values=[recipe?.recipe_links,recipe?.links,recipe?.video_url,recipe?.tutorial_url,recipe?.url];
+  const notes=legacyCookbookNotes(recipe);
+  const labeled=extractLabeledNoteValue(notes,"video(?:\\s*\\/\\s*tutorial)? links?|tutorial links?|video url|recipe links?");
+  const values=[
+    recipeField(recipe,"recipe_links","recipeLinks","links"),
+    recipeField(recipe,"video_url","videoUrl","tutorial_url","tutorialUrl"),
+    labeled,
+    recipeField(recipe,"url")
+  ];
   const found=[];
   for(const raw of values){
     const parsed=parseSerializedValue(raw);
@@ -201,23 +225,27 @@ function normalizeRecipeLinks(recipe){
   return found;
 }
 function recipeServings(recipe){
-  return [recipe?.yield,recipe?.yieldText,recipe?.servings,recipe?.serves,recipe?.recipe_yield,recipe?.serving_size]
-    .map(v=>String(v||"").trim()).find(Boolean)||"";
+  const direct=recipeField(recipe,"yield","yieldText","servings","serves","recipe_yield","recipeYield","serving_size","servingSize");
+  if(String(direct||"").trim())return String(direct).trim();
+  return extractLabeledNoteValue(legacyCookbookNotes(recipe),"yield(?:\\s*\\/\\s*servings)?|servings?|serves");
 }
 function cookbookAuthorNote(recipe){
-  const description=String(recipe?.description||recipe?.author_note||recipe?.author_notes||"").trim();
-  if(description)return description;
-  // Older cookbook imports stored the author's description in notes before
-  // Family Notes had its own field.
-  if(recipe?.cookbook_id&&!Object.prototype.hasOwnProperty.call(recipe,"family_notes")){
-    return String(recipe?.notes||"").trim();
-  }
-  return "";
+  const direct=recipeField(recipe,"description","author_note","author_notes","authorNote","authorNotes");
+  if(String(direct||"").trim())return String(direct).trim();
+  if(!recipe?.cookbook_id&&!recipe?.cookbook_title)return "";
+  let text=legacyCookbookNotes(recipe);
+  if(!text)return "";
+  text=text
+    .replace(/(?:^|\n)\s*(?:Yield(?:\s*\/\s*servings)?|Servings?|Serves)\s*:\s*[^\n]*/gi,"")
+    .replace(/(?:^|\n)\s*(?:Video(?:\s*\/\s*tutorial)? links?|Tutorial links?|Video URL|Recipe links?)\s*:\s*(?:[^\n]*\n?)/gi,"")
+    .replace(/^\s*https?:\/\/\S+\s*$/gim,"")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
+  return text;
 }
 function cookbookFamilyNotes(recipe){
   if(Object.prototype.hasOwnProperty.call(recipe||{},"family_notes"))return String(recipe.family_notes||"").trim();
-  // When a real description already exists, any remaining notes are user notes.
-  return recipe?.description?cleanImportedFamilyNotes(recipe):"";
+  return "";
 }
 function openCookbookRecipe(recipe){
   if(!recipe)return; activeCookbookRecipe=recipe;
