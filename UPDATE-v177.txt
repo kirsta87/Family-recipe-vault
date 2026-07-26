@@ -1,0 +1,10 @@
+RECIPE VAULT BUILD 177
+
+Coordinate and region collection fix
+
+- Recipe titles may contain food words such as chicken or shrimp without being rejected as ingredient lines.
+- Stacked-left layouts now collect title, yield, and description from the right-side recipe panel.
+- Title heading size is compared with body text rather than decorative section headings.
+- Full summary paragraphs are collected between the title/yield and links.
+- Parser reports now include all page text coordinates and ranked title candidates.
+- Cookbook Engine 3.2 / Coordinate Region Collector v2.

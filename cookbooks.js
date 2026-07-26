@@ -1,8 +1,8 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "3.1.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.1", parser:"TOC Intelligence v1"};
+const COOKBOOK_ENGINE_VERSION = "3.2.0";
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -195,14 +195,15 @@ function applyTocTitles(candidates,tocMap){
       page:candidate.page, layout:candidate.layoutProfile, chosenTitle:candidate.title, titleSource:candidate.titleSource,
       visualTitle:candidate.visualTitle||candidate.title, confidence:candidate.titleConfidence,
       titleLine:candidate.titleLine||null, regions:candidate.regions||{},
-      nearbyLines:(candidate.pages?.[0]?.richLines||[]).slice(0,80)
+      titleCandidates:candidate.titleCandidates||[],
+      nearbyLines:(candidate.rawLines||candidate.pages?.[0]?.richLines||[]).map(l=>({text:l.text,fontSize:l.fontSize,x:l.x,y:l.y,width:l.width})).slice(0,160)
     };
   }
 }
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:176,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:177,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -447,6 +448,26 @@ function titleRejected(line){
   const ingredientFragment=/[,;:]/.test(text)&&ingredientTerms>=2;
   return !text||text.length<4||text.length>80||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:and|or|but|with|from|to|for|until|then|both|into|onto|over|under)\b/i.test(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
+function titleStructurallyRejected(line){
+  const text=cleanLine(line);
+  const roleText=text.replace(/[\s:;–—-]+$/g,"").trim();
+  return !text||text.length<4||text.length>100||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||
+    yieldLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||
+    /^(?:and|or|but|with|from|to|for|until|then|both|into|onto|over|under|continue)\b/i.test(text)||
+    /[.!?]$/.test(text)&&text.split(/\s+/).length>7||!/[A-Za-z]/.test(text);
+}
+function plausibleVisualTitle(line,page,regions){
+  const text=cleanLine(line?.text||line);
+  if(titleStructurallyRejected(text))return false;
+  const words=text.split(/\s+/).filter(Boolean).length;
+  if(words<2||words>11)return false;
+  // Food words are common in recipe titles. Only treat them as ingredients when
+  // the line also looks like an amount/list item or is body-sized text.
+  if(ingredientLike(text) && !timeLedTitleLike(text) && (line?.fontSize||0)<20)return false;
+  if(instructionLike(text) && (line?.fontSize||0)<20)return false;
+  return true;
+}
+
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
   score+=(line.fontSize||0)*2.2;
@@ -502,7 +523,7 @@ function anchoredTitleNearYield(page,regions,rich){
     const close=dy>2&&dy<H*.19;
     const heading=(line.fontSize||0)>=Math.max(17,(yieldLine.fontSize||10)*1.35);
     const words=text.split(/\s+/).filter(Boolean).length;
-    return sameRegion&&close&&heading&&words>=2&&words<=10&&!titleRejected(text);
+    return sameRegion&&close&&heading&&words>=2&&words<=10&&plausibleVisualTitle(line,page,regions);
   });
   if(!candidates.length)return null;
   return candidates.sort((a,b)=>{
@@ -524,12 +545,12 @@ function strongestHeadingInRecipeRegion(page,regions,rich){
   return pool.filter(l=>{
     const text=cleanLine(l.text),words=text.split(/\s+/).filter(Boolean).length;
     return (l.fontSize||0)>=Math.max(17,maxFont*.78)&&words>=2&&words<=10&&text.length<=80&&
-      (l.y||0)>H*.18&&(l.y||0)<H*.86&&!titleRejected(text);
+      (l.y||0)>H*.18&&(l.y||0)<H*.86&&plausibleVisualTitle(l,page,regions);
   }).sort((a,b)=>titleScore(b,page,regions)-titleScore(a,page,regions))[0]||null;
 }
 
 function findTitleLineFromPage(page,regions){
-  const rich=(page.richLines||[]).filter(line=>!titleRejected(line.text));
+  const rich=(page.richLines||[]).filter(line=>plausibleVisualTitle(line,page,regions));
   if(!rich.length)return null;
   const W=page.width||600,H=page.height||800;
   // Layout Engine 3.0: title extraction is anchored to the visual yield block
@@ -553,9 +574,10 @@ function findTitleLineFromPage(page,regions){
       const words=text.split(/\s+/).filter(Boolean).length;
       const inRightColumn=(line.x||0)>W*.43&&center>W*.55;
       const inTitleBand=(line.y||0)>H*.28&&(line.y||0)<H*.68;
-      const headingSized=(line.fontSize||0)>=Math.max(18,(ins.fontSize||12)*1.25);
-      const titleLength=words>=2&&words<=8&&text.length<=70;
-      return inRightColumn&&inTitleBand&&headingSized&&titleLength;
+      const bodySize=Math.max(11,...(page.richLines||[]).filter(x=>((x.x||0)+(x.width||0)/2)>W*.48).map(x=>x.fontSize||0).filter(v=>v<22));
+      const headingSized=(line.fontSize||0)>=Math.max(20,bodySize*1.45);
+      const titleLength=words>=2&&words<=10&&text.length<=85;
+      return inRightColumn&&inTitleBand&&headingSized&&titleLength&&plausibleVisualTitle(line,page,regions);
     });
     if(rightHeadings.length){
       return rightHeadings.sort((a,b)=>{
@@ -780,7 +802,13 @@ function findYieldAndDescription(page,lines,titleLine,title,regions){
   if(!titleLine)return {yieldText:'',description:'',descriptionLines:[]};
   const W=page.width||600,H=page.height||800;
   const titleNorm=normalize(title);
-  const titleColumn=lines.filter(l=>sameVisualColumn(l,titleLine,W));
+  const stackedLeft=regions?.ingredients&&regions?.instructions&&regions.ingredients.x<W*.46&&regions.instructions.x<W*.46;
+  const titleCenter=(titleLine.x||0)+(titleLine.width||0)/2;
+  const titleColumn=lines.filter(l=>{
+    const center=(l.x||0)+(l.width||0)/2;
+    if(stackedLeft)return center>W*.47;
+    return sameVisualColumn(l,titleLine,W)||Math.abs(center-titleCenter)<W*.24;
+  });
   const belowTitle=titleColumn.filter(l=>l.y<titleLine.y-2&&l.y>titleLine.y-H*.42);
   const globalYield=findLikelyYieldLine(page);
   const yieldLine=(globalYield&&globalYield.y<titleLine.y&&sameVisualColumn(globalYield,titleLine,W))?globalYield:
@@ -790,7 +818,7 @@ function findYieldAndDescription(page,lines,titleLine,title,regions){
     const t=cleanLine(l.text);
     if(!t||l===yieldLine||normalize(t)===titleNorm)return false;
     if(l.y>=upperBound+3)return false;
-    if(SECTION_NOISE.test(t)||LINK_NOISE.test(t)||yieldLike(t)||ingredientLike(t)||instructionLike(t)||/^\d+[.)]?\s*/.test(t))return false;
+    if(SECTION_NOISE.test(t)||LINK_NOISE.test(t)||yieldLike(t)||instructionLike(t)||/^\d+[.)]?\s*/.test(t))return false;
     if(regions.ingredients&&sameVisualColumn(l,regions.ingredients,W)&&l.y<regions.ingredients.y)return false;
     if(regions.instructions&&sameVisualColumn(l,regions.instructions,W)&&l.y<regions.instructions.y)return false;
     return t.length>2;
@@ -856,7 +884,8 @@ function buildCandidate(group){
   const headerCount=(page.richLines||[]).filter(l=>/^(ingredients?|directions?|instructions?|method)\s*:?$/i.test(cleanLine(l.text))).length;
   if(headerCount>2)warnings.push("Multiple recipe regions detected on this page; review this card carefully.");
   if(titleRejected(title)||ingredientLike(title))warnings.push("Low-confidence title detected.");
-  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION};
+  const titleCandidates=(page.richLines||[]).filter(l=>plausibleVisualTitle(l,page,regions)).map(l=>({text:cleanLine(l.text),fontSize:l.fontSize,x:l.x,y:l.y,width:l.width,score:Math.round(titleScore(l,page,regions))})).sort((a,b)=>b.score-a.score).slice(0,20);
+  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
 function showReview(){
