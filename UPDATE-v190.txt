@@ -1,0 +1,8 @@
+Build 190 — Smart Re-import & Duplicate Sensing
+
+- Recognizes a previously imported cookbook when the PDF is uploaded again.
+- Automatically selects only recipes that are new to that cookbook.
+- Marks recipes already imported from the same cookbook.
+- Flags likely duplicates across every cookbook using title, ingredients, and instructions.
+- Possible duplicates stay unselected unless Keep both is chosen.
+- Re-uploading an older cookbook attaches missing original-page previews to existing recipes.

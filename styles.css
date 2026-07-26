@@ -923,3 +923,8 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .cookbook-recipe-card{display:block;width:100%;padding:0;text-align:left;color:inherit;font:inherit;background:var(--card,#fffdf8);border:1px solid rgba(67,72,52,.16)}
 .cookbook-recipe-card .card-body{display:block}
 .cookbook-recipe-card .card-body span{display:block}
+
+/* Build 190 · Smart re-import and cross-cookbook duplicate sensing */
+.smart-import-summary{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:18px 0;padding:16px 18px;border:1px solid rgba(67,72,52,.18);border-radius:16px;background:#eef2e8}.smart-import-summary p{margin:4px 0 0;color:var(--muted)}
+.review-status-wrap{display:grid;gap:4px}.review-status-wrap small{color:var(--muted);max-width:560px}.import-status{display:inline-flex;width:max-content;padding:5px 9px;border-radius:999px;font-size:.8rem;font-weight:800}.status-new{background:#e8f2df;color:#426432}.status-already{background:#e5e9eb;color:#506066}.status-duplicate{background:#f5ead3;color:#825e1f}.recipe-review-head{gap:14px;align-items:flex-start}.recipe-review-head>.review-check{margin-left:auto}
+@media(max-width:700px){.smart-import-summary{align-items:stretch;flex-direction:column}.recipe-review-head{align-items:stretch;flex-direction:column}.recipe-review-head>.review-check{margin-left:0}}

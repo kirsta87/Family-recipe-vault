@@ -1,9 +1,9 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_189 = true;
-const COOKBOOK_ENGINE_VERSION = "3.2.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
+const BUILD_190 = true;
+const COOKBOOK_ENGINE_VERSION = "3.3.0";
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.3", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -1098,7 +1098,77 @@ function buildCandidate(group){
   return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
+
+function recipeTitleTokens(value){
+  const stop=new Set(["the","a","an","and","or","with","of","for","to","in","on","style","easy","best","healthy","high","protein"]);
+  return new Set(normalize(value).split(" ").filter(t=>t.length>1&&!stop.has(t)));
+}
+function jaccard(a,b){
+  const A=a instanceof Set?a:new Set(a),B=b instanceof Set?b:new Set(b);
+  if(!A.size&&!B.size)return 1;
+  const overlap=[...A].filter(x=>B.has(x)).length;
+  return overlap/(A.size+B.size-overlap||1);
+}
+function normalizedIngredientTokens(value){
+  const rows=normalizeRecipeList(value);
+  const noise=new Set(["cup","cups","tbsp","tsp","tablespoon","tablespoons","teaspoon","teaspoons","oz","ounce","ounces","lb","lbs","pound","pounds","gram","grams","g","ml","can","package","pkg","optional","taste"]);
+  return new Set(normalize(rows.join(" ")).split(" ").filter(t=>t.length>1&&!/^\d+$/.test(t)&&!noise.has(t)));
+}
+function duplicateSimilarity(candidate,existing){
+  const titleScore=jaccard(recipeTitleTokens(candidate.title),recipeTitleTokens(existing.name));
+  const ingredientScore=jaccard(normalizedIngredientTokens(candidate.ingredients),normalizedIngredientTokens(existing.ingredients));
+  const instructionScore=jaccard(recipeTitleTokens(normalizeRecipeList(candidate.instructions).join(" ")),recipeTitleTokens(normalizeRecipeList(existing.instructions).join(" ")));
+  const exactTitle=normalize(candidate.title)===normalize(existing.name);
+  const score=exactTitle?Math.max(.96,.58*ingredientScore+.42*instructionScore):(.42*titleScore+.48*ingredientScore+.10*instructionScore);
+  return Math.min(1,score);
+}
+function identifyExistingCookbook(){
+  const fileBase=normalize(String(importState?.fileName||"").replace(/\.[^.]+$/,""));
+  const title=normalize(importState?.title||"");
+  let best=null,bestScore=0;
+  for(const cb of library){
+    const values=cookbookIdentityValues(cb).map(normalize);
+    let score=0;
+    if(fileBase&&values.includes(fileBase))score=1;
+    else if(title&&values.includes(title))score=.98;
+    else score=Math.max(...values.map(v=>jaccard(new Set(meaningfulTokens(v)),new Set(meaningfulTokens(fileBase||title)))),0);
+    if(score>bestScore){bestScore=score;best=cb;}
+  }
+  return bestScore>=.72?best:null;
+}
+function classifyImportCandidates(){
+  const matched=identifyExistingCookbook();
+  importState.matchedCookbook=matched||null;
+  const sameBookRecipes=matched?cookbookRecipes(matched,{remember:false}):[];
+  importState.candidates.forEach(r=>{
+    r.importStatus="new";r.duplicateMatch=null;r.duplicateConfidence=0;
+    const pageMatch=sameBookRecipes.find(existing=>Number(existing.cookbook_page||0)===Number(r.page||0)&&normalize(existing.name)===normalize(r.title));
+    const titleMatch=sameBookRecipes.find(existing=>normalize(existing.name)===normalize(r.title));
+    const already=pageMatch||titleMatch;
+    if(already){r.importStatus="already";r.include=false;r.duplicateMatch=already;r.duplicateConfidence=1;return;}
+    let best=null,bestScore=0;
+    for(const existing of recipes){
+      const score=duplicateSimilarity(r,existing);
+      if(score>bestScore){bestScore=score;best=existing;}
+    }
+    if(best&&bestScore>=.84){
+      r.importStatus="possible-duplicate";r.include=false;r.duplicateMatch=best;r.duplicateConfidence=bestScore;
+    }else r.include=true;
+  });
+}
+function importStatusCounts(){
+  const counts={new:0,already:0,duplicates:0,selected:0};
+  for(const r of importState?.candidates||[]){
+    if(r.importStatus==="already")counts.already++;
+    else if(r.importStatus==="possible-duplicate")counts.duplicates++;
+    else counts.new++;
+    if(r.include)counts.selected++;
+  }
+  return counts;
+}
+
 function showReview(){
+  classifyImportCandidates();
   $("analyzePanel").hidden=true;$("reviewPanel").hidden=false;$("importHeading").textContent="Review cookbook";$("cookbookTitle").value=importState.title;$("cookbookAuthor").value=importState.author;$("cookbookCollection").value=importState.title;$("coverPreview").innerHTML=importState.cover?`<img src="${importState.cover}" alt="Cookbook cover preview">`:`<div class="cover-placeholder">📖</div>`;renderReview();
 }
 function assessImportCandidate(r){
@@ -1168,9 +1238,10 @@ function scrollReviewTop(){
 }
 
 function renderReview(){
-  const selected=importState.candidates.filter(x=>x.include).length;$('reviewSummary').textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
+  const counts=importStatusCounts();$('reviewSummary').textContent=`${counts.new} new · ${counts.already} already imported · ${counts.duplicates} possible duplicates · ${counts.selected} selected`;
+  const smart=$("smartImportSummary");if(smart){const book=importState.matchedCookbook;smart.hidden=false;smart.innerHTML=`<div><strong>${book?`Continuing ${escapeHTML(book.title)}`:"Smart duplicate scan"}</strong><p>${counts.new} new recipes found${counts.already?` · ${counts.already} already imported`:""}${counts.duplicates?` · ${counts.duplicates} possible duplicates need a decision`:""}.</p></div><button type="button" class="primary compact-button" data-select-new>Import all new recipes</button>`;}
   renderImportHealth();
-  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>{const health=assessImportCandidate(r);return `<article id="recipe-review-${i}" data-review-card="${i}" data-health="${health.severity}" class="recipe-review-card ${health.severity!=='good'?'needs-review':''} ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><div class="recipe-review-page-tools"><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span><button type="button" class="secondary compact-button" data-view-source-page="${r.page}">View source page</button></div></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="parser-source-row"><span class="parser-source-badge">Title: ${escapeHTML(r.titleSource||"visual fallback")} · ${Number(r.titleConfidence||0)}%</span><div class="parser-card-actions"><button type="button" class="secondary compact-button" data-parser-report="${i}">Download parser report</button><button type="button" class="secondary compact-button" data-back-review-top>Back to report ↑</button></div></div><details class="parser-debug"><summary>🐞 Debug parser</summary><pre>${escapeHTML(JSON.stringify(r.debugReport||{},null,2))}</pre></details><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`}).join('');
+  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>{const health=assessImportCandidate(r);return `<article id="recipe-review-${i}" data-review-card="${i}" data-health="${health.severity}" class="recipe-review-card ${health.severity!=='good'?'needs-review':''} ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><div class="review-status-wrap">${r.importStatus==='already'?`<span class="import-status status-already">Already imported ✓</span>`:r.importStatus==='possible-duplicate'?`<span class="import-status status-duplicate">Possible duplicate · ${Math.round((r.duplicateConfidence||0)*100)}%</span>`:`<span class="import-status status-new">New</span>`}${r.duplicateMatch?`<small>Looks like: ${escapeHTML(r.duplicateMatch.name||'Existing recipe')}${recipeCookbookLabel(r.duplicateMatch)?` · ${escapeHTML(recipeCookbookLabel(r.duplicateMatch))}`:''}</small>`:''}</div><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''} ${r.importStatus==='already'?'disabled':''}><span>${r.importStatus==='possible-duplicate'?'Keep both':r.importStatus==='already'?'Imported':'Import'}</span></label><div class="recipe-review-page-tools"><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span><button type="button" class="secondary compact-button" data-view-source-page="${r.page}">View source page</button></div></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="parser-source-row"><span class="parser-source-badge">Title: ${escapeHTML(r.titleSource||"visual fallback")} · ${Number(r.titleConfidence||0)}%</span><div class="parser-card-actions"><button type="button" class="secondary compact-button" data-parser-report="${i}">Download parser report</button><button type="button" class="secondary compact-button" data-back-review-top>Back to report ↑</button></div></div><details class="parser-debug"><summary>🐞 Debug parser</summary><pre>${escapeHTML(JSON.stringify(r.debugReport||{},null,2))}</pre></details><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`}).join('');
 }
 
 function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title);r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
@@ -1182,14 +1253,26 @@ async function renderImportedSourcePreview(pageNo){
   try{const page=await activePdfDocument.getPage(pageNo),viewport=page.getViewport({scale:.72}),canvas=document.createElement("canvas");canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;return importState.sourcePreviewCache[pageNo]=canvas.toDataURL("image/jpeg",.62);}catch{return "";}
 }
 async function importSelected(){
-  syncReviewFields(); const selected=importState.candidates.filter(r=>r.include); if(!selected.length)return alert("Select at least one recipe.");
-  const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=makeId(); let imported=0,skipped=0,failed=0;
+  syncReviewFields(); const selected=importState.candidates.filter(r=>r.include&&r.importStatus!=="already");
+  const existingBook=importState.matchedCookbook||null;
+  const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=existingBook?.id||makeId(); let imported=0,skipped=0,failed=0,previewsAttached=0;
+  if(!selected.length&&!existingBook)return alert("Select at least one recipe.");
   const btn=$("importCookbookRecipes");btn.disabled=true;
+  if(existingBook){
+    const existingRecipes=cookbookRecipes(existingBook,{remember:false}).filter(r=>!recipeField(r,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage")&&Number(recipeField(r,"cookbook_page","cookbookPage","source_page","sourcePage","page"))>0);
+    for(let i=0;i<existingRecipes.length;i++){
+      const recipe=existingRecipes[i],page=Number(recipeField(recipe,"cookbook_page","cookbookPage","source_page","sourcePage","page"));
+      btn.textContent=`Attaching original pages ${i+1} of ${existingRecipes.length}…`;
+      const preview=await renderImportedSourcePreview(page);if(!preview)continue;
+      try{await postVault({action:"update",id:recipe.id,url:recipe.url,updates:{source_page_image:preview}});recipe.source_page_image=preview;previewsAttached++;}catch{}
+    }
+  }
   for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage=await renderImportedSourcePreview(r.page);const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
-  library.unshift({id,title,originalTitle:title,aliases:[title],author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,recipeRefs:[],addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
-  $("reviewPanel").hidden=true;$("importResults").hidden=false;$("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(title)} is on your shelf</h2><p>${imported} recipes imported${skipped?`, ${skipped} duplicates skipped`:""}${failed?`, ${failed} failed`:""}.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;$("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(id));};
+  if(existingBook){existingBook.title=title;existingBook.author=author;existingBook.collection=collection;existingBook.cover=existingBook.cover||importState.cover;existingBook.pageCount=importState.pageCount;existingBook.importedCount=(cookbookRecipes(existingBook,{remember:false}).length||existingBook.importedCount||0)+imported;existingBook.fileName=importState.fileName;existingBook.aliases=[...new Set([...(existingBook.aliases||[]),title,importState.title].filter(Boolean))];}
+  else library.unshift({id,title,originalTitle:title,aliases:[title],author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,recipeRefs:[],addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
+  $("reviewPanel").hidden=true;$("importResults").hidden=false;$("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(title)} is on your shelf</h2><p>${imported} recipes imported${skipped?`, ${skipped} duplicates skipped`:""}${previewsAttached?`, ${previewsAttached} original PDF pages attached`:""}${failed?`, ${failed} failed`:""}.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;$("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(id));};
 }
 function beginEditCookbook(id){const cb=library.find(x=>x.id===id);if(!cb)return;$("editCookbookTitle").value=cb.title||"";$("editCookbookAuthor").value=cb.author||"";$("editCookbookCollection").value=cb.collection||cb.title||"";$("editCookbookDialog").dataset.id=id;$("editCookbookDialog").showModal();}
 async function saveCookbookMetadata(){
@@ -1231,10 +1314,10 @@ async function deleteCookbook(removeRecipes){
   library=library.filter(x=>x.id!==cb.id);saveLibrary();$("deleteCookbookDialog").close();renderShelf();if(deletionFailed)alert("The cookbook was removed from the shelf, but your Apps Script does not appear to support permanent recipe deletion. Its recipes were left in the vault.");
 }
 
-document.addEventListener("click",e=>{const recipeCard=e.target.closest("[data-open-cookbook-recipe-ref]");if(recipeCard){const recipe=recipes.find(item=>recipeStableRef(item)===recipeCard.dataset.openCookbookRecipeRef);if(recipe)openCookbookRecipe(recipe);else console.warn("Recipe Vault: cookbook card recipe could not be resolved",recipeCard.dataset.openCookbookRecipeRef);return;}const editBook=e.target.closest("[data-edit-cookbook]");if(editBook){beginEditCookbook(editBook.dataset.editCookbook);return;}const source=e.target.closest("[data-view-source-page]");if(source){showSourcePage(Number(source.dataset.viewSourcePage));return;}const backTop=e.target.closest("[data-back-review-top]");if(backTop){scrollReviewTop();return;}const jump=e.target.closest("[data-jump-recipe]");if(jump){const card=document.getElementById(`recipe-review-${jump.dataset.jumpRecipe}`);card?.scrollIntoView({behavior:"smooth",block:"start"});card?.classList.add("health-highlight");setTimeout(()=>card?.classList.remove("health-highlight"),1800);return;}const reviewOnly=e.target.closest("[data-show-review-only]");if(reviewOnly){const active=reviewOnly.dataset.active==="true";document.querySelectorAll("[data-review-card]").forEach(card=>card.hidden=!active&&card.dataset.health==="good");reviewOnly.dataset.active=String(!active);reviewOnly.textContent=active?"Show only flagged":"Show all recipes";return;}const report=e.target.closest("[data-parser-report]");if(report){downloadParserReport(Number(report.dataset.parserReport));return;}const open=e.target.closest("[data-open-cookbook]");if(open&&!e.target.closest("[data-delete-cookbook]")){openCookbook(open.dataset.openCookbook);return;}const del=e.target.closest("[data-delete-cookbook]");if(del){e.stopPropagation();deleteTargetId=del.dataset.deleteCookbook;const cb=library.find(x=>x.id===deleteTargetId);$("deleteCookbookMessage").textContent=`Choose what should happen to ${cb?.title||"this cookbook"}.`;$("deleteCookbookDialog").showModal();}});
+document.addEventListener("click",e=>{const selectNew=e.target.closest("[data-select-new]");if(selectNew){syncReviewFields();importState.candidates.forEach(r=>r.include=r.importStatus==="new");renderReview();return;}const recipeCard=e.target.closest("[data-open-cookbook-recipe-ref]");if(recipeCard){const recipe=recipes.find(item=>recipeStableRef(item)===recipeCard.dataset.openCookbookRecipeRef);if(recipe)openCookbookRecipe(recipe);else console.warn("Recipe Vault: cookbook card recipe could not be resolved",recipeCard.dataset.openCookbookRecipeRef);return;}const editBook=e.target.closest("[data-edit-cookbook]");if(editBook){beginEditCookbook(editBook.dataset.editCookbook);return;}const source=e.target.closest("[data-view-source-page]");if(source){showSourcePage(Number(source.dataset.viewSourcePage));return;}const backTop=e.target.closest("[data-back-review-top]");if(backTop){scrollReviewTop();return;}const jump=e.target.closest("[data-jump-recipe]");if(jump){const card=document.getElementById(`recipe-review-${jump.dataset.jumpRecipe}`);card?.scrollIntoView({behavior:"smooth",block:"start"});card?.classList.add("health-highlight");setTimeout(()=>card?.classList.remove("health-highlight"),1800);return;}const reviewOnly=e.target.closest("[data-show-review-only]");if(reviewOnly){const active=reviewOnly.dataset.active==="true";document.querySelectorAll("[data-review-card]").forEach(card=>card.hidden=!active&&card.dataset.health==="good");reviewOnly.dataset.active=String(!active);reviewOnly.textContent=active?"Show only flagged":"Show all recipes";return;}const report=e.target.closest("[data-parser-report]");if(report){downloadParserReport(Number(report.dataset.parserReport));return;}const open=e.target.closest("[data-open-cookbook]");if(open&&!e.target.closest("[data-delete-cookbook]")){openCookbook(open.dataset.openCookbook);return;}const del=e.target.closest("[data-delete-cookbook]");if(del){e.stopPropagation();deleteTargetId=del.dataset.deleteCookbook;const cb=library.find(x=>x.id===deleteTargetId);$("deleteCookbookMessage").textContent=`Choose what should happen to ${cb?.title||"this cookbook"}.`;$("deleteCookbookDialog").showModal();}});
 $("uploadCookbookBtn").onclick=showImport;$("emptyUploadBtn").onclick=showImport;$("cancelImport").onclick=cancelImport;$("choosePdfBtn").onclick=()=>$("cookbookFile").click();$("cookbookFile").onchange=e=>e.target.files?.[0]&&analyzePdf(e.target.files[0]);
 const drop=$("choosePdfPanel");["dragenter","dragover"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add("dragging")}));["dragleave","drop"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove("dragging")}));drop.addEventListener("drop",e=>e.dataTransfer.files?.[0]&&analyzePdf(e.dataTransfer.files[0]));
-$("selectAllRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=true);renderReview();};$("selectNoneRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=false);renderReview();};$("recipeReviewList").addEventListener("change",e=>{if(e.target.matches("[data-review-include]")){syncReviewFields();renderReview();}});$("importCookbookRecipes").onclick=importSelected;
+$("selectAllRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=r.importStatus!=="already");renderReview();};$("selectNoneRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=false);renderReview();};$("recipeReviewList").addEventListener("change",e=>{if(e.target.matches("[data-review-include]")){syncReviewFields();renderReview();}});$("importCookbookRecipes").onclick=importSelected;
 $("cookbookSearch").oninput=renderShelf;$("cookbookRecipeSearch").oninput=renderCookbookRecipes;$("backToShelf").onclick=()=>{$("cookbookDetailView").hidden=true;$("libraryView").hidden=false;renderShelf();};
 $("closeDeleteCookbook").onclick=()=>$("deleteCookbookDialog").close();$("cancelDeleteCookbook").onclick=()=>$("deleteCookbookDialog").close();$("removeCookbookOnly").onclick=()=>deleteCookbook(false);$("removeCookbookAndRecipes").onclick=()=>deleteCookbook(true);
 $("reviewBackToTop").onclick=scrollReviewTop;
