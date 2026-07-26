@@ -1,0 +1,5 @@
+Build 189 — Original PDF Page Feedback
+
+- Keeps View original PDF page clickable.
+- Opens saved source previews from current and legacy field names.
+- Explains when an older import has no saved source page instead of silently doing nothing.

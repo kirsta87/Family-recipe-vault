@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_188 = true;
+const BUILD_189 = true;
 const COOKBOOK_ENGINE_VERSION = "3.2.0";
 window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
@@ -288,7 +288,11 @@ function openCookbookRecipe(recipe){
   $("cookbookRecipeIngredients").innerHTML=ingredientItems.map(x=>`<li>${escapeHTML(x)}</li>`).join("");
   $("cookbookRecipeInstructions").innerHTML=instructionItems.map(x=>`<li>${escapeHTML(stripStepNumber(x))}</li>`).join("");
   $("cookbookRecipeNotes").value=cookbookFamilyNotes(recipe);
-  $("viewCookbookSourcePage").disabled=!(recipe.source_page_image||activePdfDocument);
+  // Keep the source-page control clickable even when an older import has no saved preview.
+  // The click handler can then explain what is missing instead of silently doing nothing.
+  $("viewCookbookSourcePage").disabled=false;
+  const savedSourcePreview=recipeField(recipe,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage","page_image","pageImage");
+  $("viewCookbookSourcePage").dataset.hasSourcePreview=savedSourcePreview?"true":"false";
   $("cookbookRecipeDialog").showModal();
 }
 
@@ -1205,18 +1209,20 @@ async function saveCookbookMetadata(){
 async function saveActiveCookbookNotes(){if(!activeCookbookRecipe)return;const family_notes=$("cookbookRecipeNotes").value.trim();await postVault({action:"update",id:activeCookbookRecipe.id,url:activeCookbookRecipe.url,updates:{family_notes}});activeCookbookRecipe.family_notes=family_notes;}
 function showImportedSource(recipe){
   if(!recipe)return;
+  const sourcePreview=recipeField(recipe,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage","page_image","pageImage");
+  const sourcePage=Number(recipeField(recipe,"cookbook_page","cookbookPage","source_page","sourcePage","page"))||0;
   sourceReturnToRecipe=$("cookbookRecipeDialog").open;
   if(sourceReturnToRecipe)$("cookbookRecipeDialog").close();
-  if(recipe.source_page_image){
+  if(sourcePreview){
     const currentBook=library.find(cb=>String(cb.id)===String(recipe.cookbook_id));
-    $("sourcePageTitle").textContent=`${currentBook?.title||recipe.cookbook_title||"Cookbook"} · Page ${recipe.cookbook_page||""}`;
+    $("sourcePageTitle").textContent=`${currentBook?.title||recipe.cookbook_title||"Cookbook"}${sourcePage?` · Page ${sourcePage}`:""}`;
     $("sourcePagePrev").hidden=true;$("sourcePageNext").hidden=true;$("sourcePageLoading").hidden=true;
-    $("sourcePageImage").src=recipe.source_page_image;$("sourcePageImage").hidden=false;
+    $("sourcePageImage").src=sourcePreview;$("sourcePageImage").hidden=false;
     $("sourcePageDialog").showModal();return;
   }
-  if(activePdfDocument&&recipe.cookbook_page){showSourcePage(recipe.cookbook_page);return;}
+  if(activePdfDocument&&sourcePage){showSourcePage(sourcePage);return;}
   sourceReturnToRecipe=false;
-  alert("This recipe was imported before source-page previews were saved. Re-upload the cookbook to attach its original pages.");
+  alert("The original page was not saved with this older cookbook import. Re-upload the cookbook PDF once to attach source-page previews to newly imported recipes.");
   if(activeCookbookRecipe)$("cookbookRecipeDialog").showModal();
 }
 async function deleteCookbook(removeRecipes){
