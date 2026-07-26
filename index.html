@@ -413,6 +413,44 @@ https://www.budgetbytes.com/..."></textarea>
 
 
 
+
+<dialog id="recipeIntelligenceDialog" class="recipe-intelligence-dialog" aria-labelledby="recipeIntelligenceHeading">
+  <button id="closeRecipeIntelligence" class="close" type="button" aria-label="Close">×</button>
+  <div id="recipeIntelligencePrompt">
+    <p class="eyebrow">RECIPE INTELLIGENCE</p>
+    <h2 id="recipeIntelligenceHeading">Analyze your recipe library</h2>
+    <p id="recipeIntelligenceMessage" class="muted"></p>
+    <div class="intelligence-explainer">
+      <span class="intelligence-icon">🧬</span>
+      <p>Recipe Vault will infer temperature, cooking method, effort, season, texture, and meal style. Your recipes are not changed.</p>
+    </div>
+    <div class="dialog-action-row">
+      <button id="startRecipeIntelligence" class="primary" type="button">Analyze my recipes</button>
+      <button id="laterRecipeIntelligence" class="secondary" type="button">Not now</button>
+    </div>
+  </div>
+
+  <div id="recipeIntelligenceProgress" hidden>
+    <p class="eyebrow">BUILDING RECIPE DNA</p>
+    <h2>Analyzing your recipe library</h2>
+    <p id="recipeIntelligenceCount" class="intelligence-count">Preparing recipes…</p>
+    <progress id="recipeIntelligenceBar" max="100" value="0">0%</progress>
+    <div class="intelligence-current-card">
+      <strong id="recipeIntelligenceCurrent">Starting…</strong>
+      <span id="recipeIntelligenceTraits" class="muted">Reading recipe details…</span>
+    </div>
+    <p class="muted small-note">You can leave this open—the analysis runs locally in your browser.</p>
+  </div>
+
+  <div id="recipeIntelligenceComplete" hidden>
+    <p class="intelligence-success-icon">✓</p>
+    <p class="eyebrow">ANALYSIS COMPLETE</p>
+    <h2>Your Recipe DNA is ready</h2>
+    <p id="recipeIntelligenceDoneText" class="muted"></p>
+    <button id="exploreRecipeIntelligence" class="primary" type="button">Explore Inspire Me</button>
+  </div>
+</dialog>
+
 <dialog id="mealPlanDialog" class="meal-plan-dialog">
   <button id="closeMealPlanDialog" class="close" type="button">×</button>
   <p class="eyebrow">ADD TO MEAL PLAN</p>
@@ -425,6 +463,6 @@ https://www.budgetbytes.com/..."></textarea>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="recipe-pack-schema.js"></script>
 <script src="config.js?v=3"></script>
-<script src="app.js?v=140"></script>
+<script src="app.js?v=142"></script>
 </body>
 </html>

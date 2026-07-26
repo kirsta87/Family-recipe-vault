@@ -1,0 +1,8 @@
+Recipe Vault v1.4.2 — Visible Recipe Intelligence
+
+- Shows a first-run or engine-upgrade prompt before analyzing a large library.
+- Displays live recipe-by-recipe progress and detected traits.
+- Shows a completion summary and link back to Inspire Me.
+- Uses engine versioning: recipes reanalyze when the engine improves, when a recipe changes, or when manually requested.
+- New/edited individual recipes still update quietly.
+- Removed automatic time-only 14-day full rechecks.

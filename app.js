@@ -28,8 +28,9 @@ const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
 const RECIPE_CACHE_KEY = "recipeVaultRecipeCacheV118";
 const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
-const RECIPE_DNA_ENGINE_VERSION = 1;
-const RECIPE_DNA_FULL_RECHECK_MS = 14 * 24 * 60 * 60 * 1000;
+const RECIPE_DNA_ENGINE_VERSION = 2;
+let recipeIntelligenceRunning = false;
+let recipeIntelligencePromptShown = false;
 let recipeDNAStore = readRecipeDNAStore();
 
 function readRecipeCache(){
@@ -683,35 +684,134 @@ function analyzeRecipeDNA(recipe){
   return {fingerprint:recipeDNAFingerprint(recipe), analyzedAt:Date.now(), scores, traits};
 }
 
-function refreshRecipeIntelligence({force=false,automatic=false}={}){
-  const now = Date.now();
+function recipeIntelligenceCandidates({force=false}={}){
   const engineChanged = recipeDNAStore.engineVersion !== RECIPE_DNA_ENGINE_VERSION;
-  const fullCheckDue = now - Number(recipeDNAStore.lastFullCheck || 0) >= RECIPE_DNA_FULL_RECHECK_MS;
-  let analyzed = 0;
-  const liveIds = new Set(recipes.map(recipe => String(recipe.id || recipe.name || "")));
-
-  recipes.forEach(recipe => {
+  return recipes.filter(recipe => {
     const id = String(recipe.id || recipe.name || "");
     const current = recipeDNAStore.recipes[id];
-    const fingerprint = recipeDNAFingerprint(recipe);
-    if(force || engineChanged || fullCheckDue || !current || current.fingerprint !== fingerprint){
-      recipeDNAStore.recipes[id] = analyzeRecipeDNA(recipe);
-      analyzed++;
-    }
+    return force || engineChanged || !current || current.fingerprint !== recipeDNAFingerprint(recipe);
   });
+}
+
+function cleanRecipeDNAStore(){
+  const liveIds = new Set(recipes.map(recipe => String(recipe.id || recipe.name || "")));
   Object.keys(recipeDNAStore.recipes).forEach(id => { if(!liveIds.has(id)) delete recipeDNAStore.recipes[id]; });
-  recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
-  if(force || engineChanged || fullCheckDue) recipeDNAStore.lastFullCheck = now;
-  if(analyzed || engineChanged || fullCheckDue) writeRecipeDNAStore();
+}
+
+function setIntelligenceDialogMode(mode){
+  const prompt = $("recipeIntelligencePrompt");
+  const progress = $("recipeIntelligenceProgress");
+  const complete = $("recipeIntelligenceComplete");
+  if(prompt) prompt.hidden = mode !== "prompt";
+  if(progress) progress.hidden = mode !== "progress";
+  if(complete) complete.hidden = mode !== "complete";
+}
+
+function showRecipeIntelligencePrompt(count, engineChanged){
+  const dialog = $("recipeIntelligenceDialog");
+  if(!dialog || dialog.open || recipeIntelligenceRunning) return;
+  const heading = $("recipeIntelligenceHeading");
+  const message = $("recipeIntelligenceMessage");
+  if(heading) heading.textContent = engineChanged ? "Recipe Intelligence has improved" : "Analyze your recipe library";
+  if(message) message.textContent = engineChanged
+    ? `A newer intelligence engine can recheck ${count} recipe${count===1?"":"s"} and improve their Recipe DNA.`
+    : `Recipe Vault found ${count} recipe${count===1?"":"s"} that need Recipe DNA. This organizes them automatically—no manual categories required.`;
+  setIntelligenceDialogMode("prompt");
+  dialog.showModal();
+  recipeIntelligencePromptShown = true;
+}
+
+function startRecipeIntelligenceAnalysis({force=false}={}){
+  if(recipeIntelligenceRunning) return;
+  const candidates = recipeIntelligenceCandidates({force});
+  const dialog = $("recipeIntelligenceDialog");
+  if(!candidates.length){
+    const status = $("recipeIntelligenceStatus");
+    if(status) status.textContent = `Recipe Intelligence engine v${RECIPE_DNA_ENGINE_VERSION} is current.`;
+    if(dialog?.open) dialog.close();
+    return;
+  }
+
+  recipeIntelligenceRunning = true;
+  if(dialog && !dialog.open) dialog.showModal();
+  setIntelligenceDialogMode("progress");
+  const bar = $("recipeIntelligenceBar");
+  const countText = $("recipeIntelligenceCount");
+  const currentText = $("recipeIntelligenceCurrent");
+  const traitText = $("recipeIntelligenceTraits");
+  const status = $("recipeIntelligenceStatus");
+  if(status) status.textContent = `Analyzing ${candidates.length} recipe${candidates.length===1?"":"s"}…`;
+
+  let index = 0;
+  let traitCount = 0;
+  const startedAt = Date.now();
+
+  const step = () => {
+    const chunkEnd = Math.min(index + 4, candidates.length);
+    for(; index < chunkEnd; index++){
+      const recipe = candidates[index];
+      const id = String(recipe.id || recipe.name || "");
+      const dna = analyzeRecipeDNA(recipe);
+      recipeDNAStore.recipes[id] = dna;
+      traitCount += Object.values(dna.traits || {}).reduce((sum, values) => sum + (Array.isArray(values) ? values.length : 0), 0);
+      if(currentText) currentText.textContent = recipe.name || "Untitled recipe";
+      if(traitText){
+        const traits = Object.values(dna.traits || {}).flat();
+        traitText.textContent = traits.length ? `Detected: ${traits.slice(0,6).join(" · ")}` : "Analyzing cooking method, temperature, effort, and style…";
+      }
+    }
+    const percent = Math.round(index / candidates.length * 100);
+    if(bar){ bar.value = percent; bar.textContent = `${percent}%`; }
+    if(countText) countText.textContent = `Analyzing recipe ${index} of ${candidates.length} · ${percent}%`;
+
+    if(index < candidates.length){
+      setTimeout(step, 18);
+      return;
+    }
+
+    cleanRecipeDNAStore();
+    recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
+    recipeDNAStore.lastFullCheck = Date.now();
+    writeRecipeDNAStore();
+    recipeIntelligenceRunning = false;
+    const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    const doneText = $("recipeIntelligenceDoneText");
+    if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed with engine v${RECIPE_DNA_ENGINE_VERSION}. ${traitCount.toLocaleString()} traits identified in ${elapsed} second${elapsed===1?"":"s"}.`;
+    setIntelligenceDialogMode("complete");
+    if(status) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
+    render();
+  };
+  setTimeout(step, 30);
+}
+
+function refreshRecipeIntelligence({force=false,automatic=false}={}){
+  const engineChanged = recipeDNAStore.engineVersion !== RECIPE_DNA_ENGINE_VERSION;
+  const candidates = recipeIntelligenceCandidates({force});
+  cleanRecipeDNAStore();
+
+  // A single edited/imported recipe can update quietly. A first run or engine upgrade gets a visible review prompt.
+  if(automatic && candidates.length && !force){
+    if(engineChanged || candidates.length > 5){
+      const status = $("recipeIntelligenceStatus");
+      if(status) status.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} ready for Recipe Intelligence analysis.`;
+      if(!recipeIntelligencePromptShown) setTimeout(() => showRecipeIntelligencePrompt(candidates.length, engineChanged), 120);
+      return candidates.length;
+    }
+    candidates.forEach(recipe => {
+      const id = String(recipe.id || recipe.name || "");
+      recipeDNAStore.recipes[id] = analyzeRecipeDNA(recipe);
+    });
+    recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
+    writeRecipeDNAStore();
+  }else if(force){
+    startRecipeIntelligenceAnalysis({force:true});
+    return candidates.length;
+  }
 
   const status = $("recipeIntelligenceStatus");
-  if(status){
-    status.textContent = analyzed
-      ? `${analyzed} recipe${analyzed===1?"":"s"} analyzed automatically. Full library rechecks every 14 days.`
-      : `Recipe intelligence is current. Automatic full recheck every 14 days.`;
-  }
+  if(status && !candidates.length) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
   if(!automatic) render();
-  return analyzed;
+  return candidates.length;
 }
 
 function inferredVibesFromText(value){
@@ -2434,10 +2534,19 @@ document.querySelectorAll("dialog").forEach(dialog => {
 });
 
 mountMultiCollectionPicker("manualCollectionPicker", []);
-on("recheckRecipeIntelligence", "click", () => {
-  const count = refreshRecipeIntelligence({force:true});
+on("recheckRecipeIntelligence", "click", () => startRecipeIntelligenceAnalysis({force:true}));
+on("startRecipeIntelligence", "click", () => startRecipeIntelligenceAnalysis());
+on("laterRecipeIntelligence", "click", () => {
+  $("recipeIntelligenceDialog")?.close();
+  const count = recipeIntelligenceCandidates().length;
   const status = $("recipeIntelligenceStatus");
-  if(status) status.textContent = `Rechecked ${count || recipes.length} recipe${recipes.length===1?"":"s"} with the latest intelligence rules.`;
+  if(status) status.textContent = `${count} recipe${count===1?"":"s"} waiting for analysis. Use Recheck recipes now whenever you're ready.`;
+});
+on("closeRecipeIntelligence", "click", () => $("recipeIntelligenceDialog")?.close());
+on("exploreRecipeIntelligence", "click", () => {
+  $("recipeIntelligenceDialog")?.close();
+  $("vibeInput")?.focus();
+  document.querySelector(".vibe-finder")?.scrollIntoView({behavior:"smooth",block:"start"});
 });
 loadRecipes();
 })();
