@@ -1,0 +1,9 @@
+Recipe Vault v1.6.1 — Structured Recipe Text Fix
+
+- Keeps descriptions out of instruction steps.
+- Reassembles numbered directions that were split across PDF text spans.
+- Joins wrapped recipe-title lines such as “Low Carb Cheesy” + “Waffle”.
+- Constrains ingredients and instructions to their true visual columns.
+- Preserves image extraction improvements from v1.6.0.
+
+Re-analyze the original PDF after installing; previously generated review cards are not rewritten.

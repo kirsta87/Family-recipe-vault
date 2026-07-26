@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "1.6.0";
+const COOKBOOK_ENGINE_VERSION = "1.6.1";
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 2500;
 const PAGE_PREVIEW_SCALE = 1.25;
@@ -324,35 +324,117 @@ function findTitleLineFromPage(page,regions){
 }
 function cleanLine(text){return String(text||"").replace(/^[-•▪◦]\s*/,"").replace(/\s+/g," ").trim();}
 function lineInBox(line,box){return line.x>=box.x-8&&line.x<=box.x+box.w+8&&line.y>=box.y-8&&line.y<=box.y+box.h+8;}
+function lineRight(line){return (line.x||0)+(line.width||Math.max(12,line.text.length*(line.fontSize||10)*.42));}
+function verticalGap(a,b){return Math.abs((a?.y||0)-(b?.y||0));}
+function sameVisualColumn(a,b,W){
+  if(!a||!b)return false;
+  const ax=(a.x||0), bx=(b.x||0);
+  return Math.abs(ax-bx)<Math.max(55,W*.13) || (lineRight(a)>bx-15 && lineRight(b)>ax-15);
+}
+function buildTitle(page,titleLine,regions){
+  if(!titleLine)return `Recipe on page ${page.page}`;
+  const W=page.width||600;
+  const pool=(page.richLines||[]).filter(l=>l!==titleLine&&!titleRejected(l.text));
+  const chosen=[titleLine];
+  for(const line of pool){
+    const sizeRatio=(line.fontSize||1)/(titleLine.fontSize||1);
+    const nearby=verticalGap(line,titleLine)<=Math.max(44,(titleLine.fontSize||14)*2.7);
+    const sameCol=sameVisualColumn(line,titleLine,W);
+    const shortEnough=line.text.length<=42 && line.text.split(/\s+/).length<=6;
+    if(nearby&&sameCol&&shortEnough&&sizeRatio>.68&&sizeRatio<1.38){
+      const blocked=[regions?.ingredients,regions?.instructions].some(h=>h&&verticalGap(line,h)<18);
+      if(!blocked)chosen.push(line);
+    }
+  }
+  chosen.sort((a,b)=>b.y-a.y||a.x-b.x);
+  const title=chosen.map(l=>cleanLine(l.text).replace(/^['"]|['"]$/g,'')).join(' ').replace(/\s+/g,' ').trim();
+  return titleRejected(title)?cleanLine(titleLine.text):title;
+}
+function linesInHeaderColumn(lines,header,W){
+  if(!header)return [];
+  const left=Math.max(0,(header.x||0)-Math.max(32,W*.055));
+  const right=Math.min(W,lineRight(header)+Math.max(120,W*.35));
+  return lines.filter(l=>lineRight(l)>=left&&l.x<=right);
+}
+function mergeIngredientLines(lines){
+  const sorted=[...lines].sort((a,b)=>b.y-a.y||a.x-b.x);
+  const out=[];
+  for(const l of sorted){
+    const t=cleanLine(l.text); if(!t)continue;
+    const prev=out[out.length-1];
+    const continuation=prev && !ingredientLike(t) && !/^[-•▪◦]/.test(l.text) && verticalGap(l,prev._line)<Math.max(18,(l.fontSize||10)*1.45);
+    if(continuation && prev.text.length+t.length<145)prev.text+=' '+t;
+    else out.push({text:t,_line:l});
+  }
+  return out.map(x=>x.text);
+}
+function mergeInstructionLines(lines){
+  const sorted=[...lines].sort((a,b)=>b.y-a.y||a.x-b.x);
+  const steps=[]; let current=null; let pendingNumber='';
+  for(const l of sorted){
+    let t=cleanLine(l.text); if(!t)continue;
+    const numberOnly=t.match(/^(\d{1,2})[.)]?$/);
+    if(numberOnly){pendingNumber=numberOnly[1];continue;}
+    const numbered=t.match(/^(\d{1,2})[.)]\s*(.*)$/);
+    if(numbered){
+      if(current)steps.push(current);
+      current={n:numbered[1],text:numbered[2],line:l}; pendingNumber=''; continue;
+    }
+    if(pendingNumber){
+      if(current)steps.push(current);
+      current={n:pendingNumber,text:t,line:l}; pendingNumber=''; continue;
+    }
+    if(!current){
+      if(instructionLike(t))current={n:'',text:t,line:l};
+      continue;
+    }
+    const close=verticalGap(l,current.line)<Math.max(26,(l.fontSize||10)*2.15);
+    if(close || !instructionLike(t)){
+      current.text=(current.text+' '+t).replace(/\s+/g,' ').trim(); current.line=l;
+    }else{
+      steps.push(current); current={n:'',text:t,line:l};
+    }
+  }
+  if(current)steps.push(current);
+  return steps.map((s,i)=>`${s.n||i+1}. ${s.text}`.trim());
+}
 function buildCandidate(group){
   const page=group.pages[0], W=page.width||600,H=page.height||800;
   const ingredientsHeader=findRegionHeader(page,"ingredients");
   const instructionsHeader=findRegionHeader(page,"instructions");
   const regions={ingredients:ingredientsHeader,instructions:instructionsHeader};
   const titleLine=findTitleLineFromPage(page,regions);
-  const title=titleLine?.text||`Recipe on page ${group.startPage}`;
-  const lines=(page.richLines||[]).filter(l=>l!==titleLine&&!SECTION_NOISE.test(l.text)&&!LINK_NOISE.test(l.text));
+  const title=buildTitle(page,titleLine,regions);
+  const lines=(page.richLines||[]).filter(l=>l!==titleLine&&!SECTION_NOISE.test(l.text)&&!LINK_NOISE.test(l.text)&&cleanLine(l.text)!==title);
   let ingredientLines=[],instructionLines=[];
 
   if(ingredientsHeader && instructionsHeader){
-    const sameColumn=Math.abs(ingredientsHeader.x-instructionsHeader.x)<W*.18;
+    const sameColumn=Math.abs(ingredientsHeader.x-instructionsHeader.x)<W*.22;
     if(sameColumn){
-      // Stacked left-column headings (Soul Fuel): ingredients above instructions.
-      ingredientLines=lines.filter(l=>l.x<W*.48 && l.y<ingredientsHeader.y && l.y>instructionsHeader.y+8);
-      instructionLines=lines.filter(l=>l.x<W*.52 && l.y<instructionsHeader.y);
+      // Stacked recipe template: both sections share one column. Stay strictly inside that column.
+      const column=linesInHeaderColumn(lines,ingredientsHeader,W);
+      ingredientLines=column.filter(l=>l.y<ingredientsHeader.y-3 && l.y>instructionsHeader.y+8);
+      instructionLines=column.filter(l=>l.y<instructionsHeader.y-3);
     }else{
-      // Side-by-side / mixed columns (Heat & Eat): use each heading's visual column.
-      const split=(ingredientsHeader.x+instructionsHeader.x)/2;
-      ingredientLines=lines.filter(l=>l.x<split && l.y<ingredientsHeader.y+8);
-      instructionLines=lines.filter(l=>l.x>=split-12 && l.y<instructionsHeader.y+10);
+      // Side-by-side template: constrain each section to its own visual column instead of using all page text.
+      const ingColumn=linesInHeaderColumn(lines,ingredientsHeader,W);
+      const insColumn=linesInHeaderColumn(lines,instructionsHeader,W);
+      ingredientLines=ingColumn.filter(l=>l.y<ingredientsHeader.y-3);
+      instructionLines=insColumn.filter(l=>l.y<instructionsHeader.y-3);
     }
   }
-  // Semantic fallback when headings are decorative or absent from the text layer.
   if(!ingredientLines.length)ingredientLines=lines.filter(l=>ingredientLike(l.text));
-  if(!instructionLines.length)instructionLines=lines.filter(l=>instructionLike(l.text)||(/^\d+[.)]?\s*/.test(l.text)&&l.text.length>12));
+  if(!instructionLines.length)instructionLines=lines.filter(l=>instructionLike(l.text)||/^\d+[.)]?\s*/.test(l.text));
 
-  const ingredients=[...new Set(ingredientLines.map(l=>cleanLine(l.text)).filter(t=>t&&t!==title&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&(ingredientLike(t)||t.length<95)))].slice(0,80);
-  const instructions=[...new Set(instructionLines.map(l=>cleanLine(l.text)).filter(t=>t&&t!==title&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&!ingredientLike(t)&&t.length>8))].slice(0,60);
+  let ingredients=mergeIngredientLines(ingredientLines)
+    .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t))
+    .slice(0,80);
+  let instructions=mergeInstructionLines(instructionLines)
+    .filter(t=>t&&!LINK_NOISE.test(t)&&!ingredientLike(t.replace(/^\d+[.)]\s*/,'')))
+    .slice(0,60);
+
+  // Keep prose descriptions out of directions. A valid directions list should be step-like and ordered.
+  instructions=instructions.filter((t,i)=>i===0||/^\d+[.)]\s+/.test(t));
   const leftDensity=lines.filter(l=>l.x<W/2).reduce((n,l)=>n+l.text.length,0),rightDensity=lines.filter(l=>l.x>=W/2).reduce((n,l)=>n+l.text.length,0);
   return {include:true,title,titleLine,regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings:[],engineVersion:COOKBOOK_ENGINE_VERSION};
 }
