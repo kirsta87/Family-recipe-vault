@@ -1,8 +1,8 @@
 {
-  "build": 178,
-  "version": "1.7.8",
-  "label": "PDF Column Separation & Build Badge Fix",
+  "build": 179,
+  "version": "1.7.9",
+  "label": "Cookbook Import Quality Report",
   "builtAt": "2026-07-26T14:10:00-06:00",
   "cookbookEngine": "3.3",
-  "parser": "Coordinate Region Collector v3"
+  "parser": "Coordinate Region Collector v3 + Quality Report"
 }

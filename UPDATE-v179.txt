@@ -1,0 +1,8 @@
+Recipe Vault Build 179 — Cookbook Import Quality Report
+
+- Adds an Import Quality Report above cookbook review cards.
+- Flags suspicious or missing titles, ingredients, instructions, yields, descriptions, and duplicate tutorial links.
+- Shows high-priority counts and page numbers.
+- Click an issue to jump directly to that recipe.
+- Includes a Show only flagged toggle for fast review.
+- Keeps Build 178 column-separation fixes.
