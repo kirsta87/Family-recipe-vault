@@ -1,0 +1,7 @@
+BUILD 172 — RECIPE ROLE + TUTORIAL LINK FIX
+
+- Rejects ingredient subsection labels such as Sauce:, Toppings:, and Optional: as recipe titles.
+- Prioritizes the true large recipe heading above the yield block.
+- Keeps only the best-matched video tutorial annotation for each recipe page.
+- Prevents unrelated neighboring PDF links from being attached to a recipe.
+- Cookbook Engine 2.3 / Region Parser v4.

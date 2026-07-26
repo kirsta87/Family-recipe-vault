@@ -109,14 +109,25 @@ function extractPageLinks(annotations,lines){
 function recipeVideoLinks(pages){
   const seen=new Set(),out=[];
   for(const page of pages||[]){
-    for(const link of page.links||[]){
+    const candidates=(page.links||[]).map(link=>{
       const label=cleanLine(link.label||"");
-      if(!/video|tutorial|watch/i.test(label))continue;
-      if(seen.has(link.url))continue;
-      seen.add(link.url);out.push(link.url);
-    }
+      if(!/video\s*tutorial|watch\s+(?:the|my)?\s*video|video\b/i.test(label))return null;
+      const rect=Array.isArray(link.rect)?link.rect:[];
+      const x1=Number(rect[0]||0),y1=Number(rect[1]||0),x2=Number(rect[2]||0),y2=Number(rect[3]||0);
+      const area=Math.abs((x2-x1)*(y2-y1));
+      let score=0;
+      if(/video\s*tutorial/i.test(label))score+=100;
+      if(/click\s+here\s+for\s+video/i.test(label))score+=45;
+      if(/watch\s+(?:the|my)?\s*video/i.test(label))score+=35;
+      if(area>500)score+=10;
+      // Tutorial buttons in these digital cookbooks live in the lower recipe panel.
+      if(y1<(page.height||800)*.35)score+=8;
+      return {link,score};
+    }).filter(Boolean).sort((a,b)=>b.score-a.score);
+    const best=candidates[0]?.link;
+    if(best&&!seen.has(best.url)){seen.add(best.url);out.push(best.url);}
   }
-  return out;
+  return out.slice(0,1);
 }
 
 async function analyzePdf(file){
@@ -321,7 +332,7 @@ function itemsToStructuredLines(items){
 }
 function itemsToLines(items){return itemsToStructuredLines(items).map(line=>line.text);}
 const LINK_NOISE=/\b(click|tap)\s+here\b|video\s+tutorial|shop\s+here|see\s+the\s+.*i\s+use|save\s+digitally|pinterest|www\.|https?:|download|print here/i;
-const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies)$/i;
+const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies|toppings?|frosting|optional|add[- ]?ins?|for serving)$/i;
 const YIELD_VALUE_RX=/^(?:(?:yield\/?servings?|serves?|servings?|makes?)\s*:?\s*)?(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:tenders?|servings?|wraps?|bowls?|pieces?|portions?|cookies?|muffins?|pancakes?|waffles?|sandwiches?|cups?)\s*(?:[|·•-]\s*(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+servings?)?$/i;
 function yieldLike(text){return YIELD_VALUE_RX.test(cleanLine(text));}
 function timeLedTitleLike(text){
@@ -354,9 +365,10 @@ function detectRecipes(pages){
 }
 function titleRejected(line){
   const text=String(line||"").replace(/\s+/g," ").trim();
+  const roleText=text.replace(/[\s:;–—-]+$/g,"").trim();
   const ingredientTerms=(text.match(/\b(?:salt|pepper|paprika|garlic powder|onion powder|seasoning|oil|broth|cream|cheese|flour|sugar)\b/gi)||[]).length;
   const ingredientFragment=/[,;:]/.test(text)&&ingredientTerms>=2;
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -404,9 +416,10 @@ function findTitleLineFromPage(page,regions){
     });
     if(anchored.length){
       return anchored.sort((a,b)=>{
-        const af=(a.fontSize||0),bf=(b.fontSize||0);
+        const scoreDiff=titleScore(b,page,regions)-titleScore(a,page,regions);
+        if(Math.abs(scoreDiff)>4)return scoreDiff;
         const ad=Math.abs(a.y-yieldLine.y),bd=Math.abs(b.y-yieldLine.y);
-        return (bf-af)*5 + (ad-bd) + titleScore(b,page,regions)-titleScore(a,page,regions);
+        return ad-bd;
       })[0];
     }
   }
