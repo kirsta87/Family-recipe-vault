@@ -1,0 +1,6 @@
+Recipe Vault v1.6.4 — Ingredient Line Reconstruction
+
+- Joins ingredient text that wraps across multiple visual lines into one ingredient item.
+- Keeps labeled notes such as “Toppings of choice:” and “Optional:” as their own list items.
+- Prevents every wrapped PDF line from receiving a separate review bullet.
+- Preserves manual editing and clean structured ingredient storage on import.

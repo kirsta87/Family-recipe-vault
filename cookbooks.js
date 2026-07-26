@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "1.6.3";
+const COOKBOOK_ENGINE_VERSION = "1.6.5";
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -296,7 +296,7 @@ function detectRecipes(pages){
 }
 function titleRejected(line){
   const text=String(line||"").replace(/\s+/g," ").trim();
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||ingredientLike(text)||instructionLike(text)||/^([¼½¾⅓⅔⅛⅜⅝⅞\d]+|one|two|three|four|five|six)\b/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||ingredientLike(text)||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -304,7 +304,9 @@ function titleScore(line,page,regions){
   if(words>=2&&words<=7)score+=22; else if(words>10)score-=18;
   if(text===text.toUpperCase()&&/[A-Z]/.test(text))score+=18;
   if(/^[A-Z][A-Za-z'’&-]+(?:\s+[A-Z][A-Za-z'’&-]+){1,7}$/.test(text))score+=12;
-  if(/[.!?]$/.test(text))score-=12;
+  if(/[.!?]$/.test(text))score-=18;
+  if(/[,;:]/.test(text)&&words>5)score-=28;
+  if(/^(?:so|this|another|the best|a great)\b/i.test(text)&&words>5)score-=35;
   if(LINK_NOISE.test(text))score-=100;
   const ing=regions?.ingredients,ins=regions?.instructions;
   // Titles commonly live above recipe body or in the opposite column from ingredients.
@@ -387,16 +389,24 @@ function linesInHeaderColumn(lines,header,W){
 function mergeIngredientLines(lines){
   const sorted=[...lines].sort((a,b)=>b.y-a.y||a.x-b.x);
   const out=[];
+  const startsIngredientNote=t=>/^(?:toppings?|fillings?|optional(?:ly)?|for serving|to serve|garnish|add[- ]ins?|mix[- ]ins?|cream cheese frosting|sauce|drizzle)\s*:/i.test(t);
   for(const l of sorted){
     const t=cleanLine(l.text); if(!t)continue;
     const prev=out[out.length-1];
-    const continuation=prev && !ingredientLike(t) && !/^[-•▪◦]/.test(l.text) && verticalGap(l,prev._line)<Math.max(18,(l.fontSize||10)*1.45);
-    if(continuation && prev.text.length+t.length<145)prev.text+=' '+t;
-    else out.push({text:t,_line:l});
+    const explicitBullet=/^[-•▪◦]/.test(String(l.text||''));
+    const startsNew=ingredientLike(t)||explicitBullet||startsIngredientNote(t);
+    const continuation=prev && !startsNew && verticalGap(l,prev._line)<Math.max(18,(l.fontSize||10)*1.55);
+    if(continuation && prev.text.length+t.length<220){
+      prev.text+=' '+t;
+      // Compare the next wrapped line with the most recently merged line, not
+      // the first line in the item. This prevents one visual ingredient from
+      // becoming several bullets simply because it wraps across 3+ lines.
+      prev._line=l;
+    }else out.push({text:t,_line:l});
   }
-  return out.map(x=>x.text);
+  return out.map(x=>x.text.replace(/\s+/g,' ').trim());
 }
-function mergeInstructionLines(lines){
+function mergeInstructionLines(lines,W=600){
   const sorted=[...lines].sort((a,b)=>b.y-a.y||a.x-b.x);
   const steps=[]; let current=null; let pendingNumber='';
   for(const l of sorted){
@@ -417,7 +427,11 @@ function mergeInstructionLines(lines){
       continue;
     }
     const close=verticalGap(l,current.line)<Math.max(26,(l.fontSize||10)*2.15);
-    if(close || !instructionLike(t)){
+    const aligned=sameVisualColumn(l,current.line,W);
+    // Wrapped step text must stay in the same visual column. Without this,
+    // nearby title, yield, or description text from the opposite column can
+    // be spliced into a numbered direction.
+    if(aligned && (close || !instructionLike(t))){
       current.text=(current.text+' '+t).replace(/\s+/g,' ').trim(); current.line=l;
     }else{
       steps.push(current); current={n:'',text:t,line:l};
@@ -457,7 +471,11 @@ function buildCandidate(group){
   let ingredients=mergeIngredientLines(ingredientLines)
     .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t))
     .slice(0,80);
-  let instructions=mergeInstructionLines(instructionLines)
+  const yieldLike=t=>/^(?:yield\/?servings?|serves?|servings?|makes?)\s*:?|^\d+\s+(?:tenders?|servings?|wraps?|bowls?|pieces?)\s*(?:[|·-]\s*\d+\s+servings?)?$/i.test(cleanLine(t));
+  const titleParts=new Set(normalize(title).split(/\s+/).filter(Boolean));
+  const titleish=t=>{const words=normalize(t).split(/\s+/).filter(Boolean);return words.length>1&&words.every(w=>titleParts.has(w));};
+  instructionLines=instructionLines.filter(l=>!yieldLike(l.text)&&!titleish(l.text));
+  let instructions=mergeInstructionLines(instructionLines,W)
     .filter(t=>t&&!LINK_NOISE.test(t)&&!ingredientLike(t.replace(/^\d+[.)]\s*/,'')))
     .slice(0,60);
 

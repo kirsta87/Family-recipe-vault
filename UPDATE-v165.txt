@@ -1,0 +1,7 @@
+Recipe Vault v1.6.5 — Title & Instruction Region Fix
+
+- Allows recipe titles that begin with numbers, such as “10 Min Air Fryer Chicken.”
+- Strongly rejects sentence-like descriptions as recipe titles.
+- Prevents title, yield/serving, and description text from leaking into numbered directions.
+- Requires wrapped instruction lines to remain in the same visual column.
+- Includes the v1.6.4 ingredient-line merging fix.
