@@ -1,0 +1,5 @@
+Build 188 — Cookbook Description Recovery
+
+- Restores author descriptions from legacy cookbook fields.
+- Keeps recovered descriptions out of Family Notes.
+- Fixes the build indicator remaining stuck on Deploying.

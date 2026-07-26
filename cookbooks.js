@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_187 = true;
+const BUILD_188 = true;
 const COOKBOOK_ENGINE_VERSION = "3.2.0";
 window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
@@ -230,18 +230,42 @@ function recipeServings(recipe){
   return extractLabeledNoteValue(legacyCookbookNotes(recipe),"yield(?:\\s*\\/\\s*servings)?|servings?|serves");
 }
 function cookbookAuthorNote(recipe){
-  const direct=recipeField(recipe,"description","author_note","author_notes","authorNote","authorNotes");
-  if(String(direct||"").trim())return String(direct).trim();
-  if(!recipe?.cookbook_id&&!recipe?.cookbook_title)return "";
-  let text=legacyCookbookNotes(recipe);
-  if(!text)return "";
-  text=text
-    .replace(/(?:^|\n)\s*(?:Yield(?:\s*\/\s*servings)?|Servings?|Serves)\s*:\s*[^\n]*/gi,"")
-    .replace(/(?:^|\n)\s*(?:Video(?:\s*\/\s*tutorial)? links?|Tutorial links?|Video URL|Recipe links?)\s*:\s*(?:[^\n]*\n?)/gi,"")
-    .replace(/^\s*https?:\/\/\S+\s*$/gim,"")
-    .replace(/\n{3,}/g,"\n\n")
-    .trim();
-  return text;
+  if(!recipe||typeof recipe!=="object")return "";
+
+  // Cookbook descriptions have existed under several field names across older
+  // imports and server schemas. Check every plausible source instead of letting
+  // one empty/metadata-only legacy field hide a valid author headnote.
+  const candidateFields=[
+    "description","recipe_description","recipeDescription","author_note","author_notes",
+    "authorNote","authorNotes","headnote","head_note","intro","summary","notes","family_notes"
+  ];
+  const candidates=[];
+  for(const field of candidateFields){
+    const raw=recipeField(recipe,field);
+    if(raw==null||String(raw).trim()==="")continue;
+    const parsed=parseSerializedValue(raw);
+    const values=Array.isArray(parsed)?parsed:[parsed];
+    for(const value of values){
+      const text=typeof value==="object"
+        ?String(value.text||value.description||value.note||value.value||"")
+        :String(value||"");
+      const cleaned=text
+        .replace(/(?:^|\n)\s*(?:Yield(?:\s*\/\s*servings)?|Servings?|Serves)\s*:\s*[^\n]*/gi,"")
+        .replace(/(?:^|\n)\s*(?:Video(?:\s*\/\s*tutorial)? links?|Tutorial links?|Video URL|Recipe links?)\s*:\s*https?:\/\/\S+/gi,"")
+        .replace(/^\s*https?:\/\/\S+\s*$/gim,"")
+        .replace(/\n{3,}/g,"\n\n")
+        .trim();
+      if(!cleaned)continue;
+      if(/^\[?\s*https?:\/\//i.test(cleaned))continue;
+      if(/^(?:yield|servings?|serves)\s*:/i.test(cleaned)&&cleaned.length<100)continue;
+      candidates.push(cleaned);
+    }
+  }
+
+  if(!candidates.length)return "";
+  // Descriptions are normally prose. Prefer the longest useful candidate so a
+  // short metadata fragment cannot win over the actual cookbook headnote.
+  return [...new Set(candidates)].sort((a,b)=>b.length-a.length)[0];
 }
 function cookbookFamilyNotes(recipe){
   if(Object.prototype.hasOwnProperty.call(recipe||{},"family_notes"))return String(recipe.family_notes||"").trim();
