@@ -1,0 +1,8 @@
+Recipe Vault v1.6.9 — Build 169
+
+- Upgrades the cookbook parser to Cookbook Engine 2.0.
+- Anchors recipe titles to the yield/servings block instead of ranking every page line equally.
+- Prevents ingredient fragments such as “nonstick cooking spray” from becoming titles.
+- Keeps yield and description regions locked beneath the detected title.
+- Adds a review warning when a page appears to contain multiple recipe regions.
+- Preserves the Build 168 deployment badge and video-link extraction.
