@@ -1,0 +1,6 @@
+Recipe Vault Build 184 — Card Navigation Fix
+
+- Fixes cookbook recipe cards that focused but did not open.
+- Declares the active cookbook recipe state correctly in module scope.
+- Uses native button cards and stable recipe references instead of fragile array indexes.
+- Adds a console warning if a card can no longer resolve its recipe.
