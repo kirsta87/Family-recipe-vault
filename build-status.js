@@ -1,7 +1,7 @@
 (() => {
   const script = document.currentScript;
   const scriptUrl = new URL(script?.src || location.href, location.href);
-  const CURRENT_BUILD = Number(scriptUrl.searchParams.get("v")) || 172;
+  const CURRENT_BUILD = Number(scriptUrl.searchParams.get("v")) || 173;
   const style = document.createElement("style");
   style.textContent = `
     #rv-build-badge{position:fixed;top:4px;left:5px;z-index:99999;border:1px solid rgba(70,80,58,.22);background:rgba(250,248,242,.96);color:#30342c;border-radius:999px;padding:5px 10px;font:700 12px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.08);cursor:pointer;backdrop-filter:blur(8px)}

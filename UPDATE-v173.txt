@@ -1,0 +1,7 @@
+Build 173 — Strict recipe region fix
+
+- Anchors recipe titles to the yield block using strict horizontal geometry.
+- Rejects sentence fragments such as “and patted dry” as titles.
+- Keeps stacked ingredients and instructions inside the left recipe column.
+- Prevents right-column title and description text from leaking into numbered directions.
+- Cookbook Engine 2.4 / Region Parser v5.

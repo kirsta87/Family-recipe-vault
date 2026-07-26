@@ -368,7 +368,7 @@ function titleRejected(line){
   const roleText=text.replace(/[\s:;–—-]+$/g,"").trim();
   const ingredientTerms=(text.match(/\b(?:salt|pepper|paprika|garlic powder|onion powder|seasoning|oil|broth|cream|cheese|flour|sugar)\b/gi)||[]).length;
   const ingredientFragment=/[,;:]/.test(text)&&ingredientTerms>=2;
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(roleText)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:and|or|but|with|from|to|until|then|both|into|onto|over|under)\b/i.test(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -408,11 +408,16 @@ function findTitleLineFromPage(page,regions){
     // Digital cookbooks usually place the recipe title immediately above the
     // yield/servings block. Anchor the title search to that visual relationship
     // so ingredient fragments can never outrank the real heading.
+    const yieldCenter=(yieldLine.x||0)+(yieldLine.width||0)/2;
+    const yieldOnRight=yieldCenter>W*.52;
     const anchored=rich.filter(line=>{
       const above=line.y>yieldLine.y+2;
       const close=line.y-yieldLine.y<Math.max(H*.2,150);
-      const sameColumn=sameVisualColumn(line,yieldLine,W) || Math.abs((line.x||0)-(yieldLine.x||0))<W*.25;
-      return above&&close&&sameColumn;
+      const lineCenter=(line.x||0)+(line.width||0)/2;
+      const strictColumn=Math.abs(lineCenter-yieldCenter)<W*.20;
+      const correctHalf=!yieldOnRight || lineCenter>W*.46;
+      const headingSized=(line.fontSize||0)>=(yieldLine.fontSize||10)*1.25;
+      return above&&close&&strictColumn&&correctHalf&&headingSized;
     });
     if(anchored.length){
       return anchored.sort((a,b)=>{
@@ -539,7 +544,10 @@ function mergeInstructionLines(lines,W=600){
         const toRight=l.x>=a.x-8;
         const notFar=Math.abs(l.x-a.x)<Math.max(150,W*.24);
         const sameColumn=sameVisualColumn(l,a,W);
-        return sameSection&&toRight&&notFar&&sameColumn;
+        const anchorOnLeft=(a.x||0)<W*.45;
+        const contentCenter=(l.x||0)+(l.width||0)/2;
+        const staysInSection=!anchorOnLeft || contentCenter<W*.49;
+        return sameSection&&toRight&&notFar&&sameColumn&&staysInSection;
       }).sort((x,y)=>y.y-x.y||x.x-y.x);
       const parts=[];
       if(a.seed)parts.push(a.seed);
@@ -649,7 +657,12 @@ function buildCandidate(group){
     const sameColumn=Math.abs(ingredientsHeader.x-instructionsHeader.x)<W*.22;
     if(sameColumn){
       // Stacked recipe template: both sections share one column. Stay strictly inside that column.
-      const column=linesInHeaderColumn(lines,ingredientsHeader,W);
+      const leftLayout=ingredientsHeader.x<W*.46 && instructionsHeader.x<W*.46;
+      const column=linesInHeaderColumn(lines,ingredientsHeader,W).filter(l=>{
+        if(!leftLayout)return true;
+        const center=(l.x||0)+(l.width||0)/2;
+        return center<W*.48 && (l.x||0)<W*.43;
+      });
       ingredientLines=column.filter(l=>l.y<ingredientsHeader.y-3 && l.y>instructionsHeader.y+8);
       instructionLines=column.filter(l=>l.y<instructionsHeader.y-3);
     }else{
