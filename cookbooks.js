@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "1.6.5";
+const COOKBOOK_ENGINE_VERSION = "1.6.7";
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -273,6 +273,8 @@ function itemsToStructuredLines(items){
 function itemsToLines(items){return itemsToStructuredLines(items).map(line=>line.text);}
 const LINK_NOISE=/\b(click|tap)\s+here\b|video\s+tutorial|shop\s+here|see\s+the\s+.*i\s+use|save\s+digitally|pinterest|www\.|https?:|download|print here/i;
 const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies)$/i;
+const YIELD_VALUE_RX=/^(?:(?:yield\/?servings?|serves?|servings?|makes?)\s*:?\s*)?(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:tenders?|servings?|wraps?|bowls?|pieces?|portions?|cookies?|muffins?|pancakes?|waffles?|sandwiches?|cups?)\s*(?:[|·•-]\s*(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+servings?)?$/i;
+function yieldLike(text){return YIELD_VALUE_RX.test(cleanLine(text));}
 function ingredientLike(line){return /^([¼½¾⅓⅔⅛⅜⅝⅞\d]|one |two |three |four |five |six |a |an )/i.test(line)&&/(cup|tbsp|tbs\b|tablespoon|tsp|teaspoon|ounce|oz\b|pound|lb\b|gram|kg\b|ml\b|clove|can\b|package|block\b|pinch|slice|piece|sprig|bunch|stick|large|medium|small|wrap|egg\b|bread|milk|cheese|chicken|beef|pork|salt|pepper|oil)/i.test(line);}
 function instructionLike(line){return /^(\d+[.)]|step\s+\d+|preheat|heat |stir |mix |add |place |cook |bake |roast |grill |season |combine |whisk |serve |pour |transfer |cover |bring |slice |flatten |set |let |remove |fold |flip |spread |spray |dip |melt )/i.test(line);}
 function pageScore(p){
@@ -296,7 +298,7 @@ function detectRecipes(pages){
 }
 function titleRejected(line){
   const text=String(line||"").replace(/\s+/g," ").trim();
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||ingredientLike(text)||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||yieldLike(text)||ingredientLike(text)||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -308,6 +310,7 @@ function titleScore(line,page,regions){
   if(/[,;:]/.test(text)&&words>5)score-=28;
   if(/^(?:so|this|another|the best|a great)\b/i.test(text)&&words>5)score-=35;
   if(LINK_NOISE.test(text))score-=100;
+  if(yieldLike(text))score-=140;
   const ing=regions?.ingredients,ins=regions?.instructions;
   // Titles commonly live above recipe body or in the opposite column from ingredients.
   if(ing && line.y>ing.y)score+=12;
@@ -407,39 +410,131 @@ function mergeIngredientLines(lines){
   return out.map(x=>x.text.replace(/\s+/g,' ').trim());
 }
 function mergeInstructionLines(lines,W=600){
-  const sorted=[...lines].sort((a,b)=>b.y-a.y||a.x-b.x);
-  const steps=[]; let current=null; let pendingNumber='';
+  const cleaned=[...lines]
+    .map(l=>({...l,text:cleanLine(l.text)}))
+    .filter(l=>l.text&&!LINK_NOISE.test(l.text)&&!yieldLike(l.text));
+
+  // Many designed PDFs store the step number and its sentence as separate text
+  // objects. Reconstruct from numbered anchors first so visual lines do not get
+  // renumbered individually or interleaved with the description block.
+  const anchors=[];
+  const content=[];
+  for(const l of cleaned){
+    const only=l.text.match(/^(\d{1,2})[.)]?$/);
+    const inline=l.text.match(/^(\d{1,2})[.)]\s*(.+)$/);
+    if(only)anchors.push({...l,n:Number(only[1]),seed:''});
+    else if(inline)anchors.push({...l,n:Number(inline[1]),seed:inline[2]});
+    else content.push(l);
+  }
+
+  if(anchors.length>=2){
+    const ordered=anchors.sort((a,b)=>b.y-a.y||a.x-b.x);
+    const used=new Set();
+    const result=[];
+    for(let i=0;i<ordered.length;i++){
+      const a=ordered[i], next=ordered[i+1];
+      const top=a.y+Math.max(10,(a.fontSize||10)*.9);
+      const bottom=next ? next.y+Math.max(2,(next.fontSize||10)*.15) : -Infinity;
+      const band=content.filter((l,idx)=>{
+        if(used.has(idx))return false;
+        const sameSection=l.y<=top&&l.y>bottom;
+        const toRight=l.x>=a.x-8;
+        const notFar=Math.abs(l.x-a.x)<Math.max(150,W*.24);
+        const sameColumn=sameVisualColumn(l,a,W);
+        return sameSection&&toRight&&notFar&&sameColumn;
+      }).sort((x,y)=>y.y-x.y||x.x-y.x);
+      const parts=[];
+      if(a.seed)parts.push(a.seed);
+      for(const l of band){
+        const idx=content.indexOf(l); if(idx>=0)used.add(idx);
+        const t=l.text;
+        // Descriptions are declarative prose and can visually overlap the steps
+        // in exported PDFs. Keep imperative cooking text, drop obvious blurbs.
+        if(/^(?:so quick|another |the best |a great |this (?:recipe|chicken|dish)|not really a recipe)/i.test(t) && !instructionLike(t))continue;
+        parts.push(t);
+      }
+      const text=parts.join(' ').replace(/\s+/g,' ').trim();
+      if(text)result.push({n:a.n,text});
+    }
+    if(result.length>=2){
+      return result
+        .sort((a,b)=>a.n-b.n)
+        .filter((s,i,arr)=>i===0||s.n!==arr[i-1].n)
+        .map(s=>`${s.n}. ${s.text}`);
+    }
+  }
+
+  // Fallback for PDFs that keep each numbered step in one text object.
+  const sorted=cleaned.sort((a,b)=>b.y-a.y||a.x-b.x);
+  const steps=[]; let current=null;
   for(const l of sorted){
-    let t=cleanLine(l.text); if(!t)continue;
-    const numberOnly=t.match(/^(\d{1,2})[.)]?$/);
-    if(numberOnly){pendingNumber=numberOnly[1];continue;}
+    const t=l.text;
     const numbered=t.match(/^(\d{1,2})[.)]\s*(.*)$/);
     if(numbered){
       if(current)steps.push(current);
-      current={n:numbered[1],text:numbered[2],line:l}; pendingNumber=''; continue;
-    }
-    if(pendingNumber){
-      if(current)steps.push(current);
-      current={n:pendingNumber,text:t,line:l}; pendingNumber=''; continue;
+      current={n:Number(numbered[1]),text:numbered[2],line:l};
+      continue;
     }
     if(!current){
-      if(instructionLike(t))current={n:'',text:t,line:l};
+      if(instructionLike(t))current={n:steps.length+1,text:t,line:l};
       continue;
     }
     const close=verticalGap(l,current.line)<Math.max(26,(l.fontSize||10)*2.15);
     const aligned=sameVisualColumn(l,current.line,W);
-    // Wrapped step text must stay in the same visual column. Without this,
-    // nearby title, yield, or description text from the opposite column can
-    // be spliced into a numbered direction.
-    if(aligned && (close || !instructionLike(t))){
-      current.text=(current.text+' '+t).replace(/\s+/g,' ').trim(); current.line=l;
-    }else{
-      steps.push(current); current={n:'',text:t,line:l};
-    }
+    if(aligned&&close){current.text=(current.text+' '+t).replace(/\s+/g,' ').trim();current.line=l;}
+    else if(instructionLike(t)){steps.push(current);current={n:steps.length+1,text:t,line:l};}
   }
   if(current)steps.push(current);
   return steps.map((s,i)=>`${s.n||i+1}. ${s.text}`.trim());
 }
+
+function mergeProseLines(lines,W=600){
+  const sorted=[...lines]
+    .map(l=>({...l,text:cleanLine(l.text)}))
+    .filter(l=>l.text&&!SECTION_NOISE.test(l.text)&&!LINK_NOISE.test(l.text)&&!yieldLike(l.text))
+    .sort((a,b)=>b.y-a.y||a.x-b.x);
+  const paragraphs=[];
+  let current=null;
+  for(const line of sorted){
+    const t=line.text;
+    if(!t||ingredientLike(t)||instructionLike(t)||/^\d+[.)]?\s*/.test(t))continue;
+    if(!current){current={text:t,line};continue;}
+    const close=verticalGap(line,current.line)<Math.max(30,(line.fontSize||10)*2.3);
+    const aligned=sameVisualColumn(line,current.line,W);
+    if(close&&aligned&&current.text.length+t.length<520){current.text+=' '+t;current.line=line;}
+    else{paragraphs.push(current.text.replace(/\s+/g,' ').trim());current={text:t,line};}
+  }
+  if(current)paragraphs.push(current.text.replace(/\s+/g,' ').trim());
+  return paragraphs.filter(Boolean);
+}
+function findYieldAndDescription(page,lines,titleLine,title,regions){
+  if(!titleLine)return {yieldText:'',description:'',descriptionLines:[]};
+  const W=page.width||600,H=page.height||800;
+  const titleNorm=normalize(title);
+  const titleColumn=lines.filter(l=>sameVisualColumn(l,titleLine,W));
+  const belowTitle=titleColumn.filter(l=>l.y<titleLine.y-2&&l.y>titleLine.y-H*.34);
+  const yieldLine=belowTitle
+    .filter(l=>yieldLike(l.text))
+    .sort((a,b)=>b.y-a.y||Math.abs(a.x-titleLine.x)-Math.abs(b.x-titleLine.x))[0]||null;
+  const upperBound=yieldLine?yieldLine.y:titleLine.y;
+  const descriptionLines=belowTitle.filter(l=>{
+    const t=cleanLine(l.text);
+    if(!t||l===yieldLine||normalize(t)===titleNorm)return false;
+    if(l.y>=upperBound+3)return false;
+    if(SECTION_NOISE.test(t)||LINK_NOISE.test(t)||yieldLike(t)||ingredientLike(t)||instructionLike(t)||/^\d+[.)]?\s*/.test(t))return false;
+    if(regions.ingredients&&sameVisualColumn(l,regions.ingredients,W)&&l.y<regions.ingredients.y)return false;
+    if(regions.instructions&&sameVisualColumn(l,regions.instructions,W)&&l.y<regions.instructions.y)return false;
+    return t.length>2;
+  });
+  const paragraphs=mergeProseLines(descriptionLines,W);
+  const description=paragraphs
+    .filter(t=>t.split(/\s+/).length>=4)
+    .join(' ')
+    .replace(/\s+/g,' ')
+    .trim();
+  return {yieldText:yieldLine?cleanLine(yieldLine.text):'',description,descriptionLines};
+}
+
 function buildCandidate(group){
   const page=group.pages[0], W=page.width||600,H=page.height||800;
   const ingredientsHeader=findRegionHeader(page,"ingredients");
@@ -448,6 +543,8 @@ function buildCandidate(group){
   const titleLine=findTitleLineFromPage(page,regions);
   const title=buildTitle(page,titleLine,regions);
   const lines=(page.richLines||[]).filter(l=>l!==titleLine&&!SECTION_NOISE.test(l.text)&&!LINK_NOISE.test(l.text)&&cleanLine(l.text)!==title);
+  const meta=findYieldAndDescription(page,lines,titleLine,title,regions);
+  const descriptionSet=new Set(meta.descriptionLines);
   let ingredientLines=[],instructionLines=[];
 
   if(ingredientsHeader && instructionsHeader){
@@ -471,10 +568,9 @@ function buildCandidate(group){
   let ingredients=mergeIngredientLines(ingredientLines)
     .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t))
     .slice(0,80);
-  const yieldLike=t=>/^(?:yield\/?servings?|serves?|servings?|makes?)\s*:?|^\d+\s+(?:tenders?|servings?|wraps?|bowls?|pieces?)\s*(?:[|·-]\s*\d+\s+servings?)?$/i.test(cleanLine(t));
   const titleParts=new Set(normalize(title).split(/\s+/).filter(Boolean));
   const titleish=t=>{const words=normalize(t).split(/\s+/).filter(Boolean);return words.length>1&&words.every(w=>titleParts.has(w));};
-  instructionLines=instructionLines.filter(l=>!yieldLike(l.text)&&!titleish(l.text));
+  instructionLines=instructionLines.filter(l=>!yieldLike(l.text)&&!titleish(l.text)&&!descriptionSet.has(l));
   let instructions=mergeInstructionLines(instructionLines,W)
     .filter(t=>t&&!LINK_NOISE.test(t)&&!ingredientLike(t.replace(/^\d+[.)]\s*/,'')))
     .slice(0,60);
@@ -482,23 +578,23 @@ function buildCandidate(group){
   // Keep prose descriptions out of directions. A valid directions list should be step-like and ordered.
   instructions=instructions.filter((t,i)=>i===0||/^\d+[.)]\s+/.test(t));
   const leftDensity=lines.filter(l=>l.x<W/2).reduce((n,l)=>n+l.text.length,0),rightDensity=lines.filter(l=>l.x>=W/2).reduce((n,l)=>n+l.text.length,0);
-  return {include:true,title,titleLine,regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings:[],engineVersion:COOKBOOK_ENGINE_VERSION};
+  return {include:true,title,titleLine,yieldText:meta.yieldText,description:meta.description,regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings:[],engineVersion:COOKBOOK_ENGINE_VERSION};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
 function showReview(){
   $("analyzePanel").hidden=true;$("reviewPanel").hidden=false;$("importHeading").textContent="Review cookbook";$("cookbookTitle").value=importState.title;$("cookbookAuthor").value=importState.author;$("cookbookCollection").value=importState.title;$("coverPreview").innerHTML=importState.cover?`<img src="${importState.cover}" alt="Cookbook cover preview">`:`<div class="cover-placeholder">📖</div>`;renderReview();
 }
 function renderReview(){
-  const selected=importState.candidates.filter(x=>x.include).length;$("reviewSummary").textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
-  $("recipeReviewList").innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?"":"excluded"}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==="photo-crop"?"Cropped cookbook food photo":"Extracted cookbook photo"}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==="photo-crop"?"Cropped recipe photo":"Recipe photo"}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?"checked":""}><span>Use this image</span></label>`:""}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?"checked":""}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:""}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join("\n"))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join("\n"))}</textarea></label></div></details></div></div></article>`).join("");
+  const selected=importState.candidates.filter(x=>x.include).length;$('reviewSummary').textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
+  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
 }
-function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title;r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join("\n"));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join("\n"));});}
+function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title;r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
 async function importSelected(){
   syncReviewFields(); const selected=importState.candidates.filter(r=>r.include); if(!selected.length)return alert("Select at least one recipe.");
   const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=makeId(); let imported=0,skipped=0,failed=0;
   const btn=$("importCookbookRecipes");btn.disabled=true;
-  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const recipe={name:r.title,url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions,nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",notes:`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`,made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_page:r.page};
+  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const recipe={name:r.title,url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions,nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",notes:[r.description,`Yield: ${r.yieldText||""}`,`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`].filter(Boolean).join("\n\n"),made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_page:r.page};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
   library.unshift({id,title,author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";

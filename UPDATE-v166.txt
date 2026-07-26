@@ -1,0 +1,8 @@
+Recipe Vault v1.6.6 — Build 166
+
+- Rejects serving/yield values such as “4 tenders | 2 servings” as recipe titles.
+- Reconstructs numbered instructions from the PDF's separate number and sentence objects.
+- Prevents description text from being interleaved with cooking steps.
+- Adds an always-visible build badge in the extreme upper-left corner.
+- The badge checks build.json and announces when a newer deployed build is ready to refresh.
+- Includes all fixes through v1.6.5.

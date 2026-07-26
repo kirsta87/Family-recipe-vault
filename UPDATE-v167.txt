@@ -1,0 +1,8 @@
+Recipe Vault v1.6.7 — Build 167
+
+- Adds dedicated Yield / Servings and Description fields to cookbook review cards.
+- Extracts cookbook summary blurbs into Description instead of mixing them into directions.
+- Excludes description-region text from numbered instruction reconstruction.
+- Tightens step matching to the same visual column to prevent neighboring text leakage.
+- Saves description and yield metadata with imported recipes and preserves them in notes.
+- Includes the Build 166 upper-left deployment indicator and all earlier parser fixes.
