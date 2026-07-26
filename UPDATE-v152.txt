@@ -1,0 +1,6 @@
+Recipe Vault v1.5.2 — Cookbook Photo Scan Reliability
+
+- Adds a hard timeout for each recipe photo scan so a PDF image object can never freeze the whole cookbook import.
+- Adds a shorter timeout for PDF.js image-object callbacks that never resolve.
+- When no separate photo is found, the analyzer clearly reports it and immediately continues to the next recipe.
+- Recipe text extraction and import continue normally even when a cookbook has flattened or inaccessible images.

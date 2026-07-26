@@ -2,6 +2,8 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
 const PHOTO_MIN_AREA = 42000;
+const PHOTO_RECIPE_TIMEOUT_MS = 2500;
+const PHOTO_OBJECT_TIMEOUT_MS = 700;
 const CACHE_KEY = "recipeVaultRecipeCacheV118";
 const base = window.RECIPE_VAULT_CONFIG || {};
 const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -85,8 +87,16 @@ async function analyzePdf(file){
       const candidate=candidates[i];
       $("analyzeCurrent").textContent=`Checking photos for ${candidate.title}`;
       $("analyzeProgress").value=92+Math.round(((i+1)/Math.max(1,candidates.length))*8);
-      candidate.image=await extractRecipePhoto(pdf,candidate).catch(()=>"");
+      candidate.image=await withTimeout(
+        extractRecipePhoto(pdf,candidate),
+        PHOTO_RECIPE_TIMEOUT_MS,
+        ""
+      ).catch(()=>"");
       candidate.useImage=Boolean(candidate.image);
+      if(!candidate.image){
+        $("analyzeCurrent").textContent=`No separate photo found for ${candidate.title} — continuing…`;
+        await nextFrame();
+      }
     }
     importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:""};
     $("analyzeProgress").value=100; showReview();
@@ -123,8 +133,23 @@ async function extractImagesFromPage(page){
   }
   return found;
 }
+function withTimeout(promise,ms,fallback=null){
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise(resolve=>setTimeout(()=>resolve(fallback),ms))
+  ]);
+}
+function nextFrame(){ return new Promise(resolve=>requestAnimationFrame(()=>resolve())); }
 function getPdfObject(store,name){
-  return new Promise(resolve=>{try{const immediate=store.get(name,obj=>resolve(obj));if(immediate)resolve(immediate);}catch{resolve(null);}});
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);resolve(value||null);};
+    const timer=setTimeout(()=>finish(null),PHOTO_OBJECT_TIMEOUT_MS);
+    try{
+      const immediate=store.get(name,obj=>finish(obj));
+      if(immediate)finish(immediate);
+    }catch{finish(null);}
+  });
 }
 function imageObjectToDataUrl(obj){
   if(!obj)return null;
