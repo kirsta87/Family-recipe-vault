@@ -1,0 +1,9 @@
+Recipe Vault Build 175 — Cookbook Layout Engine 3.0
+
+- Anchors recipe titles to the nearby yield/servings region before fallback scoring.
+- Classifies page layouts as stacked-left, split-columns, stacked-sections, or adaptive.
+- Restricts fallback title selection to the visual recipe-heading region.
+- Shows the detected layout profile beside each review page number for debugging.
+- Keeps Build 170+ deployment and cache reliability tools.
+
+Commit: feat: add Cookbook Layout Engine 3.0

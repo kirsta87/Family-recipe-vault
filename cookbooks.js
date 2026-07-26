@@ -1,8 +1,8 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "2.1.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"2.2", parser:"Region Parser v3"};
+const COOKBOOK_ENGINE_VERSION = "3.0.0";
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.0", parser:"Layout Engine v1"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -399,10 +399,68 @@ function findLikelyYieldLine(page){
     .filter(l=>yieldLike(l.text))
     .sort((a,b)=>(b.fontSize||0)-(a.fontSize||0)||b.y-a.y)[0]||null;
 }
+
+function classifyPageLayout(page,regions){
+  const W=page.width||600,H=page.height||800;
+  const ing=regions?.ingredients,ins=regions?.instructions;
+  if(ing&&ins){
+    const sameLeft=ing.x<W*.46&&ins.x<W*.46&&Math.abs(ing.x-ins.x)<W*.2;
+    if(sameLeft)return "stacked-left-recipe";
+    const split=Math.abs(ing.x-ins.x)>W*.22;
+    if(split)return "split-columns";
+    if(Math.abs(ing.y-ins.y)>H*.18)return "stacked-sections";
+  }
+  return "adaptive";
+}
+function anchoredTitleNearYield(page,regions,rich){
+  const W=page.width||600,H=page.height||800;
+  const yieldLine=findLikelyYieldLine(page);
+  if(!yieldLine)return null;
+  const yc=(yieldLine.x||0)+(yieldLine.width||0)/2;
+  const candidates=rich.filter(line=>{
+    const text=cleanLine(line.text);
+    const lc=(line.x||0)+(line.width||0)/2;
+    const dy=Math.abs((line.y||0)-(yieldLine.y||0));
+    const sameRegion=Math.abs(lc-yc)<W*.24;
+    const close=dy>2&&dy<H*.19;
+    const heading=(line.fontSize||0)>=Math.max(17,(yieldLine.fontSize||10)*1.35);
+    const words=text.split(/\s+/).filter(Boolean).length;
+    return sameRegion&&close&&heading&&words>=2&&words<=10&&!titleRejected(text);
+  });
+  if(!candidates.length)return null;
+  return candidates.sort((a,b)=>{
+    const font=(b.fontSize||0)-(a.fontSize||0);
+    if(Math.abs(font)>1)return font;
+    const ad=Math.abs(a.y-yieldLine.y),bd=Math.abs(b.y-yieldLine.y);
+    if(Math.abs(ad-bd)>3)return ad-bd;
+    return titleScore(b,page,regions)-titleScore(a,page,regions);
+  })[0];
+}
+function strongestHeadingInRecipeRegion(page,regions,rich){
+  const W=page.width||600,H=page.height||800;
+  const layout=classifyPageLayout(page,regions);
+  let pool=rich;
+  if(layout==="stacked-left-recipe"){
+    pool=pool.filter(l=>((l.x||0)+(l.width||0)/2)>W*.47);
+  }
+  const maxFont=Math.max(0,...pool.map(l=>l.fontSize||0));
+  return pool.filter(l=>{
+    const text=cleanLine(l.text),words=text.split(/\s+/).filter(Boolean).length;
+    return (l.fontSize||0)>=Math.max(17,maxFont*.78)&&words>=2&&words<=10&&text.length<=80&&
+      (l.y||0)>H*.18&&(l.y||0)<H*.86&&!titleRejected(text);
+  }).sort((a,b)=>titleScore(b,page,regions)-titleScore(a,page,regions))[0]||null;
+}
+
 function findTitleLineFromPage(page,regions){
   const rich=(page.richLines||[]).filter(line=>!titleRejected(line.text));
   if(!rich.length)return null;
   const W=page.width||600,H=page.height||800;
+  // Layout Engine 3.0: title extraction is anchored to the visual yield block
+  // before any free-form scoring is allowed. This prevents instruction fragments
+  // and ingredient subsection labels from ever winning when the real title is
+  // visibly paired with servings.
+  const anchoredTitle=anchoredTitleNearYield(page,regions,rich);
+  if(anchoredTitle)return anchoredTitle;
 
   // Split-page template used by Soul Fuel and similar digital cookbooks:
   // ingredients + instructions are stacked in the left column, while the hero
@@ -456,7 +514,7 @@ function findTitleLineFromPage(page,regions){
       })[0];
     }
   }
-  return rich.sort((a,b)=>titleScore(b,page,regions)-titleScore(a,page,regions))[0]||null;
+  return strongestHeadingInRecipeRegion(page,regions,rich) || rich.sort((a,b)=>titleScore(b,page,regions)-titleScore(a,page,regions))[0]||null;
 }
 function cleanLine(text){return String(text||"").replace(/^[-•▪◦]\s*/,"").replace(/\s+/g," ").trim();}
 function lineInBox(line,box){return line.x>=box.x-8&&line.x<=box.x+box.w+8&&line.y>=box.y-8&&line.y<=box.y+box.h+8;}
@@ -721,7 +779,7 @@ function buildCandidate(group){
   const headerCount=(page.richLines||[]).filter(l=>/^(ingredients?|directions?|instructions?|method)\s*:?$/i.test(cleanLine(l.text))).length;
   if(headerCount>2)warnings.push("Multiple recipe regions detected on this page; review this card carefully.");
   if(titleRejected(title)||ingredientLike(title))warnings.push("Low-confidence title detected.");
-  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,engineVersion:COOKBOOK_ENGINE_VERSION};
+  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
 function showReview(){
@@ -729,7 +787,7 @@ function showReview(){
 }
 function renderReview(){
   const selected=importState.candidates.filter(x=>x.include).length;$('reviewSummary').textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
-  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
+  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
 }
 function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title);r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}

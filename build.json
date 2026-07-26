@@ -1,8 +1,8 @@
 {
-  "build": 174,
-  "version": "1.7.4",
-  "label": "Split-page title region fix",
-  "builtAt": "2026-07-26T12:55:00-06:00",
-  "cookbookEngine": "2.5",
-  "parser": "Region Parser v6"
+  "build": 175,
+  "version": "1.7.5",
+  "label": "Cookbook Layout Engine 3.0",
+  "builtAt": "2026-07-26T13:10:00-06:00",
+  "cookbookEngine": "3.0",
+  "parser": "Layout Engine v1"
 }
