@@ -866,3 +866,27 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 }
 .vibe-chip.active::before,
 .vibe-chip[aria-pressed="true"]::before{content:"✓";font-weight:900}
+
+
+/* v1.5.0 — PDF Cookbook Library */
+.cookbook-import-tab{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.cookbook-page{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:34px 0 70px}
+.section-heading,.import-step-header,.review-toolbar,.cookbook-detail-header,.cookbook-metadata-card{display:flex;gap:24px;align-items:center;justify-content:space-between}
+.cookbook-search{width:min(380px,100%)}
+.cookbook-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:24px;margin-top:24px}
+.cookbook-card{background:var(--card,#fffdf8);border:1px solid rgba(67,72,52,.16);border-radius:22px;overflow:hidden;box-shadow:0 8px 24px rgba(40,43,31,.08);cursor:pointer;transition:.18s transform,.18s box-shadow}
+.cookbook-card:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(40,43,31,.13)}
+.cookbook-cover{aspect-ratio:3/4;background:#e8e2d4;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cookbook-cover img,.detail-cover img,.cover-preview img{width:100%;height:100%;object-fit:cover}
+.cover-placeholder{font-size:54px;display:grid;place-items:center;width:100%;height:100%;background:linear-gradient(145deg,#eee7da,#d8cfbd)}
+.cookbook-card-body{padding:18px}.cookbook-card-body h3{margin:.2rem 0 .35rem;font-size:1.25rem}.cookbook-card-body p{margin:.2rem 0}
+.cookbook-card-actions{display:flex;align-items:center;justify-content:space-between;margin-top:16px}.icon-button{border:0;background:transparent;font-size:1.5rem;cursor:pointer}.danger-text{color:#8a3f36}
+.empty-state{padding:48px 24px;text-align:center;border:1px dashed rgba(67,72,52,.3);border-radius:20px;margin-top:24px}.empty-state[hidden]{display:none}
+.cookbook-dropzone{border:2px dashed rgba(83,92,66,.34);border-radius:24px;padding:64px 24px;text-align:center;background:rgba(255,253,248,.7);margin-top:24px}.cookbook-dropzone.dragging{border-color:#697454;background:#f1f3e9}.cookbook-drop-icon{font-size:64px}
+.cookbook-analyze-card,.success-panel{max-width:650px;margin:50px auto;padding:40px;text-align:center;background:#fffdf8;border-radius:24px;box-shadow:0 10px 34px rgba(40,43,31,.1)}
+.cookbook-analyze-card progress{width:100%;height:16px}.spinner{width:48px;height:48px;border:5px solid #ddd;border-top-color:#697454;border-radius:50%;margin:0 auto 20px;animation:rvspin 1s linear infinite}@keyframes rvspin{to{transform:rotate(360deg)}}
+.cookbook-metadata-card{align-items:stretch;background:#fffdf8;border-radius:22px;padding:20px;margin:24px 0}.cover-preview{width:170px;aspect-ratio:3/4;background:#e8e2d4;border-radius:12px;overflow:hidden;flex:0 0 auto}.cookbook-meta-fields{display:grid;gap:12px;flex:1}
+.cookbook-review-list{display:grid;gap:16px;margin-top:18px}.recipe-review-card{background:#fffdf8;border:1px solid rgba(67,72,52,.16);border-radius:18px;padding:18px}.recipe-review-card.excluded{opacity:.55}.recipe-review-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.review-check{display:flex;gap:8px;font-weight:700}.page-badge{background:#e9ebdf;border-radius:999px;padding:6px 10px;font-size:.85rem}.review-columns{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}.recipe-review-card summary{cursor:pointer;font-weight:700;color:#596149}
+.detail-cover{width:150px;aspect-ratio:3/4;border-radius:14px;overflow:hidden;background:#e8e2d4;flex:0 0 auto}.cookbook-detail-header{justify-content:flex-start;margin:22px 0}
+.stacked-actions{display:grid;gap:12px}.success-icon{font-size:50px;color:#697454}
+@media(max-width:700px){.section-heading,.review-toolbar,.cookbook-metadata-card,.cookbook-detail-header{align-items:stretch;flex-direction:column}.cookbook-search{width:100%}.cover-preview,.detail-cover{width:130px}.review-columns{grid-template-columns:1fr}.cookbook-page{width:min(100% - 20px,1180px)}.review-toolbar .actions{display:grid;width:100%}}

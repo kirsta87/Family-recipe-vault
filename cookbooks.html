@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#697454">
+  <title>Cookbook Library · Recipe Vault</title>
+  <link rel="stylesheet" href="styles.css?v=150">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+</head>
+<body>
+<header class="hero cookbook-hero">
+  <div class="hero-tools"><a class="secondary linkbtn" href="index.html">← Recipe Vault</a></div>
+  <div class="hero-main"><div><p class="eyebrow">THE GLAISTER FAMILY</p><h1>Cookbook Library</h1><p>Turn purchased cookbook PDFs into searchable, plannable recipes.</p></div><button id="uploadCookbookBtn" class="primary">＋ Add cookbook PDF</button></div>
+</header>
+<main class="cookbook-page">
+  <section id="libraryView">
+    <div class="section-heading"><div><p class="eyebrow">YOUR SHELF</p><h2>Cookbooks</h2></div><label class="search-field cookbook-search"><span>Search cookbooks</span><input id="cookbookSearch" type="search" placeholder="Magnolia, Half Baked Harvest…"></label></div>
+    <div id="cookbookGrid" class="cookbook-grid"></div>
+    <div id="cookbookEmpty" class="empty-state"><strong>Your cookbook shelf is ready.</strong><p>Upload a PDF and the vault will scan it for recipes, page numbers, ingredients, and instructions.</p><button id="emptyUploadBtn" class="primary">Choose your first cookbook</button></div>
+  </section>
+
+  <section id="cookbookDetailView" hidden>
+    <button id="backToShelf" class="secondary">← Back to shelf</button>
+    <div id="cookbookDetailHeader" class="cookbook-detail-header"></div>
+    <label class="search-field"><span>Search this cookbook</span><input id="cookbookRecipeSearch" type="search" placeholder="chicken, pasta, dessert…"></label>
+    <div id="cookbookRecipeGrid" class="grid"></div>
+  </section>
+
+  <section id="importView" hidden>
+    <div class="import-step-header"><button id="cancelImport" class="secondary">← Cancel</button><div><p class="eyebrow">PDF COOKBOOK IMPORT</p><h2 id="importHeading">Choose a cookbook</h2></div></div>
+    <input id="cookbookFile" type="file" accept="application/pdf,.pdf" hidden>
+
+    <div id="choosePdfPanel" class="cookbook-dropzone">
+      <div class="cookbook-drop-icon">📚</div><h3>Drop a cookbook PDF here</h3><p>or select one from your computer</p><button id="choosePdfBtn" class="primary">Choose PDF</button>
+      <p class="muted">The PDF stays in your browser while it is analyzed. Only recipes you approve are sent to your Recipe Vault.</p>
+    </div>
+
+    <div id="analyzePanel" hidden>
+      <div class="cookbook-analyze-card"><div class="spinner"></div><h3>Analyzing cookbook</h3><p id="analyzeStatus">Opening PDF…</p><progress id="analyzeProgress" max="100" value="0"></progress><p id="analyzeCurrent" class="muted"></p></div>
+    </div>
+
+    <div id="reviewPanel" hidden>
+      <div class="cookbook-metadata-card">
+        <div id="coverPreview" class="cover-preview"></div>
+        <div class="cookbook-meta-fields"><label class="field">Cookbook title<input id="cookbookTitle" type="text"></label><label class="field">Author (optional)<input id="cookbookAuthor" type="text"></label><label class="field">Default collection<input id="cookbookCollection" type="text"></label></div>
+      </div>
+      <div class="review-toolbar"><div><h3>Review detected recipes</h3><p id="reviewSummary" class="muted"></p></div><div class="actions"><button id="selectAllRecipes" class="secondary">Select all</button><button id="selectNoneRecipes" class="secondary">Select none</button><button id="importCookbookRecipes" class="primary">Import selected</button></div></div>
+      <div id="recipeReviewList" class="cookbook-review-list"></div>
+    </div>
+
+    <div id="importResults" hidden class="cookbook-results"></div>
+  </section>
+</main>
+<dialog id="deleteCookbookDialog"><button id="closeDeleteCookbook" class="close">×</button><h2>Remove cookbook?</h2><p id="deleteCookbookMessage"></p><div class="stacked-actions"><button id="removeCookbookOnly" class="secondary">Remove cookbook from shelf only</button><button id="removeCookbookAndRecipes" class="danger">Remove cookbook and its recipes</button><button id="cancelDeleteCookbook" class="secondary">Cancel</button></div><p class="muted">Removing recipes requires the connected Apps Script to support recipe deletion. If it does not, the cookbook will still be removed from the shelf and the recipes will remain in the vault.</p></dialog>
+<script src="config.js"></script>
+<script type="module" src="cookbooks.js?v=150"></script>
+</body></html>

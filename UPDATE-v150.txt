@@ -1,0 +1,12 @@
+Recipe Vault v1.5.0 — PDF Cookbook Library
+
+- Adds a dedicated cookbook shelf to the Recipe Vault.
+- Upload and analyze purchased cookbook PDFs in the browser.
+- Detects likely recipes while skipping low-confidence front matter and index pages.
+- Review, edit, select, and import detected recipes before anything is saved.
+- Stores cookbook title, page number, author, cover preview, and default collection.
+- Browse and search recipes inside an individual cookbook.
+- Imported recipes remain available throughout search, Inspire Me, meal planning, pantry, and shopping.
+- Cookbook removal includes shelf-only and cookbook-plus-recipes choices.
+
+Important: PDF layouts vary. The importer intentionally uses a review queue instead of silently importing uncertain text.
