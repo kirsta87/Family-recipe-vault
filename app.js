@@ -28,7 +28,7 @@ const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
 const RECIPE_CACHE_KEY = "recipeVaultRecipeCacheV118";
 const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
-const RECIPE_DNA_ENGINE_VERSION = 2;
+const RECIPE_DNA_ENGINE_VERSION = 3;
 let recipeIntelligenceRunning = false;
 let recipeIntelligencePromptShown = false;
 let recipeDNAStore = readRecipeDNAStore();
@@ -558,14 +558,22 @@ function searchScore(recipe, query){
 
 
 const VIBE_PROFILES = {
-  cold: {label:"cold & fresh", minimum:58},
-  cozy: {label:"cozy", minimum:35},
-  light: {label:"light", minimum:32},
-  hearty: {label:"hearty", minimum:32},
-  easy: {label:"low effort", minimum:30},
-  summer: {label:"summer / grilled", minimum:34},
-  creamy: {label:"creamy & cheesy", minimum:30},
-  comfort: {label:"comfort food", minimum:34}
+  cold: {label:"cold & fresh", minimum:52},
+  cozy: {label:"cozy night", minimum:30},
+  light: {label:"light & bright", minimum:28},
+  hearty: {label:"hearty & filling", minimum:28},
+  easy: {label:"low effort", minimum:25},
+  summer: {label:"summer / grilled", minimum:28},
+  creamy: {label:"creamy & cheesy", minimum:25},
+  comfort: {label:"comfort food", minimum:28},
+  handheld: {label:"tacos & handhelds", minimum:30},
+  pasta: {label:"pasta night", minimum:30},
+  bowl: {label:"bowls & salads", minimum:28},
+  crockpot: {label:"crockpot", minimum:32},
+  chicken: {label:"chicken dinner", minimum:28},
+  beef: {label:"beef dinner", minimum:28},
+  crowd: {label:"crowd pleaser", minimum:26},
+  breakfast: {label:"breakfast", minimum:30}
 };
 
 function readRecipeDNAStore(){
@@ -619,66 +627,114 @@ function analyzeRecipeDNA(recipe){
   const instructions = normalizeSearchText((recipe.instructions || []).join(" "));
   const ingredients = normalizeSearchText((recipe.ingredients || []).join(" "));
   const type = normalizeSearchText(recipe.type || "");
+  const cuisine = normalizeSearchText(recipe.cuisine || "");
   const minutes = Number(recipe.total_time || 0);
-  const scores = {cold:0,cozy:0,light:0,hearty:0,easy:0,summer:0,creamy:0,comfort:0};
-  const traits = {temperature:[],method:[],texture:[],season:[],effort:[],style:[]};
+  const scores = {
+    cold:0, cozy:0, light:0, hearty:0, easy:0, summer:0, creamy:0, comfort:0,
+    handheld:0, pasta:0, bowl:0, crockpot:0, chicken:0, beef:0, crowd:0, breakfast:0
+  };
+  const traits = {
+    temperature:[], method:[], texture:[], season:[], effort:[], style:[],
+    dish:[], protein:[], occasion:[], cuisine:[]
+  };
+  const add = (key, amount, haystack=text, phrases=[]) => {
+    scores[key] += phraseHits(haystack, phrases) * amount;
+  };
+  const has = (haystack, phrases) => phraseHits(haystack, phrases) > 0;
 
-  const coldStrong = ["serve chilled","served chilled","chill before serving","refrigerate before serving","cold pasta salad","pasta salad","chicken salad","tuna salad","egg salad","no cook","no-cook","overnight oats","smoothie","cold noodles","chilled soup","poke bowl","ceviche"];
-  const coldMedium = ["salad","slaw","caprese","summer roll","lettuce wrap","fruit salad","sandwich","wrap"];
+  const coldStrong = ["serve chilled","served chilled","chill before serving","refrigerate before serving","serve cold","cold pasta salad","pasta salad","chicken salad","tuna salad","egg salad","no cook","no-cook","overnight oats","smoothie","cold noodles","chilled soup","poke bowl","ceviche"];
+  const coldDish = ["salad","slaw","caprese","fruit salad","pasta salad","sandwich","wrap","summer roll"];
   const hotStrong = ["serve hot","serve warm","crockpot","slow cooker","cook on low","cook on high","bake at","preheat oven","roast for","simmer","boil","casserole","soup","stew","pot roast","braise"];
-  const cookingMethods = ["crockpot","slow cooker","bake","baked","roast","roasted","simmer","boil","fry","fried","air fryer","grill","grilled","skillet","stovetop"];
+  const activeCooking = ["crockpot","slow cooker","bake","baked","roast","roasted","simmer","boil","fry","fried","air fryer","grill","grilled","skillet","stovetop"];
   const coldStrongHits = phraseHits(text,coldStrong);
-  const coldMediumHits = phraseHits(title + " " + type,coldMedium);
   const hotHits = phraseHits(instructions + " " + title,hotStrong);
-  const activeCookingHits = phraseHits(instructions,cookingMethods);
+  const activeCookingHits = phraseHits(instructions,activeCooking);
 
-  scores.cold += coldStrongHits * 38 + coldMediumHits * 20;
-  if(phraseHits(title,["salad","slaw","caprese","smoothie","cold","chilled"])) scores.cold += 24;
-  if(phraseHits(instructions,["refrigerate","chill","serve cold","serve chilled"])) scores.cold += 30;
-  if(hotHits) scores.cold -= hotHits * 34;
-  if(activeCookingHits && !coldStrongHits && !phraseHits(instructions,["cool completely","chill","refrigerate"])) scores.cold -= 30;
-  if(phraseHits(text,["fresh","lemon","lime","cucumber","tomato","herbs"])) scores.cold += 3; // garnish alone cannot qualify.
-  if(scores.cold >= 58){ traits.temperature.push("cold"); traits.style.push("fresh"); }
-  else if(hotHits || activeCookingHits) traits.temperature.push("hot");
+  scores.cold += coldStrongHits * 38 + phraseHits(title + " " + type,coldDish) * 22;
+  if(has(instructions,["refrigerate","chill","serve cold","serve chilled","cool completely"])) scores.cold += 32;
+  if(hotHits) scores.cold -= hotHits * 30;
+  if(activeCookingHits && !coldStrongHits && !has(instructions,["cool completely","chill","refrigerate"])) scores.cold -= 24;
 
-  scores.cozy += phraseHits(text,["soup","stew","casserole","pot pie","chili","bisque","dumpling","roast","slow cooker","crockpot","baked pasta","mac and cheese"]) * 18;
-  scores.cozy += phraseHits(text,["creamy","warming","comfort"]) * 8;
-  scores.cozy -= coldStrongHits * 24;
+  add("cozy",18,text,["soup","stew","casserole","pot pie","chili","bisque","dumpling","roast","slow cooker","crockpot","baked pasta","mac and cheese","braise"]);
+  add("cozy",8,text,["creamy","warming","comfort","gravy"]);
+  scores.cozy -= coldStrongHits * 22;
 
-  scores.light += phraseHits(text,["salad","lettuce","cucumber","zucchini","vegetable","veggie","lemon","citrus","herb","fruit","bruschetta","grilled chicken","shrimp"]) * 8;
-  scores.light += coldStrongHits * 12;
-  scores.light -= phraseHits(text,["heavy cream","fried","loaded","alfredo","mac and cheese","gravy","cream cheese"]) * 15;
+  add("light",8,text,["salad","lettuce","cucumber","zucchini","vegetable","veggie","lemon","citrus","herb","fruit","bruschetta","grilled chicken","shrimp","vinaigrette"]);
+  scores.light += coldStrongHits * 11;
+  add("light",-14,text,["heavy cream","fried","loaded","alfredo","mac and cheese","gravy","cream cheese","smothered"]);
 
-  scores.hearty += phraseHits(text,["beef","pork","potato","pasta","rice","burger","roast","stew","chili","casserole","sausage","meatball","biscuits","gravy"]) * 9;
-  scores.hearty += phraseHits(title,["loaded","smothered","hearty"]) * 15;
+  add("hearty",9,text,["beef","pork","potato","pasta","rice","burger","roast","stew","chili","casserole","sausage","meatball","biscuits","gravy","burrito","quesadilla"]);
+  add("hearty",15,title,["loaded","smothered","hearty","stuffed"]);
 
-  scores.easy += phraseHits(text,["sheet pan","one pan","one pot","slow cooker","crockpot","air fryer","skillet","dump and go","no cook","no-cook","sandwich","quesadilla"]) * 13;
-  if(minutes > 0 && minutes <= 20) scores.easy += 30;
-  else if(minutes > 0 && minutes <= 35) scores.easy += 20;
-  else if(minutes > 60) scores.easy -= 10;
-  scores.easy -= phraseHits(text,["homemade dough","from scratch","marinate overnight"]) * 15;
+  add("easy",13,text,["sheet pan","one pan","one pot","slow cooker","crockpot","air fryer","skillet","dump and go","no cook","no-cook","sandwich","quesadilla","taco","burrito bowl"]);
+  if(minutes > 0 && minutes <= 20) scores.easy += 32;
+  else if(minutes > 0 && minutes <= 35) scores.easy += 22;
+  else if(minutes > 75) scores.easy -= 10;
+  add("easy",-15,text,["homemade dough","from scratch","marinate overnight","multiple batches"]);
 
-  scores.summer += phraseHits(text,["grill","grilled","bbq","barbecue","summer","peach","corn","tomato","bruschetta","lemon","lime","watermelon","kabob","skewer"]) * 10;
-  scores.summer += coldStrongHits * 16;
-  scores.summer -= phraseHits(text,["stew","pot pie","heavy casserole","braise"]) * 18;
+  add("summer",10,text,["grill","grilled","bbq","barbecue","summer","peach","corn","tomato","bruschetta","lemon","lime","watermelon","kabob","skewer","burrata"]);
+  scores.summer += coldStrongHits * 15;
+  add("summer",-17,text,["stew","pot pie","braise","winter"]);
 
-  scores.creamy += phraseHits(ingredients + " " + title,["heavy cream","cream cheese","sour cream","alfredo","parmesan","mozzarella","gouda","cheddar","burrata","cheese sauce","mac and cheese"]) * 12;
-  scores.creamy += phraseHits(title,["creamy","cheesy"]) * 25;
+  add("creamy",12,ingredients + " " + title,["heavy cream","cream cheese","sour cream","alfredo","parmesan","mozzarella","gouda","cheddar","burrata","cheese sauce","mac and cheese","queso"]);
+  add("creamy",24,title,["creamy","cheesy"]);
 
-  scores.comfort += phraseHits(text,["fried","burger","mashed potato","gravy","mac and cheese","casserole","pot pie","meatloaf","biscuits","cheesy","creamy","loaded","smothered","comfort"]) * 10;
+  add("comfort",10,text,["fried","burger","mashed potato","gravy","mac and cheese","casserole","pot pie","meatloaf","biscuits","cheesy","creamy","loaded","smothered","comfort","burrito","quesadilla","pizza"]);
   scores.comfort += scores.cozy * .35;
 
-  if(phraseHits(text,["crockpot","slow cooker"])) traits.method.push("crockpot");
-  if(phraseHits(text,["grill","grilled","bbq"])) traits.method.push("grill");
-  if(phraseHits(text,["no cook","no-cook"]) || (coldStrongHits && !activeCookingHits)) traits.method.push("no cook");
-  if(phraseHits(text,["air fryer"])) traits.method.push("air fryer");
-  if(phraseHits(text,["bake","baked","oven","roast"])) traits.method.push("oven");
-  if(scores.creamy >= 30) traits.texture.push("creamy or cheesy");
-  if(scores.light >= 32) traits.style.push("light");
-  if(scores.hearty >= 32) traits.style.push("hearty");
-  if(scores.cozy >= 35) traits.style.push("cozy");
-  if(scores.summer >= 34) traits.season.push("summer");
-  if(scores.easy >= 30) traits.effort.push("low effort");
+  // Dish-family scores make every recipe discoverable through a useful shortcut.
+  add("handheld",34,title + " " + type,["taco","tacos","burrito","burritos","quesadilla","wrap","sandwich","burger","slider","gyro","pita","enchilada","taquito","hot dog"]);
+  add("handheld",12,text,["tortilla","taco shell","hamburger bun","brioche bun","wrap"]);
+  add("pasta",34,title + " " + type,["pasta","spaghetti","fettuccine","linguine","rigatoni","penne","rotini","macaroni","lasagna","ravioli","tortellini","noodle"]);
+  add("pasta",12,ingredients,["pasta","spaghetti","fettuccine","linguine","rigatoni","penne","rotini","macaroni","lasagna noodles","egg noodles"]);
+  add("bowl",30,title + " " + type,["bowl","salad","slaw","grain bowl","rice bowl","poke"]);
+  add("bowl",10,text,["serve over rice","serve in bowls","lettuce","mixed greens"]);
+  add("crockpot",42,text,["crockpot","slow cooker","cook on low","cook on high"]);
+  add("chicken",28,title + " " + type,["chicken","turkey"]);
+  add("chicken",18,ingredients,["chicken breast","chicken thigh","ground chicken","rotisserie chicken","ground turkey"]);
+  add("beef",28,title + " " + type,["beef","steak","burger","roast","meatball"]);
+  add("beef",18,ingredients,["ground beef","beef roast","chuck roast","steak","sirloin","brisket"]);
+  add("breakfast",38,title + " " + type,["breakfast","brunch","pancake","waffle","french toast","omelet","frittata","egg bake","oatmeal","overnight oats","muffin"]);
+  add("breakfast",12,text,["breakfast sausage","hash brown","maple syrup"]);
+  add("crowd",12,text,["casserole","sheet pan","slow cooker","crockpot","party","potluck","game day","slider","taco bar","baked pasta"]);
+  scores.crowd += Math.max(scores.comfort,0) * .25 + Math.max(scores.easy,0) * .18;
+  if(has(title,["family","party","crowd","big batch"])) scores.crowd += 25;
+
+  // Cuisine traits improve natural-language searches without taking over the visible metadata.
+  const cuisineMap = {
+    mexican:["mexican","taco","burrito","quesadilla","enchilada","salsa","cilantro","tortilla"],
+    italian:["italian","pasta","parmesan","mozzarella","marinara","bruschetta","pesto"],
+    asian:["asian","soy sauce","sesame","teriyaki","stir fry","ramen","rice noodles"],
+    greek:["greek","feta","tzatziki","gyro","oregano"],
+    bbq:["bbq","barbecue","smoked","smoker"]
+  };
+  Object.entries(cuisineMap).forEach(([name,words]) => {
+    if(has(cuisine + " " + text,words)) traits.cuisine.push(name);
+  });
+
+  if(scores.cold >= 52){ traits.temperature.push("cold"); traits.style.push("fresh"); }
+  else if(hotHits || activeCookingHits) traits.temperature.push("hot");
+  else traits.temperature.push("room temperature");
+  if(has(text,["crockpot","slow cooker"])) traits.method.push("crockpot");
+  if(has(text,["grill","grilled","bbq"])) traits.method.push("grill");
+  if(has(text,["no cook","no-cook"]) || (coldStrongHits && !activeCookingHits)) traits.method.push("no cook");
+  if(has(text,["air fryer"])) traits.method.push("air fryer");
+  if(has(text,["bake","baked","oven","roast"])) traits.method.push("oven");
+  if(has(text,["skillet","stovetop","saute","sauté"])) traits.method.push("stovetop");
+  if(scores.creamy >= 25) traits.texture.push("creamy or cheesy");
+  if(scores.light >= 28) traits.style.push("light");
+  if(scores.hearty >= 28) traits.style.push("hearty");
+  if(scores.cozy >= 30) traits.style.push("cozy");
+  if(scores.comfort >= 28) traits.style.push("comfort");
+  if(scores.summer >= 28) traits.season.push("summer");
+  if(scores.easy >= 25) traits.effort.push("low effort");
+  if(scores.handheld >= 30) traits.dish.push("handheld");
+  if(scores.pasta >= 30) traits.dish.push("pasta");
+  if(scores.bowl >= 28) traits.dish.push("bowl or salad");
+  if(scores.breakfast >= 30) traits.dish.push("breakfast");
+  if(scores.chicken >= 28) traits.protein.push("chicken");
+  if(scores.beef >= 28) traits.protein.push("beef");
+  if(scores.crowd >= 26) traits.occasion.push("crowd pleaser");
 
   Object.keys(scores).forEach(key => scores[key] = Math.round(scores[key]));
   return {fingerprint:recipeDNAFingerprint(recipe), analyzedAt:Date.now(), scores, traits};
@@ -818,11 +874,22 @@ function inferredVibesFromText(value){
   const text = normalizeSearchText(value);
   const found = new Set();
   const aliases = {
-    cold:["cold","chilled","fresh","no cook","salad"], cozy:["cozy","warm","warming","soup weather"],
-    light:["light","not heavy","healthyish","healthy ish"], hearty:["hearty","filling","substantial","hungry"],
-    easy:["easy","quick","lazy","low effort","dont want to cook","do not want to cook"],
-    summer:["summer","grill","grilled","hot outside","heat wave"], creamy:["creamy","cheesy","cheese"],
-    comfort:["comfort","comforting","indulgent"]
+    cold:["cold","chilled","fresh","no cook","salad","hot outside"],
+    cozy:["cozy","warm","warming","soup weather","cold outside"],
+    light:["light","not heavy","healthyish","healthy ish","bright"],
+    hearty:["hearty","filling","substantial","hungry"],
+    easy:["easy","quick","lazy","low effort","dont want to cook","do not want to cook","weeknight"],
+    summer:["summer","grill","grilled","hot outside","heat wave","backyard"],
+    creamy:["creamy","cheesy","cheese"],
+    comfort:["comfort","comforting","indulgent","craving"],
+    handheld:["taco","tacos","burrito","burritos","quesadilla","sandwich","burger","wrap","handheld","mexican night"],
+    pasta:["pasta","spaghetti","noodles","italian night"],
+    bowl:["bowl","salad","rice bowl","grain bowl"],
+    crockpot:["crockpot","slow cooker","dump meal"],
+    chicken:["chicken","turkey"],
+    beef:["beef","steak","burger","roast"],
+    crowd:["crowd","company","people coming over","potluck","party","game day"],
+    breakfast:["breakfast","brunch","breakfast for dinner"]
   };
   Object.entries(aliases).forEach(([key,phrases]) => {
     if(phrases.some(phrase => text.includes(normalizeSearchText(phrase)))) found.add(key);

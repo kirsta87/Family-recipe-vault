@@ -1,0 +1,7 @@
+Recipe Vault v1.4.3 — Recipe Intelligence Engine 2.0
+
+- Expanded Recipe DNA with dish families, proteins, occasions, cuisines, methods, temperature, effort, texture, and style.
+- Added shortcut buttons for tacos & handhelds, pasta night, bowls & salads, crockpot, chicken, beef, crowd pleasers, and breakfast.
+- California Burritos and similar recipes now appear under Tacos & Handhelds, Hearty & Filling, Comfort Food, and Beef Dinner when supported by the recipe.
+- Selected vibe buttons remain visible and now show a check mark instead of disappearing.
+- Engine version bumped so the library will prompt for reanalysis after upload.
