@@ -1,0 +1,5 @@
+Recipe Vault Build 185 — Recipe Data Compatibility Fix
+
+- Fixes cookbook recipe cards crashing when ingredients or instructions are stored as text instead of arrays.
+- Supports legacy string, array, and object recipe formats.
+- Cookbook cards now open the recipe instead of stopping at the focus halo.
