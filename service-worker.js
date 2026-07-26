@@ -1,34 +1,22 @@
 "use strict";
-
-const CACHE_NAME = "recipe-vault-v169";
+const BUILD = 170;
+const CACHE_NAME = `recipe-vault-v${BUILD}`;
 const APP_SHELL = [
-  "./", "./index.html", "./styles.css?v=142", "./app.js?v=142",
-  "./meal-planner.html", "./meal-planner.js?v=140",
-  "./pantry.html", "./pantry.js?v=140",
-  "./manage-collections.html", "./manage-collections.js?v=130",
-  "./recipe-health.html", "./recipe-health.js?v=130",
-  "./cookbooks.html", "./cookbooks.js?v=169",
-  "./config.js?v=3", "./recipe-pack-schema.js", "./sample-recipe-pack.zip", "./manifest.webmanifest"
+  "./", "./index.html", `./styles.css?v=${BUILD}`, `./app.js?v=${BUILD}`,
+  "./meal-planner.html", `./meal-planner.js?v=${BUILD}`,
+  "./pantry.html", `./pantry.js?v=${BUILD}`,
+  "./manage-collections.html", `./manage-collections.js?v=${BUILD}`,
+  "./recipe-health.html", `./recipe-health.js?v=${BUILD}`,
+  "./cookbooks.html", `./cookbooks.js?v=${BUILD}`,
+  `./config.js?v=${BUILD}`, `./build-status.js?v=${BUILD}`, "./build.json",
+  "./recipe-pack-schema.js", "./sample-recipe-pack.zip", "./manifest.webmanifest"
 ];
-
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).catch(() => undefined));
-  self.skipWaiting();
-});
-self.addEventListener("activate", event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))).then(() => self.clients.claim()));
-});
-self.addEventListener("fetch", event => {
-  const request = event.request;
-  if(request.method !== "GET") return;
-  const url = new URL(request.url);
-  const isCode = request.mode === "navigate" || /\.(?:html|js|css)$/i.test(url.pathname);
-  if(isCode){
-    event.respondWith(fetch(request, {cache:"no-store"}).then(response => {
-      if(response && response.ok) caches.open(CACHE_NAME).then(cache => cache.put(request, response.clone()));
-      return response;
-    }).catch(() => caches.match(request).then(hit => hit || caches.match("./index.html"))));
-    return;
-  }
-  event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
+self.addEventListener("install",event=>{event.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)).catch(()=>undefined));self.skipWaiting();});
+self.addEventListener("activate",event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME&&k.startsWith("recipe-vault-")).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+self.addEventListener("fetch",event=>{
+  const req=event.request;if(req.method!=="GET")return;const url=new URL(req.url);
+  if(url.pathname.endsWith("/build.json")){event.respondWith(fetch(req,{cache:"no-store"}));return;}
+  const code=req.mode==="navigate"||/\.(?:html|js|css)$/i.test(url.pathname);
+  if(code){event.respondWith(fetch(req,{cache:"no-store"}).then(res=>{if(res&&res.ok)caches.open(CACHE_NAME).then(c=>c.put(req,res.clone()));return res;}).catch(()=>caches.match(req).then(hit=>hit||caches.match("./index.html"))));return;}
+  event.respondWith(caches.match(req).then(hit=>hit||fetch(req)));
 });

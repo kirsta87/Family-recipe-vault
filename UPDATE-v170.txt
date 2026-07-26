@@ -1,0 +1,9 @@
+Recipe Vault Build 170 — Deployment Reliability + Cookbook Engine 2.1
+
+- Build number now comes from the versioned build-status script URL.
+- Badge correctly distinguishes current, deploying, update-ready, and check-failed states.
+- Clear cache & refresh unregisters old service workers and removes Recipe Vault caches.
+- All JS/CSS assets are cache-busted with Build 170.
+- Service worker cache upgraded to recipe-vault-v170.
+- Cookbook Engine upgraded to 2.1 with region-anchored parsing metadata.
+- Click the upper-left badge for deployment, engine, and cache details.

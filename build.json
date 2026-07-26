@@ -1,6 +1,8 @@
 {
-  "build": 169,
-  "version": "1.6.9",
-  "label": "Cookbook Engine 2.0 region-anchored parsing",
-  "builtAt": "2026-07-26T11:55:00-06:00"
+  "build": 170,
+  "version": "1.7.0",
+  "label": "Deployment reliability and Cookbook Engine 2.1",
+  "builtAt": "2026-07-26T12:05:00-06:00",
+  "cookbookEngine": "2.1",
+  "parser": "Region Parser v2"
 }
