@@ -1,0 +1,6 @@
+BUILD 183 — COOKBOOK IDENTITY RECOVERY
+
+- Restores recipes after a cookbook is renamed.
+- Supports cookbook ID, original title, aliases, filename, and legacy Source/Tags matching.
+- Remembers recovered recipe references locally so later renames stay safe.
+- Cookbook metadata saves without rewriting recipes.

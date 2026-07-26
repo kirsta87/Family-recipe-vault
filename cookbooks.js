@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_182 = true;
+const BUILD_183 = true;
 const COOKBOOK_ENGINE_VERSION = "3.2.0";
 window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.2", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
@@ -67,21 +67,76 @@ function parseCSV(text){
   if(field||row.length){row.push(field);rows.push(row);} if(rows.length<2)return [];
   const headers=rows.shift().map(h=>h.trim()); return rows.map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]||""])));
 }
+function meaningfulTokens(value){
+  const stop=new Set(["cookbook","recipes","recipe","pdf","page","pages","the","and","with","from","edition"]);
+  return normalize(value).split(" ").filter(token=>token.length>2&&!stop.has(token));
+}
+function recipeCookbookLabel(recipe){
+  const source=String(recipe?.source||"");
+  const match=source.match(/cookbook\s*:\s*(.*?)(?:\s*[·|•-]\s*p(?:age)?\.?\s*\d+|$)/i);
+  return (match?.[1]||recipe?.cookbook_title||"").trim();
+}
+function recipeStableRef(recipe){
+  if(recipe?.id)return `id:${recipe.id}`;
+  if(recipe?.url)return `url:${normalize(recipe.url)}`;
+  return `recipe:${normalize(recipe?.name)}|page:${normalize(recipe?.cookbook_page||recipe?.source)}|added:${normalize(recipe?.added)}`;
+}
+function cookbookIdentityValues(cookbook){
+  const values=[cookbook?.title,cookbook?.originalTitle,cookbook?.fileName?.replace(/\.[^.]+$/,""),...(Array.isArray(cookbook?.aliases)?cookbook.aliases:[])];
+  return [...new Set(values.map(v=>String(v||"").trim()).filter(Boolean))];
+}
 function cookbookRecipeMatches(recipe, cookbook){
-  const hay=normalize([recipe.source,recipe.tags,recipe.collections,recipe.cookbook_title].join(" "));
-  return hay.includes(normalize(cookbook.title)) || String(recipe.cookbook_id||"")===cookbook.id;
+  if(!recipe||!cookbook)return false;
+  if(String(recipe.cookbook_id||"")===String(cookbook.id||""))return true;
+  const ref=recipeStableRef(recipe);
+  if(Array.isArray(cookbook.recipeRefs)&&cookbook.recipeRefs.includes(ref))return true;
+
+  const identities=cookbookIdentityValues(cookbook);
+  const recipeLabel=recipeCookbookLabel(recipe);
+  const recipeValues=[recipeLabel,recipe.cookbook_title,recipe.collections];
+  for(const identity of identities){
+    const normalizedIdentity=normalize(identity);
+    if(!normalizedIdentity)continue;
+    if(recipeValues.some(value=>normalize(value)===normalizedIdentity))return true;
+  }
+
+  // Legacy imports sometimes lost cookbook_id and only retained the original
+  // upload title in Source/Tags. Compare distinctive title tokens so renaming a
+  // cookbook never makes its already-imported recipes disappear.
+  const recipeTokens=new Set(meaningfulTokens([recipeLabel,recipe.cookbook_title,recipe.source,recipe.tags].join(" ")));
+  if(!recipeTokens.size)return false;
+  return identities.some(identity=>{
+    const tokens=meaningfulTokens(identity);
+    if(!tokens.length)return false;
+    const overlap=tokens.filter(token=>recipeTokens.has(token));
+    if(!overlap.length)return false;
+    if(tokens.length===1)return overlap.length===1;
+    return overlap.length/tokens.length>=0.5;
+  });
+}
+function cookbookRecipes(cookbook,{remember=true}={}){
+  const matches=recipes.filter(recipe=>cookbookRecipeMatches(recipe,cookbook));
+  if(remember&&matches.length){
+    const refs=new Set(Array.isArray(cookbook.recipeRefs)?cookbook.recipeRefs:[]);
+    matches.forEach(recipe=>refs.add(recipeStableRef(recipe)));
+    cookbook.recipeRefs=[...refs];
+    const labels=matches.map(recipeCookbookLabel).filter(Boolean);
+    cookbook.aliases=[...new Set([...(Array.isArray(cookbook.aliases)?cookbook.aliases:[]),cookbook.originalTitle,...labels].filter(Boolean))];
+    saveLibrary();
+  }
+  return matches;
 }
 function coverMarkup(cb){ return cb.cover ? `<img src="${cb.cover}" alt="">` : `<div class="cover-placeholder">📖</div>`; }
 function recipePhotoMarkup(recipe){ return recipe.image ? `<img class="cookbook-recipe-photo" src="${recipe.image}" alt="${escapeHTML(recipe.name||"Cookbook recipe")}">` : `<div class="cookbook-recipe-photo cookbook-photo-placeholder">🍽️</div>`; }
 function renderShelf(){
   const q=normalize($("cookbookSearch")?.value); const visible=library.filter(cb=>!q||normalize(`${cb.title} ${cb.author}`).includes(q));
   $("cookbookEmpty").hidden=library.length>0;
-  $("cookbookGrid").innerHTML=visible.map(cb=>{const count=recipes.filter(r=>cookbookRecipeMatches(r,cb)).length || cb.importedCount||0;return `<article class="cookbook-card" data-open-cookbook="${cb.id}"><div class="cookbook-cover">${coverMarkup(cb)}</div><div class="cookbook-card-body"><p class="eyebrow">${count} RECIPE${count===1?"":"S"}</p><h3>${escapeHTML(cb.title)}</h3><p>${escapeHTML(cb.author||"Cookbook PDF")}</p><div class="cookbook-card-actions"><button class="icon-button danger-text" data-delete-cookbook="${cb.id}" title="Remove cookbook">×</button></div></div></article>`}).join("");
+  $("cookbookGrid").innerHTML=visible.map(cb=>{const count=cookbookRecipes(cb).length || cb.importedCount||0;return `<article class="cookbook-card" data-open-cookbook="${cb.id}"><div class="cookbook-cover">${coverMarkup(cb)}</div><div class="cookbook-card-body"><p class="eyebrow">${count} RECIPE${count===1?"":"S"}</p><h3>${escapeHTML(cb.title)}</h3><p>${escapeHTML(cb.author||"Cookbook PDF")}</p><div class="cookbook-card-actions"><button class="icon-button danger-text" data-delete-cookbook="${cb.id}" title="Remove cookbook">×</button></div></div></article>`}).join("");
 }
 function openCookbook(id){
   const cb=library.find(x=>x.id===id); if(!cb)return; activeCookbookId=id;
   $("libraryView").hidden=true;$("importView").hidden=true;$("cookbookDetailView").hidden=false;
-  const count=recipes.filter(r=>cookbookRecipeMatches(r,cb)).length;
+  const count=cookbookRecipes(cb).length;
   $("cookbookDetailHeader").innerHTML=`<div class="detail-cover">${coverMarkup(cb)}</div><div><p class="eyebrow">COOKBOOK</p><h2>${escapeHTML(cb.title)}</h2><p>${escapeHTML(cb.author||"")}</p><p class="muted">${count||cb.importedCount||0} imported recipes${cb.pageCount?` · ${cb.pageCount} PDF pages`:""}</p><div class="cookbook-detail-header-actions"><button type="button" class="secondary compact-button" data-edit-cookbook="${cb.id}">Edit cookbook details</button></div></div>`;
   renderCookbookRecipes();
 }
@@ -102,7 +157,7 @@ function cleanImportedFamilyNotes(recipe){
 }
 function renderCookbookRecipes(){
   const cb=library.find(x=>x.id===activeCookbookId); if(!cb)return; const q=normalize($("cookbookRecipeSearch").value);
-  const list=recipes.filter(r=>cookbookRecipeMatches(r,cb)).filter(r=>!q||normalize([r.name,r.ingredients,r.tags,r.cuisine].join(" ")).includes(q));
+  const list=cookbookRecipes(cb).filter(r=>!q||normalize([r.name,r.ingredients,r.tags,r.cuisine].join(" ")).includes(q));
   $("cookbookRecipeGrid").innerHTML=list.length?list.map(r=>{const recipeIndex=recipes.indexOf(r);return `<article class="card cookbook-recipe-card" data-open-cookbook-recipe-index="${recipeIndex}" role="button" tabindex="0" aria-label="Open ${escapeHTML(r.name||"recipe")}">${recipePhotoMarkup(r)}<div class="card-body"><h3>${escapeHTML(r.name||"Untitled recipe")}</h3><p>${escapeHTML(r.protein||r.type||r.cuisine||"")}</p></div></article>`}).join(""):`<div class="empty-state"><strong>No matching recipes found.</strong><p>Recipes imported from this cookbook will appear here.</p></div>`;
 }
 function openCookbookRecipe(recipe){
@@ -1014,16 +1069,19 @@ async function importSelected(){
   for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage=await renderImportedSourcePreview(r.page);const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
-  library.unshift({id,title,author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
+  library.unshift({id,title,originalTitle:title,aliases:[title],author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,recipeRefs:[],addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
   $("reviewPanel").hidden=true;$("importResults").hidden=false;$("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(title)} is on your shelf</h2><p>${imported} recipes imported${skipped?`, ${skipped} duplicates skipped`:""}${failed?`, ${failed} failed`:""}.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;$("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(id));};
 }
 function beginEditCookbook(id){const cb=library.find(x=>x.id===id);if(!cb)return;$("editCookbookTitle").value=cb.title||"";$("editCookbookAuthor").value=cb.author||"";$("editCookbookCollection").value=cb.collection||cb.title||"";$("editCookbookDialog").dataset.id=id;$("editCookbookDialog").showModal();}
 async function saveCookbookMetadata(){
   const id=$("editCookbookDialog").dataset.id,cb=library.find(x=>x.id===id);
   if(!cb)return;
+  const previousTitle=cb.title;
   const newTitle=$("editCookbookTitle").value.trim()||cb.title;
   const newAuthor=$("editCookbookAuthor").value.trim();
   const newCollection=$("editCookbookCollection").value.trim()||newTitle;
+  cb.originalTitle=cb.originalTitle||previousTitle;
+  cb.aliases=[...new Set([...(Array.isArray(cb.aliases)?cb.aliases:[]),previousTitle,newTitle].filter(Boolean))];
   cb.title=newTitle;cb.author=newAuthor;cb.collection=newCollection;saveLibrary();
   const btn=$("saveCookbookMetadata");btn.textContent="Saved ✓";
   setTimeout(()=>{btn.textContent="Save changes";},900);
@@ -1048,7 +1106,7 @@ function showImportedSource(recipe){
 }
 async function deleteCookbook(removeRecipes){
   const cb=library.find(x=>x.id===deleteTargetId);if(!cb)return; let deletionFailed=false;
-  if(removeRecipes){const matches=recipes.filter(r=>cookbookRecipeMatches(r,cb));for(const recipe of matches){try{await postVault({action:"delete",id:recipe.id,url:recipe.url});}catch{deletionFailed=true;break;}}}
+  if(removeRecipes){const matches=cookbookRecipes(cb);for(const recipe of matches){try{await postVault({action:"delete",id:recipe.id,url:recipe.url});}catch{deletionFailed=true;break;}}}
   library=library.filter(x=>x.id!==cb.id);saveLibrary();$("deleteCookbookDialog").close();renderShelf();if(deletionFailed)alert("The cookbook was removed from the shelf, but your Apps Script does not appear to support permanent recipe deletion. Its recipes were left in the vault.");
 }
 
