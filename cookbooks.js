@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
+const COOKBOOK_ENGINE_VERSION = "1.6.0";
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 2500;
 const PAGE_PREVIEW_SCALE = 1.25;
@@ -126,29 +127,45 @@ async function renderRecipePagePreview(pdf,pageNo){
 
 async function renderRecipePhotoCrop(pdf,candidate){
   const page=await pdf.getPage(candidate.page);
-  const scale=1.55;
+  const scale=1.65;
   const viewport=page.getViewport({scale});
   const full=document.createElement("canvas");
   full.width=Math.round(viewport.width); full.height=Math.round(viewport.height);
   await page.render({canvasContext:full.getContext("2d"),viewport}).promise;
 
-  const pageWidth=candidate.pageWidth||page.getViewport({scale:1}).width;
-  const pageHeight=candidate.pageHeight||page.getViewport({scale:1}).height;
+  const W=candidate.pageWidth||page.getViewport({scale:1}).width;
+  const H=candidate.pageHeight||page.getViewport({scale:1}).height;
   const title=candidate.titleLine||null;
-  let x=0,y=0,w=full.width,h=Math.round(full.height*.38);
-  if(title){
-    const titleX=Math.max(0,title.x||0), titleY=Math.max(0,title.y||pageHeight*.62);
-    const rightColumn=titleX>pageWidth*.42;
-    x=Math.round((rightColumn?pageWidth*.43:0)*scale);
-    w=Math.round((rightColumn?pageWidth*.57:pageWidth)*scale);
-    const titleTop=Math.max(pageHeight-titleY-24, pageHeight*.18);
-    h=Math.round(Math.min(pageHeight*.48,titleTop)*scale);
+  const headers=candidate.regions||{};
+  let box=null;
+
+  // Template A: title sits in the right column beneath a hero photo (Soul Fuel style).
+  if(title && title.x>W*.43){
+    const titleTop=H-(title.y+(title.fontSize||18));
+    box={x:W*.45,y:0,w:W*.55,h:Math.max(H*.20,Math.min(H*.47,titleTop-8))};
   }
-  y=0;
-  if(w<180||h<120)return "";
+  // Template B: title across the top, ingredients left, directions right/below (Heat & Eat style).
+  else if(headers.ingredients && headers.instructions){
+    const ix=headers.ingredients.x, dx=headers.instructions.x;
+    if(ix<W*.48 && dx>W*.42){
+      const top=Math.max(H*.12, H-(title?.y||H*.92)+(title?.fontSize||20)*1.8);
+      const directionsTop=H-(headers.instructions.y||H*.36);
+      box={x:W*.43,y:top,w:W*.57,h:Math.max(H*.24,directionsTop-top-8)};
+    }
+  }
+  // Generic two-column fallback: keep only the likely hero-photo half, never the full page.
+  if(!box){
+    const rightHeavy=(candidate.textDensity?.right||0) < (candidate.textDensity?.left||0)*.85;
+    box=rightHeavy?{x:W*.48,y:H*.08,w:W*.52,h:H*.46}:{x:0,y:H*.08,w:W,h:H*.34};
+  }
+
+  box.x=Math.max(0,Math.min(W-1,box.x)); box.y=Math.max(0,Math.min(H-1,box.y));
+  box.w=Math.max(1,Math.min(W-box.x,box.w)); box.h=Math.max(1,Math.min(H-box.y,box.h));
+  if(box.w<W*.28||box.h<H*.14)return "";
+  const sx=Math.round(box.x*scale), sy=Math.round(box.y*scale), sw=Math.round(box.w*scale), sh=Math.round(box.h*scale);
   const crop=document.createElement("canvas");
-  crop.width=Math.min(900,w); crop.height=Math.max(1,Math.round(h*(crop.width/w)));
-  crop.getContext("2d").drawImage(full,x,y,w,h,0,0,crop.width,crop.height);
+  crop.width=Math.min(900,sw); crop.height=Math.max(1,Math.round(sh*(crop.width/sw)));
+  crop.getContext("2d").drawImage(full,sx,sy,sw,sh,0,0,crop.width,crop.height);
   return crop.toDataURL("image/jpeg",PHOTO_CROP_QUALITY);
 }
 
@@ -223,27 +240,30 @@ function imageObjectToDataUrl(obj){
 function itemsToStructuredLines(items){
   const rows=[];
   for(const item of items){
-    const text=String(item.str||"").trim(); if(!text)continue;
-    const x=item.transform?.[4]||0,y=Math.round(item.transform?.[5]||0);
-    const fontSize=Math.max(Math.abs(item.transform?.[0]||0),Math.abs(item.transform?.[3]||0),item.height||0);
-    let row=rows.find(a=>Math.abs(a.y-y)<=Math.max(3,fontSize*.22));
+    const raw=String(item.str||"").replace(/\s+/g," ").trim(); if(!raw)continue;
+    const x=item.transform?.[4]||0,y=item.transform?.[5]||0;
+    const fontSize=Math.max(Math.abs(item.transform?.[0]||0),Math.abs(item.transform?.[3]||0),item.height||0,1);
+    let row=rows.find(a=>Math.abs(a.y-y)<=Math.max(2.5,fontSize*.24));
     if(!row){row={y,items:[]};rows.push(row);}
-    row.items.push({x,text,fontSize,width:item.width||0});
+    row.items.push({x,y,text:raw,fontSize,width:item.width||0,fontName:item.fontName||""});
   }
   const lines=[];
   for(const row of rows.sort((a,b)=>b.y-a.y)){
-    const sorted=row.items.sort((a,b)=>a.x-b.x);
-    let segment=[];
+    const sorted=row.items.sort((a,b)=>a.x-b.x); let segment=[];
     const flush=()=>{
       if(!segment.length)return;
-      lines.push({text:segment.map(v=>v.text).join(" ").replace(/\s+/g," ").trim(),fontSize:Math.max(...segment.map(v=>v.fontSize||0)),x:Math.min(...segment.map(v=>v.x||0)),y:row.y});
+      const text=segment.map(v=>v.text).join(" ").replace(/\s+/g," ").trim();
+      const minX=Math.min(...segment.map(v=>v.x||0));
+      const maxX=Math.max(...segment.map(v=>(v.x||0)+(v.width||v.text.length*(v.fontSize||10)*.45)));
+      lines.push({text,fontSize:Math.max(...segment.map(v=>v.fontSize||0)),x:minX,y:row.y,width:Math.max(1,maxX-minX),fontName:segment.map(v=>v.fontName).find(Boolean)||""});
       segment=[];
     };
     for(const item of sorted){
       const prev=segment[segment.length-1];
       const prevEnd=prev ? prev.x+(prev.width||prev.text.length*(prev.fontSize||10)*.45) : 0;
       const gap=prev ? item.x-prevEnd : 0;
-      if(prev && gap>Math.max(48,(prev.fontSize||10)*4.5))flush();
+      // Large visual gap means a new column/region, even if PDF extraction order interleaves them.
+      if(prev && gap>Math.max(34,(prev.fontSize||10)*3.1))flush();
       segment.push(item);
     }
     flush();
@@ -251,57 +271,90 @@ function itemsToStructuredLines(items){
   return lines.filter(line=>line.text).sort((a,b)=>b.y-a.y||a.x-b.x);
 }
 function itemsToLines(items){return itemsToStructuredLines(items).map(line=>line.text);}
-function ingredientLike(line){return /^([¼½¾⅓⅔⅛⅜⅝⅞\d]|one |two |three |four |five |six |a |an )/i.test(line)&&/(cup|tbsp|tbs\b|tablespoon|tsp|teaspoon|ounce|oz\b|pound|lb\b|gram|kg\b|ml\b|clove|can\b|package|block\b|pinch|slice|sprig|bunch|stick|large|medium|small)/i.test(line);}
-function instructionLike(line){return /^(\d+[.)]|step\s+\d+|preheat|heat |stir |mix |add |place |cook |bake |roast |grill |season |combine |whisk |serve |pour |transfer |cover |bring )/i.test(line);}
-function pageScore(p){const t=p.text;let s=0;if(/ingredients?/i.test(t))s+=4;if(/directions?|instructions?|method/i.test(t))s+=4;s+=Math.min(5,p.lines.filter(ingredientLike).length);s+=Math.min(4,p.lines.filter(instructionLike).length);if(/contents|index|acknowledg|introduction|copyright/i.test(t)&&p.lines.length<45)s-=7;return s;}
+const LINK_NOISE=/\b(click|tap)\s+here\b|video\s+tutorial|shop\s+here|see\s+the\s+.*i\s+use|save\s+digitally|pinterest|www\.|https?:|download|print here/i;
+const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies)$/i;
+function ingredientLike(line){return /^([¼½¾⅓⅔⅛⅜⅝⅞\d]|one |two |three |four |five |six |a |an )/i.test(line)&&/(cup|tbsp|tbs\b|tablespoon|tsp|teaspoon|ounce|oz\b|pound|lb\b|gram|kg\b|ml\b|clove|can\b|package|block\b|pinch|slice|piece|sprig|bunch|stick|large|medium|small|wrap|egg\b|bread|milk|cheese|chicken|beef|pork|salt|pepper|oil)/i.test(line);}
+function instructionLike(line){return /^(\d+[.)]|step\s+\d+|preheat|heat |stir |mix |add |place |cook |bake |roast |grill |season |combine |whisk |serve |pour |transfer |cover |bring |slice |flatten |set |let |remove |fold |flip |spread |spray |dip |melt )/i.test(line);}
+function pageScore(p){
+  const t=p.text; let s=0;
+  const hasIng=/\bingredients?\b/i.test(t),hasIns=/\b(directions?|instructions?|method)\b/i.test(t);
+  if(hasIng)s+=5;if(hasIns)s+=5;if(hasIng&&hasIns)s+=5;
+  s+=Math.min(6,p.lines.filter(ingredientLike).length);
+  s+=Math.min(5,p.lines.filter(instructionLike).length);
+  if(/contents|index|acknowledg|introduction|copyright|cheat\s*sheet|important info/i.test(t))s-=10;
+  if(p.lines.length<8)s-=5;
+  return s;
+}
 function detectRecipes(pages){
   const result=[];
   for(const p of pages){
-    if(pageScore(p)<5)continue;
+    if(pageScore(p)<9)continue;
     const candidate=buildCandidate({pages:[p],startPage:p.page,endPage:p.page});
-    if(candidate.ingredients.length>=2||candidate.instructions.length>=2)result.push(candidate);
+    if(candidate.title && candidate.ingredients.length>=1 && candidate.instructions.length>=1)result.push(candidate);
   }
   return result;
 }
 function titleRejected(line){
-  const text=String(line||"").trim();
-  return !text||text.length<4||text.length>90||/ingredients?|directions?|instructions?|method|serves?|servings?|yield|prep time|cook time|nutrition|notes?/i.test(text)||ingredientLike(text)||instructionLike(text)||/^([¼½¾⅓⅔⅛⅜⅝⅞\d]+|one|two|three|four|five|six)\b/i.test(text)||/^(chapter|part|page)\s/i.test(text)||!/[A-Za-z]/.test(text);
+  const text=String(line||"").replace(/\s+/g," ").trim();
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||ingredientLike(text)||instructionLike(text)||/^([¼½¾⅓⅔⅛⅜⅝⅞\d]+|one|two|three|four|five|six)\b/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
-function titleScore(line,page){
-  const text=line.text.trim(); let score=0;
-  const words=text.split(/\s+/).length;
-  score+=(line.fontSize||0)*2;
-  if(words>=2&&words<=8)score+=18;
-  if(text===text.toUpperCase()&&/[A-Z]/.test(text))score+=25;
-  if(/^[A-Z][A-Za-z'’&-]+(?:\s+[A-Z][A-Za-z'’&-]+){1,7}$/.test(text))score+=15;
-  if((line.y||0)>(page.height||800)*.48)score+=10;
-  if((line.x||0)>(page.width||600)*.35)score+=4;
-  if(/[.!?]$/.test(text))score-=10;
+function titleScore(line,page,regions){
+  const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
+  score+=(line.fontSize||0)*2.2;
+  if(words>=2&&words<=7)score+=22; else if(words>10)score-=18;
+  if(text===text.toUpperCase()&&/[A-Z]/.test(text))score+=18;
+  if(/^[A-Z][A-Za-z'’&-]+(?:\s+[A-Z][A-Za-z'’&-]+){1,7}$/.test(text))score+=12;
+  if(/[.!?]$/.test(text))score-=12;
+  if(LINK_NOISE.test(text))score-=100;
+  const ing=regions?.ingredients,ins=regions?.instructions;
+  // Titles commonly live above recipe body or in the opposite column from ingredients.
+  if(ing && line.y>ing.y)score+=12;
+  if(ing && line.x>page.width*.42 && ing.x<page.width*.4)score+=16;
+  if(ins && line.y>ins.y && line.x>page.width*.4)score+=8;
+  if(line.y>page.height*.72)score+=8;
   return score;
 }
-function findTitleLineFromPage(page){
-  const rich=(page.richLines||[]).filter(line=>!titleRejected(line.text));
-  if(!rich.length)return null;
-  return rich.sort((a,b)=>titleScore(b,page)-titleScore(a,page))[0]||null;
+function findRegionHeader(page,kind){
+  const rx=kind==="ingredients"?/^ingredients?\s*:?$/i:/^(directions?|instructions?|method)\s*:?$/i;
+  return (page.richLines||[]).filter(l=>rx.test(l.text.trim())).sort((a,b)=>(b.fontSize||0)-(a.fontSize||0))[0]||null;
 }
-function findTitleFromPage(page){return findTitleLineFromPage(page)?.text||"";}
-function findTitle(lines){return (lines||[]).find((line,i)=>i<20&&!titleRejected(line))||"";}
+function findTitleLineFromPage(page,regions){
+  const rich=(page.richLines||[]).filter(line=>!titleRejected(line.text)); if(!rich.length)return null;
+  return rich.sort((a,b)=>titleScore(b,page,regions)-titleScore(a,page,regions))[0]||null;
+}
+function cleanLine(text){return String(text||"").replace(/^[-•▪◦]\s*/,"").replace(/\s+/g," ").trim();}
+function lineInBox(line,box){return line.x>=box.x-8&&line.x<=box.x+box.w+8&&line.y>=box.y-8&&line.y<=box.y+box.h+8;}
 function buildCandidate(group){
-  const page=group.pages[0];
-  const lines=group.pages.flatMap(p=>p.lines);
-  const titleLine=findTitleLineFromPage(page);
-  const title=titleLine?.text||findTitle(lines)||`Recipe on page ${group.startPage}`;
-  let mode="",ingredients=[],instructions=[];
-  for(const line of lines){
-    if(line===title)continue;
-    if(/^ingredients?\b/i.test(line)){mode="ingredients";continue;}
-    if(/^(directions?|instructions?|method)\b/i.test(line)){mode="instructions";continue;}
-    if(mode==="ingredients"&&(ingredientLike(line)||(!instructionLike(line)&&line.length<120&&!titleRejected(line))))ingredients.push(line);
-    else if(mode==="instructions"&&line.length>12&&!ingredientLike(line))instructions.push(line);
+  const page=group.pages[0], W=page.width||600,H=page.height||800;
+  const ingredientsHeader=findRegionHeader(page,"ingredients");
+  const instructionsHeader=findRegionHeader(page,"instructions");
+  const regions={ingredients:ingredientsHeader,instructions:instructionsHeader};
+  const titleLine=findTitleLineFromPage(page,regions);
+  const title=titleLine?.text||`Recipe on page ${group.startPage}`;
+  const lines=(page.richLines||[]).filter(l=>l!==titleLine&&!SECTION_NOISE.test(l.text)&&!LINK_NOISE.test(l.text));
+  let ingredientLines=[],instructionLines=[];
+
+  if(ingredientsHeader && instructionsHeader){
+    const sameColumn=Math.abs(ingredientsHeader.x-instructionsHeader.x)<W*.18;
+    if(sameColumn){
+      // Stacked left-column headings (Soul Fuel): ingredients above instructions.
+      ingredientLines=lines.filter(l=>l.x<W*.48 && l.y<ingredientsHeader.y && l.y>instructionsHeader.y+8);
+      instructionLines=lines.filter(l=>l.x<W*.52 && l.y<instructionsHeader.y);
+    }else{
+      // Side-by-side / mixed columns (Heat & Eat): use each heading's visual column.
+      const split=(ingredientsHeader.x+instructionsHeader.x)/2;
+      ingredientLines=lines.filter(l=>l.x<split && l.y<ingredientsHeader.y+8);
+      instructionLines=lines.filter(l=>l.x>=split-12 && l.y<instructionsHeader.y+10);
+    }
   }
-  if(!ingredients.length)ingredients=lines.filter(line=>line!==title&&ingredientLike(line));
-  if(!instructions.length)instructions=lines.filter(line=>line!==title&&instructionLike(line));
-  return {include:true,title,titleLine,pageWidth:page.width,pageHeight:page.height,page:group.startPage,endPage:group.endPage,ingredients:[...new Set(ingredients)].slice(0,80),instructions:[...new Set(instructions)].slice(0,60),protein:"",type:"",cuisine:"",warnings:[]};
+  // Semantic fallback when headings are decorative or absent from the text layer.
+  if(!ingredientLines.length)ingredientLines=lines.filter(l=>ingredientLike(l.text));
+  if(!instructionLines.length)instructionLines=lines.filter(l=>instructionLike(l.text)||(/^\d+[.)]?\s*/.test(l.text)&&l.text.length>12));
+
+  const ingredients=[...new Set(ingredientLines.map(l=>cleanLine(l.text)).filter(t=>t&&t!==title&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&(ingredientLike(t)||t.length<95)))].slice(0,80);
+  const instructions=[...new Set(instructionLines.map(l=>cleanLine(l.text)).filter(t=>t&&t!==title&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&!ingredientLike(t)&&t.length>8))].slice(0,60);
+  const leftDensity=lines.filter(l=>l.x<W/2).reduce((n,l)=>n+l.text.length,0),rightDensity=lines.filter(l=>l.x>=W/2).reduce((n,l)=>n+l.text.length,0);
+  return {include:true,title,titleLine,regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings:[],engineVersion:COOKBOOK_ENGINE_VERSION};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
 function showReview(){

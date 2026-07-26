@@ -1,0 +1,11 @@
+RECIPE VAULT v1.6.0 — ADAPTIVE COOKBOOK LAYOUT ENGINE
+
+• Rebuilds digital-cookbook parsing around visual x/y layout rather than PDF text order.
+• Detects recipe pages using ingredients + instructions structure and skips dividers, intros, indexes, and cheat sheets.
+• Rejects hyperlink/button noise such as “CLICK HERE FOR” and “VIDEO TUTORIAL” as recipe titles.
+• Supports stacked-column and split-column recipe templates inside the same cookbook.
+• Extracts ingredients and directions from their visual regions instead of mixing neighboring columns.
+• Chooses a template-aware hero-photo crop and never falls back to the entire page image.
+• Stores the parser engine version on detected recipe candidates for future profile upgrades.
+
+Re-analyze the original PDF after installing. Review results created by older builds are not reused.
