@@ -1,8 +1,8 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "3.0.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.0", parser:"Layout Engine v1"};
+const COOKBOOK_ENGINE_VERSION = "3.1.0";
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.1", parser:"TOC Intelligence v1"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -130,11 +130,88 @@ function recipeVideoLinks(pages){
   return out.slice(0,1);
 }
 
+
+async function resolvePdfDestinationPage(pdf,dest){
+  try{
+    const resolved=typeof dest==="string" ? await pdf.getDestination(dest) : dest;
+    if(!Array.isArray(resolved)||!resolved[0])return null;
+    const ref=resolved[0];
+    if(Number.isInteger(ref))return ref+1;
+    return (await pdf.getPageIndex(ref))+1;
+  }catch{return null;}
+}
+async function buildTocTitleMap(pdf){
+  const map=new Map();
+  const add=(page,title,source)=>{
+    title=cleanLine(title||"");
+    if(!page||!title||title.length<3||title.length>120||SECTION_NOISE.test(title)||LINK_NOISE.test(title))return;
+    const existing=map.get(page);
+    if(!existing||title.length>existing.title.length)map.set(page,{title,source});
+  };
+  const walk=async items=>{
+    for(const item of items||[]){
+      const page=await resolvePdfDestinationPage(pdf,item.dest);
+      if(page)add(page,item.title,"PDF outline");
+      if(item.items?.length)await walk(item.items);
+    }
+  };
+  try{await walk(await pdf.getOutline());}catch{}
+  // Digital cookbook tables of contents often use internal link annotations rather than PDF outlines.
+  for(let pageNo=1;pageNo<=Math.min(pdf.numPages,14);pageNo++){
+    try{
+      const page=await pdf.getPage(pageNo);
+      const content=await page.getTextContent();
+      const lines=itemsToStructuredLines(content.items);
+      const annotations=await page.getAnnotations({intent:"display"});
+      for(const a of annotations||[]){
+        if(a.url||a.unsafeUrl)continue;
+        const target=await resolvePdfDestinationPage(pdf,a.dest);
+        const label=annotationText(lines,a.rect);
+        if(target&&label)add(target,label,"linked table of contents");
+      }
+    }catch{}
+  }
+  return map;
+}
+function applyTocTitles(candidates,tocMap){
+  for(const candidate of candidates){
+    let match=tocMap.get(candidate.page);
+    if(!match){
+      // Some PDFs link to the page immediately before/after the visible numbered page.
+      for(const delta of [-1,1]){const nearby=tocMap.get(candidate.page+delta);if(nearby){match=nearby;break;}}
+    }
+    if(match){
+      candidate.visualTitle=candidate.title;
+      candidate.title=smartTitleCase(match.title);
+      candidate.titleSource=match.source;
+      candidate.titleConfidence=99;
+      candidate.warnings=(candidate.warnings||[]).filter(w=>!/title/i.test(w));
+    }else{
+      candidate.titleSource="visual region fallback";
+      candidate.titleConfidence=titleRejected(candidate.title)?25:Math.min(88,Math.round((candidate.titleLine?.fontSize||10)*3));
+      if(candidate.titleConfidence<55&&!candidate.warnings.some(w=>/title/i.test(w)))candidate.warnings.push("Low-confidence title: verify before importing.");
+    }
+    candidate.debugReport={
+      page:candidate.page, layout:candidate.layoutProfile, chosenTitle:candidate.title, titleSource:candidate.titleSource,
+      visualTitle:candidate.visualTitle||candidate.title, confidence:candidate.titleConfidence,
+      titleLine:candidate.titleLine||null, regions:candidate.regions||{},
+      nearbyLines:(candidate.pages?.[0]?.richLines||[]).slice(0,80)
+    };
+  }
+}
+function downloadParserReport(index){
+  syncReviewFields();
+  const r=importState?.candidates?.[index];if(!r)return;
+  const payload={build:176,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
 async function analyzePdf(file){
   $("choosePdfPanel").hidden=true;$("analyzePanel").hidden=false;$("importHeading").textContent="Analyzing cookbook";
   try{
     const pdfjs=await getPdfJs(); const buffer=await file.arrayBuffer(); const pdf=await pdfjs.getDocument({data:buffer}).promise;
-    const pages=[]; let cover="";
+    const pages=[]; let cover=""; const tocMap=await buildTocTitleMap(pdf);
     for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
       $("analyzeStatus").textContent=`Reading page ${pageNo} of ${pdf.numPages}`;$("analyzeCurrent").textContent="Looking for titles, ingredient lists, and cooking steps…";$("analyzeProgress").value=Math.round(pageNo/pdf.numPages*85);
       const page=await pdf.getPage(pageNo); const content=await page.getTextContent();
@@ -147,7 +224,7 @@ async function analyzePdf(file){
       if(pageNo===1){const viewport=page.getViewport({scale:.45});const canvas=document.createElement("canvas");canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;cover=canvas.toDataURL("image/jpeg",.7);}
     }
     $("analyzeStatus").textContent="Separating recipes from the rest of the book…";$("analyzeProgress").value=92;
-    const candidates=detectRecipes(pages);
+    const candidates=detectRecipes(pages); applyTocTitles(candidates,tocMap);
     $("analyzeStatus").textContent="Creating recipe photos…";
     // Digital cookbooks often contain dozens of PDF image objects per page. Scanning
     // every object was much slower than rendering one small crop, so photo creation
@@ -167,7 +244,7 @@ async function analyzePdf(file){
       }));
       await nextFrame();
     }
-    importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:""};
+    importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:"",tocCount:tocMap.size};
     $("analyzeProgress").value=100; showReview();
   }catch(error){$("analyzePanel").innerHTML=`<div class="cookbook-analyze-card"><h3>Could not read this PDF</h3><p>${escapeHTML(error.message||"PDF analysis failed.")}</p><button class="secondary" onclick="location.reload()">Start over</button></div>`;}
 }
@@ -787,7 +864,7 @@ function showReview(){
 }
 function renderReview(){
   const selected=importState.candidates.filter(x=>x.include).length;$('reviewSummary').textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
-  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
+  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="parser-source-row"><span class="parser-source-badge">Title: ${escapeHTML(r.titleSource||"visual fallback")} · ${Number(r.titleConfidence||0)}%</span><button type="button" class="secondary compact-button" data-parser-report="${i}">Download parser report</button></div><details class="parser-debug"><summary>🐞 Debug parser</summary><pre>${escapeHTML(JSON.stringify(r.debugReport||{},null,2))}</pre></details><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
 }
 function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title);r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
@@ -807,7 +884,7 @@ async function deleteCookbook(removeRecipes){
   library=library.filter(x=>x.id!==cb.id);saveLibrary();$("deleteCookbookDialog").close();renderShelf();if(deletionFailed)alert("The cookbook was removed from the shelf, but your Apps Script does not appear to support permanent recipe deletion. Its recipes were left in the vault.");
 }
 
-document.addEventListener("click",e=>{const open=e.target.closest("[data-open-cookbook]");if(open&&!e.target.closest("[data-delete-cookbook]")){openCookbook(open.dataset.openCookbook);return;}const del=e.target.closest("[data-delete-cookbook]");if(del){e.stopPropagation();deleteTargetId=del.dataset.deleteCookbook;const cb=library.find(x=>x.id===deleteTargetId);$("deleteCookbookMessage").textContent=`Choose what should happen to ${cb?.title||"this cookbook"}.`;$("deleteCookbookDialog").showModal();}});
+document.addEventListener("click",e=>{const report=e.target.closest("[data-parser-report]");if(report){downloadParserReport(Number(report.dataset.parserReport));return;}const open=e.target.closest("[data-open-cookbook]");if(open&&!e.target.closest("[data-delete-cookbook]")){openCookbook(open.dataset.openCookbook);return;}const del=e.target.closest("[data-delete-cookbook]");if(del){e.stopPropagation();deleteTargetId=del.dataset.deleteCookbook;const cb=library.find(x=>x.id===deleteTargetId);$("deleteCookbookMessage").textContent=`Choose what should happen to ${cb?.title||"this cookbook"}.`;$("deleteCookbookDialog").showModal();}});
 $("uploadCookbookBtn").onclick=showImport;$("emptyUploadBtn").onclick=showImport;$("cancelImport").onclick=cancelImport;$("choosePdfBtn").onclick=()=>$("cookbookFile").click();$("cookbookFile").onchange=e=>e.target.files?.[0]&&analyzePdf(e.target.files[0]);
 const drop=$("choosePdfPanel");["dragenter","dragover"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add("dragging")}));["dragleave","drop"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove("dragging")}));drop.addEventListener("drop",e=>e.dataTransfer.files?.[0]&&analyzePdf(e.dataTransfer.files[0]));
 $("selectAllRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=true);renderReview();};$("selectNoneRecipes").onclick=()=>{syncReviewFields();importState.candidates.forEach(r=>r.include=false);renderReview();};$("recipeReviewList").addEventListener("change",e=>{if(e.target.matches("[data-review-include]")){syncReviewFields();renderReview();}});$("importCookbookRecipes").onclick=importSelected;

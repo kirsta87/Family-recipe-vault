@@ -1,0 +1,11 @@
+RECIPE VAULT BUILD 176
+
+TOC Intelligence & Parser Diagnostics
+
+- Uses PDF outlines and linked table-of-contents entries as the primary recipe-title source.
+- Falls back to visual region title detection only when no navigation title is available.
+- Shows title source and confidence on each review card.
+- Adds an expandable parser diagnostics panel.
+- Adds a downloadable JSON parser report for each candidate recipe.
+
+Commit: feat: add TOC intelligence and parser diagnostics
