@@ -1,0 +1,7 @@
+Recipe Vault v1.6.8 — Build 168
+
+- Formats imported cookbook recipe titles in title case.
+- Adds a separate review field for video/tutorial links.
+- Reads clickable PDF annotations and keeps links labeled as video/tutorial links.
+- Saves detected links in recipe notes and structured link fields.
+- Rejects comma-separated seasoning fragments as recipe titles.

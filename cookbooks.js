@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const COOKBOOK_ENGINE_VERSION = "1.6.7";
+const COOKBOOK_ENGINE_VERSION = "1.6.8";
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -23,6 +23,26 @@ function saveLibrary(){ localStorage.setItem(LIBRARY_KEY, JSON.stringify(library
 function makeId(){ return `cb_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
 function normalize(value){ return String(value||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); }
 function splitList(value){ return String(value||"").split(/\r?\n/).map(v=>v.trim().replace(/^[-•▪◦]\s*/,"")).filter(Boolean); }
+function smartTitleCase(value){
+  const small=new Set(["a","an","and","as","at","but","by","for","from","in","into","nor","of","on","or","over","per","the","to","up","via","with"]);
+  const keep=new Set(["BBQ","BLT","PB&J","TBS","TBSP","TSP"]);
+  return String(value||"").trim().toLowerCase().split(/(\s+)/).map((part,index,all)=>{
+    if(/^\s+$/.test(part))return part;
+    const bare=part.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi,"");
+    const prefix=part.slice(0,part.indexOf(bare));
+    const suffix=part.slice(part.indexOf(bare)+bare.length);
+    if(!bare)return part;
+    const upper=bare.toUpperCase();
+    if(keep.has(upper))return prefix+upper+suffix;
+    if(/^\d/.test(bare))return prefix+bare.replace(/[a-z]+/gi,m=>m[0].toUpperCase()+m.slice(1))+suffix;
+    const wordIndex=all.slice(0,index).filter(x=>!/^\s+$/.test(x)).length;
+    const totalWords=all.filter(x=>!/^\s+$/.test(x)).length;
+    const lower=bare.toLowerCase();
+    const cased=(wordIndex>0&&wordIndex<totalWords-1&&small.has(lower))?lower:lower.charAt(0).toUpperCase()+lower.slice(1);
+    return prefix+cased+suffix;
+  }).join("");
+}
+function splitLinks(value){return [...new Set(String(value||"").split(/\r?\n/).map(v=>v.trim()).filter(v=>/^https?:\/\//i.test(v)))];}
 
 async function loadRecipes(){
   try{
@@ -72,6 +92,32 @@ async function getPdfJs(){
   const mod=await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs");
   mod.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs"; return mod;
 }
+function annotationText(lines,rect){
+  if(!Array.isArray(rect)||rect.length<4)return "";
+  const [x1,y1,x2,y2]=rect; const pad=14;
+  const hits=(lines||[]).filter(l=>{
+    const cx=(l.x||0)+(l.width||0)/2, cy=l.y||0;
+    return cx>=Math.min(x1,x2)-pad&&cx<=Math.max(x1,x2)+pad&&cy>=Math.min(y1,y2)-pad&&cy<=Math.max(y1,y2)+pad;
+  }).sort((a,b)=>b.y-a.y||a.x-b.x);
+  return hits.map(l=>l.text).join(" ").replace(/\s+/g," ").trim();
+}
+function extractPageLinks(annotations,lines){
+  return (annotations||[]).map(a=>({url:a.url||a.unsafeUrl||"",label:annotationText(lines,a.rect),rect:a.rect||[]}))
+    .filter(x=>/^https?:\/\//i.test(x.url));
+}
+function recipeVideoLinks(pages){
+  const seen=new Set(),out=[];
+  for(const page of pages||[]){
+    for(const link of page.links||[]){
+      const label=cleanLine(link.label||"");
+      if(!/video|tutorial|watch/i.test(label))continue;
+      if(seen.has(link.url))continue;
+      seen.add(link.url);out.push(link.url);
+    }
+  }
+  return out;
+}
+
 async function analyzePdf(file){
   $("choosePdfPanel").hidden=true;$("analyzePanel").hidden=false;$("importHeading").textContent="Analyzing cookbook";
   try{
@@ -82,8 +128,10 @@ async function analyzePdf(file){
       const page=await pdf.getPage(pageNo); const content=await page.getTextContent();
       const richLines=itemsToStructuredLines(content.items);
       const lines=richLines.map(line=>line.text);
+      const annotations=await page.getAnnotations({intent:"display"}).catch(()=>[]);
+      const links=extractPageLinks(annotations,richLines);
       const baseViewport=page.getViewport({scale:1});
-      pages.push({page:pageNo,lines,richLines,text:lines.join("\n"),width:baseViewport.width,height:baseViewport.height});
+      pages.push({page:pageNo,lines,richLines,links,text:lines.join("\n"),width:baseViewport.width,height:baseViewport.height});
       if(pageNo===1){const viewport=page.getViewport({scale:.45});const canvas=document.createElement("canvas");canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;cover=canvas.toDataURL("image/jpeg",.7);}
     }
     $("analyzeStatus").textContent="Separating recipes from the rest of the book…";$("analyzeProgress").value=92;
@@ -298,7 +346,9 @@ function detectRecipes(pages){
 }
 function titleRejected(line){
   const text=String(line||"").replace(/\s+/g," ").trim();
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||yieldLike(text)||ingredientLike(text)||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  const ingredientTerms=(text.match(/\b(?:salt|pepper|paprika|garlic powder|onion powder|seasoning|oil|broth|cream|cheese|flour|sugar)\b/gi)||[]).length;
+  const ingredientFragment=/[,;:]/.test(text)&&ingredientTerms>=2;
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||yieldLike(text)||ingredientLike(text)||ingredientFragment||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -578,7 +628,7 @@ function buildCandidate(group){
   // Keep prose descriptions out of directions. A valid directions list should be step-like and ordered.
   instructions=instructions.filter((t,i)=>i===0||/^\d+[.)]\s+/.test(t));
   const leftDensity=lines.filter(l=>l.x<W/2).reduce((n,l)=>n+l.text.length,0),rightDensity=lines.filter(l=>l.x>=W/2).reduce((n,l)=>n+l.text.length,0);
-  return {include:true,title,titleLine,yieldText:meta.yieldText,description:meta.description,regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings:[],engineVersion:COOKBOOK_ENGINE_VERSION};
+  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings:[],engineVersion:COOKBOOK_ENGINE_VERSION};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
 function showReview(){
@@ -586,15 +636,15 @@ function showReview(){
 }
 function renderReview(){
   const selected=importState.candidates.filter(x=>x.include).length;$('reviewSummary').textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
-  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
+  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`).join('');
 }
-function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title;r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
+function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title);r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
 async function importSelected(){
   syncReviewFields(); const selected=importState.candidates.filter(r=>r.include); if(!selected.length)return alert("Select at least one recipe.");
   const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=makeId(); let imported=0,skipped=0,failed=0;
   const btn=$("importCookbookRecipes");btn.disabled=true;
-  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const recipe={name:r.title,url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions,nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",notes:[r.description,`Yield: ${r.yieldText||""}`,`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`].filter(Boolean).join("\n\n"),made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_page:r.page};
+  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions,nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:[r.description,`Yield: ${r.yieldText||""}`,(r.links||[]).length?`Video / tutorial links:\n${r.links.join("\n")}`:"",`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`].filter(Boolean).join("\n\n"),made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_page:r.page};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
   library.unshift({id,title,author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
