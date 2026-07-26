@@ -1,0 +1,6 @@
+BUILD 171 — TIME-LED TITLE FIX
+
+- Recognizes recipe titles beginning with a duration, such as “10 Min Air Fryer Chicken.”
+- Prevents duration-led titles from being misclassified as ingredient lines.
+- Restores yield, description, and ingredient extraction when those fields are anchored beneath the correct title.
+- Cookbook Engine 2.2 / Region Parser v3.

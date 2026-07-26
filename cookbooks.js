@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
 const COOKBOOK_ENGINE_VERSION = "2.1.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"2.1", parser:"Region Parser v2"};
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"2.2", parser:"Region Parser v3"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -324,7 +324,14 @@ const LINK_NOISE=/\b(click|tap)\s+here\b|video\s+tutorial|shop\s+here|see\s+the\
 const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies)$/i;
 const YIELD_VALUE_RX=/^(?:(?:yield\/?servings?|serves?|servings?|makes?)\s*:?\s*)?(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:tenders?|servings?|wraps?|bowls?|pieces?|portions?|cookies?|muffins?|pancakes?|waffles?|sandwiches?|cups?)\s*(?:[|·•-]\s*(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+servings?)?$/i;
 function yieldLike(text){return YIELD_VALUE_RX.test(cleanLine(text));}
-function ingredientLike(line){return /^([¼½¾⅓⅔⅛⅜⅝⅞\d]|one |two |three |four |five |six |a |an )/i.test(line)&&/(cup|tbsp|tbs\b|tablespoon|tsp|teaspoon|ounce|oz\b|pound|lb\b|gram|kg\b|ml\b|clove|can\b|package|block\b|pinch|slice|piece|sprig|bunch|stick|large|medium|small|wrap|egg\b|bread|milk|cheese|chicken|beef|pork|salt|pepper|oil)/i.test(line);}
+function timeLedTitleLike(text){
+  const t=cleanLine(text);
+  return /^\d{1,3}\s*(?:min(?:ute)?s?|hr|hour)s?\b/i.test(t) && /\b(?:chicken|beef|pork|pasta|rice|potatoes?|fries|oats|toast|wrap|waffle|pancake|bowl|soup|salad|casserole|skillet|cookies?|muffins?|bread)\b/i.test(t);
+}
+function ingredientLike(line){
+  if(timeLedTitleLike(line))return false;
+  return /^([¼½¾⅓⅔⅛⅜⅝⅞\d]|one |two |three |four |five |six |a |an )/i.test(line)&&/(cup|tbsp|tbs\b|tablespoon|tsp|teaspoon|ounce|oz\b|pound|lb\b|gram|kg\b|ml\b|clove|can\b|package|block\b|pinch|slice|piece|sprig|bunch|stick|large|medium|small|wrap|egg\b|bread|milk|cheese|chicken|beef|pork|salt|pepper|oil)/i.test(line);
+}
 function instructionLike(line){return /^(\d+[.)]|step\s+\d+|preheat|heat |stir |mix |add |place |cook |bake |roast |grill |season |combine |whisk |serve |pour |transfer |cover |bring |slice |flatten |set |let |remove |fold |flip |spread |spray |dip |melt )/i.test(line);}
 function pageScore(p){
   const t=p.text; let s=0;
@@ -349,7 +356,7 @@ function titleRejected(line){
   const text=String(line||"").replace(/\s+/g," ").trim();
   const ingredientTerms=(text.match(/\b(?:salt|pepper|paprika|garlic powder|onion powder|seasoning|oil|broth|cream|cheese|flour|sugar)\b/gi)||[]).length;
   const ingredientFragment=/[,;:]/.test(text)&&ingredientTerms>=2;
-  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||yieldLike(text)||ingredientLike(text)||ingredientFragment||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
+  return !text||text.length<4||text.length>80||SECTION_NOISE.test(text)||LINK_NOISE.test(text)||yieldLike(text)||(!timeLedTitleLike(text)&&ingredientLike(text))||ingredientFragment||instructionLike(text)||/^(?:page\s*)?\d{1,3}$/i.test(text)||/^(chapter|part|page)\s/i.test(text)||/^(the|a)\s+(basics|collection)$/i.test(text)||!/[A-Za-z]/.test(text);
 }
 function titleScore(line,page,regions){
   const text=line.text.trim(); let score=0; const words=text.split(/\s+/).length;
@@ -360,6 +367,7 @@ function titleScore(line,page,regions){
   if(/[.!?]$/.test(text))score-=18;
   if(/[,;:]/.test(text)&&words>5)score-=28;
   if(/^(?:so|this|another|the best|a great)\b/i.test(text)&&words>5)score-=35;
+  if(timeLedTitleLike(text))score+=70;
   if(LINK_NOISE.test(text))score-=100;
   if(yieldLike(text))score-=140;
   const ing=regions?.ingredients,ins=regions?.instructions;
@@ -421,7 +429,7 @@ function buildTitle(page,titleLine,regions){
     .filter(l=>!SECTION_NOISE.test(cleanLine(l.text))&&!LINK_NOISE.test(l.text))
     .filter(l=>{
       const text=cleanLine(l.text);
-      if(!text||ingredientLike(text)||instructionLike(text)||/^\d+[.)]?\s*/.test(text))return false;
+      if(!text||ingredientLike(text)||instructionLike(text)||(/^\d+[.)]?\s*/.test(text)&&!timeLedTitleLike(text)))return false;
       const ratio=(l.fontSize||1)/titleSize;
       const sameBand=Math.abs((l.x||0)-(titleLine.x||0))<Math.max(115,W*.22) || sameVisualColumn(l,titleLine,W);
       const compactGap=verticalGap(l,titleLine)<=Math.max(72,titleSize*3.2);
