@@ -1,0 +1,7 @@
+BUILD 186 — COOKBOOK RECIPE DETAIL CLEANUP
+
+- Decodes JSON-formatted ingredient and instruction lists
+- Moves legacy cookbook author descriptions out of Family Notes
+- Restores servings from legacy yield fields
+- Restores tutorial links from legacy and serialized link fields
+- Saves Family Notes in their own field
