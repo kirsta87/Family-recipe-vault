@@ -1,0 +1,10 @@
+Build 181 — Cookbook browsing and recipe detail polish
+- Edit cookbook title, author, and collection after import
+- Entire recipe card opens in-place inside the cookbook
+- Removed Open recipe button and page number from recipe cards
+- Smaller, sharper recipe images
+- Prevented double-numbered instructions
+- Servings, author description, tutorial links, and source appear above recipe content
+- Tutorial links are clickable
+- Family notes now stay reserved for family notes
+- Source page preview is saved for newly imported recipes

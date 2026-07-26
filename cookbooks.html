@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Cookbook Library · Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=180">
+  <link rel="stylesheet" href="styles.css?v=181">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
 </head>
 <body>
@@ -54,6 +54,26 @@
     <div id="importResults" hidden class="cookbook-results"></div>
   </section>
 </main>
+
+<dialog id="cookbookRecipeDialog" class="wide cookbook-recipe-dialog">
+  <button id="closeCookbookRecipe" class="close" type="button">×</button>
+  <p class="eyebrow" id="cookbookRecipeSource"></p>
+  <h2 id="cookbookRecipeTitle"></h2>
+  <div id="cookbookRecipeTopMeta" class="recipe-top-meta"></div>
+  <img id="cookbookRecipeImage" class="cookbook-detail-recipe-image" alt="" hidden>
+  <div id="cookbookRecipeDescription" class="author-note" hidden></div>
+  <div id="cookbookRecipeLinks" class="recipe-tutorial-links" hidden></div>
+  <div class="structured-recipe"><div><h3>Ingredients</h3><ul id="cookbookRecipeIngredients"></ul></div><div><h3>Instructions</h3><ol id="cookbookRecipeInstructions"></ol></div></div>
+  <label class="field">Family notes<textarea id="cookbookRecipeNotes" rows="3"></textarea></label>
+  <div class="actions"><button id="saveCookbookRecipeNotes" class="secondary" type="button">Save notes</button><button id="viewCookbookSourcePage" class="secondary" type="button">View original PDF page</button></div>
+</dialog>
+<dialog id="editCookbookDialog">
+  <button id="closeEditCookbook" class="close" type="button">×</button><h2>Edit cookbook</h2>
+  <label class="field">Cookbook title<input id="editCookbookTitle"></label>
+  <label class="field">Author<input id="editCookbookAuthor"></label>
+  <label class="field">Default collection<input id="editCookbookCollection"></label>
+  <div class="actions"><button id="saveCookbookMetadata" class="primary" type="button">Save changes</button><button id="cancelEditCookbook" class="secondary" type="button">Cancel</button></div>
+</dialog>
 <dialog id="sourcePageDialog" class="source-page-dialog">
   <button id="closeSourcePage" class="close" type="button">×</button>
   <div class="source-page-header">
@@ -65,7 +85,7 @@
   <img id="sourcePageImage" class="source-page-image" alt="Original cookbook PDF page" hidden>
 </dialog>
 <dialog id="deleteCookbookDialog"><button id="closeDeleteCookbook" class="close">×</button><h2>Remove cookbook?</h2><p id="deleteCookbookMessage"></p><div class="stacked-actions"><button id="removeCookbookOnly" class="secondary">Remove cookbook from shelf only</button><button id="removeCookbookAndRecipes" class="danger">Remove cookbook and its recipes</button><button id="cancelDeleteCookbook" class="secondary">Cancel</button></div><p class="muted">Removing recipes requires the connected Apps Script to support recipe deletion. If it does not, the cookbook will still be removed from the shelf and the recipes will remain in the vault.</p></dialog>
-<script src="config.js?v=180"></script>
-<script type="module" src="cookbooks.js?v=180"></script>
-  <script src="build-status.js?v=180"></script>
+<script src="config.js?v=181"></script>
+<script type="module" src="cookbooks.js?v=181"></script>
+  <script src="build-status.js?v=181"></script>
 </body></html>

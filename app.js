@@ -210,7 +210,15 @@ function clean(r){
     instructions: parseStoredList(r.instructions),
     nutrition: String(r.nutrition || ""),
     pdf_url: String(r.pdf_url || ""),
-    last_made: String(r.last_made || "")
+    last_made: String(r.last_made || ""),
+    description: String(r.description || r.author_notes || ""),
+    yield: String(r.yield || ""),
+    video_url: String(r.video_url || ""),
+    recipe_links: parseStoredList(r.recipe_links),
+    cookbook_title: String(r.cookbook_title || ""),
+    cookbook_author: String(r.cookbook_author || ""),
+    cookbook_page: String(r.cookbook_page || ""),
+    source_page_image: String(r.source_page_image || "")
   };
 }
 
@@ -1100,7 +1108,7 @@ function render(){
         <div class="meta">${escapeHTML([recipe.protein, recipe.type, recipe.source].filter(Boolean).join(" • "))}</div>
         <h2>${escapeHTML(recipe.name || "Untitled recipe")}</h2>
         ${query && item.reason ? `<p class="match-reason">${escapeHTML(item.reason)}</p>` : ""}
-        <p>${escapeHTML(recipe.notes || "")}</p>
+        <p>${escapeHTML(recipe.description || recipe.notes || "")}</p>
       </article>
     `;
   }).join("");
@@ -1526,6 +1534,10 @@ function openRecipe(recipe){
     recipe.total_time ? `${recipe.total_time} min` : ""
   ].filter(Boolean).join(" • ");
   $("notes").value = recipe.notes || "";
+  const importMeta=$("recipeImportMeta");
+  const metaChips=[recipe.yield?`<span class="recipe-meta-chip">Servings: ${escapeHTML(recipe.yield)}</span>`:"",recipe.cookbook_title?`<span class="recipe-meta-chip">${escapeHTML(recipe.cookbook_title)}${recipe.cookbook_page?` · Page ${escapeHTML(recipe.cookbook_page)}`:""}</span>`:""];importMeta.innerHTML=metaChips.filter(Boolean).join("");importMeta.hidden=!metaChips.some(Boolean);
+  const description=$("recipeDescription");description.textContent=recipe.description||"";description.hidden=!recipe.description;
+  const tutorial=$("recipeTutorialLinks");const tutorialLinks=[...(recipe.recipe_links||[]),recipe.video_url].filter(Boolean).filter((x,i,a)=>a.indexOf(x)===i);tutorial.innerHTML=tutorialLinks.map((url,i)=>`<a class="secondary linkbtn" href="${escapeHTML(url)}" target="_blank" rel="noopener">${i?`Tutorial link ${i+1}`:"Watch video tutorial"}</a>`).join("");tutorial.hidden=!tutorialLinks.length;
 
   const madeSummary = $("madeSummary");
   const madeCount = Number(recipe.made_count || 0);
@@ -1561,13 +1573,14 @@ function openRecipe(recipe){
     : "<li>Ingredient details have not been imported for this recipe yet.</li>";
 
   $("instructionsList").innerHTML = recipe.instructions.length
-    ? recipe.instructions.map(item => `<li>${escapeHTML(item)}</li>`).join("")
+    ? recipe.instructions.map(item => `<li>${escapeHTML(String(item).replace(/^\s*\d+[.)]\s*/,""))}</li>`).join("")
     : "<li>Cooking steps have not been imported for this recipe yet.</li>";
 
   $("nutritionText").textContent = recipe.nutrition || "Nutrition details have not been imported.";
   $("hideBtn").textContent = recipe.hidden ? "Restore recipe" : "Hide recipe";
-  $("sourceLink").href = recipe.url || "#";
-  $("pdfLink").href = recipe.pdf_url || pdfURL(recipe);
+  $("sourceLink").href = recipe.url || "#";$("sourceLink").hidden=!recipe.url;
+  $("pdfLink").href = recipe.pdf_url || "#";$("pdfLink").hidden=!recipe.pdf_url;
+  $("sourcePageBtn").hidden=!(recipe.source_page_image||recipe.cookbook_page);
   renderStars("kirstaStars", "kirsta_rating");
   renderStars("tjStars", "tj_rating");
   renderStars("torrinStars", "torrin_rating");
@@ -2302,6 +2315,7 @@ on("closeRecipe", "click", () => {
   $("recipeDialog").close();
 });
 on("saveNotes", "click", () => write("update", active, {notes: $("notes").value.trim()}));
+on("sourcePageBtn","click",()=>{if(active?.source_page_image){const w=window.open();w.document.write(`<title>${escapeHTML(active.name||"Source page")}</title><img src="${active.source_page_image}" style="max-width:100%;display:block;margin:auto">`);w.document.close();}else if(active?.cookbook_page){location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(active.cookbook_page)}`;}});
 on("madeBtn", "click", () => write("update", active, {
   made_count: Number(active.made_count || 0) + 1,
   last_made: new Date().toISOString().slice(0,10)

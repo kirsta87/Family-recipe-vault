@@ -1,8 +1,8 @@
 {
-  "build": 180,
-  "version": "1.8.0",
-  "label": "Cookbook Source Page Review",
-  "builtAt": "2026-07-26T14:25:00-06:00",
-  "cookbookEngine": "3.3",
-  "parser": "Coordinate Region Collector v3 + Quality Report"
+  "build": 181,
+  "version": "1.8.1",
+  "label": "Cookbook browsing polish",
+  "cookbookEngine": "3.0",
+  "parser": "Layout Engine v2",
+  "builtAt": "2026-07-26T20:30:00Z"
 }

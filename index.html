@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=180">
+  <link rel="stylesheet" href="styles.css?v=181">
 </head>
 <body>
 <header class="hero">
@@ -254,6 +254,9 @@ https://www.budgetbytes.com/..."></textarea>
   <button id="closeRecipe" class="close">×</button>
   <h2 id="recipeTitle"></h2>
   <p id="recipeMeta"></p>
+  <div id="recipeImportMeta" class="recipe-import-meta" hidden></div>
+  <div id="recipeDescription" class="author-note" hidden></div>
+  <div id="recipeTutorialLinks" class="recipe-tutorial-links" hidden></div>
   <div id="madeSummary" class="made-summary" hidden></div>
   <img id="recipeImage" class="recipe-detail-image" alt="" hidden>
 
@@ -288,8 +291,9 @@ https://www.budgetbytes.com/..."></textarea>
     <button id="saveNotes" class="secondary">Save notes</button>
     <button id="madeBtn" class="secondary">Made this</button>
     <button id="hideBtn" class="danger">Hide recipe</button>
-    <a id="sourceLink" class="secondary linkbtn" target="_blank" rel="noopener">Original page</a>
-    <a id="pdfLink" class="secondary linkbtn" target="_blank" rel="noopener">Open PDF</a>
+    <button id="sourcePageBtn" class="secondary" type="button">View original PDF page</button>
+    <a id="sourceLink" class="secondary linkbtn" target="_blank" rel="noopener" hidden>Original webpage</a>
+    <a id="pdfLink" class="secondary linkbtn" target="_blank" rel="noopener" hidden>Open PDF</a>
   </div>
 </dialog>
 
@@ -471,8 +475,8 @@ https://www.budgetbytes.com/..."></textarea>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js?v=176"></script>
 <script src="recipe-pack-schema.js?v=180"></script>
-<script src="config.js?v=180"></script>
-<script src="app.js?v=180"></script>
-  <script src="build-status.js?v=180"></script>
+<script src="config.js?v=181"></script>
+<script src="app.js?v=181"></script>
+  <script src="build-status.js?v=181"></script>
 </body>
 </html>
