@@ -1,0 +1,15 @@
+RECIPE VAULT v1.5.1 — COOKBOOK PHOTO IMPORT
+
+NEW
+- Scans recipe pages for embedded cookbook photography.
+- Matches the largest likely food photo to each detected recipe.
+- Shows each detected photo in the cookbook review queue.
+- Lets you include or exclude the photo per recipe before import.
+- Imports approved photos into the recipe image field.
+- Displays imported photos while browsing a cookbook.
+
+IMPORTANT
+- Photo extraction is best-effort because cookbook PDFs are built differently.
+- PDFs that flatten a full page into one image may not expose the recipe photo separately.
+- The review queue will clearly say when no separate photo was found.
+- Photos are resized and compressed so they can travel through the existing Recipe Vault write workflow.

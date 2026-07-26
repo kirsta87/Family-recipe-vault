@@ -890,3 +890,15 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .detail-cover{width:150px;aspect-ratio:3/4;border-radius:14px;overflow:hidden;background:#e8e2d4;flex:0 0 auto}.cookbook-detail-header{justify-content:flex-start;margin:22px 0}
 .stacked-actions{display:grid;gap:12px}.success-icon{font-size:50px;color:#697454}
 @media(max-width:700px){.section-heading,.review-toolbar,.cookbook-metadata-card,.cookbook-detail-header{align-items:stretch;flex-direction:column}.cookbook-search{width:100%}.cover-preview,.detail-cover{width:130px}.review-columns{grid-template-columns:1fr}.cookbook-page{width:min(100% - 20px,1180px)}.review-toolbar .actions{display:grid;width:100%}}
+
+/* v1.5.1 — Cookbook recipe photo extraction */
+.recipe-review-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:18px;align-items:start}
+.recipe-photo-review{display:grid;gap:9px}
+.recipe-photo-review img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:13px;background:#eee8dc}
+.recipe-photo-review .cookbook-photo-placeholder{min-height:135px;border:1px dashed rgba(67,72,52,.28);border-radius:13px;padding:16px;display:grid;place-items:center;text-align:center;color:var(--muted);background:#f5f0e7;font-size:.86rem}
+.photo-toggle{justify-content:center;font-size:.82rem}
+.recipe-review-content{min-width:0}
+.cookbook-recipe-card{overflow:hidden}
+.cookbook-recipe-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#eee8dc}
+.cookbook-recipe-photo.cookbook-photo-placeholder{display:grid;place-items:center;font-size:2.4rem}
+@media(max-width:680px){.recipe-review-layout{grid-template-columns:1fr}.recipe-photo-review{max-width:280px}.recipe-photo-review img{aspect-ratio:16/10}}

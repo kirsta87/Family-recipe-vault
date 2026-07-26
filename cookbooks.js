@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
+const PHOTO_MIN_AREA = 42000;
 const CACHE_KEY = "recipeVaultRecipeCacheV118";
 const base = window.RECIPE_VAULT_CONFIG || {};
 const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -41,6 +42,7 @@ function cookbookRecipeMatches(recipe, cookbook){
   return hay.includes(normalize(cookbook.title)) || String(recipe.cookbook_id||"")===cookbook.id;
 }
 function coverMarkup(cb){ return cb.cover ? `<img src="${cb.cover}" alt="">` : `<div class="cover-placeholder">📖</div>`; }
+function recipePhotoMarkup(recipe){ return recipe.image ? `<img class="cookbook-recipe-photo" src="${recipe.image}" alt="${escapeHTML(recipe.name||"Cookbook recipe")}">` : `<div class="cookbook-recipe-photo cookbook-photo-placeholder">🍽️</div>`; }
 function renderShelf(){
   const q=normalize($("cookbookSearch")?.value); const visible=library.filter(cb=>!q||normalize(`${cb.title} ${cb.author}`).includes(q));
   $("cookbookEmpty").hidden=library.length>0;
@@ -56,7 +58,7 @@ function openCookbook(id){
 function renderCookbookRecipes(){
   const cb=library.find(x=>x.id===activeCookbookId); if(!cb)return; const q=normalize($("cookbookRecipeSearch").value);
   const list=recipes.filter(r=>cookbookRecipeMatches(r,cb)).filter(r=>!q||normalize([r.name,r.ingredients,r.tags,r.cuisine].join(" ")).includes(q));
-  $("cookbookRecipeGrid").innerHTML=list.length?list.map(r=>`<article class="card"><div class="card-body"><p class="eyebrow">PAGE ${escapeHTML(r.cookbook_page||String(r.source||"").match(/p\.\s*(\d+)/i)?.[1]||"—")}</p><h3>${escapeHTML(r.name||"Untitled recipe")}</h3><p>${escapeHTML(r.protein||r.type||r.cuisine||"")}</p><a class="secondary linkbtn" href="index.html?recipe=${encodeURIComponent(r.id||"")}">Open recipe</a></div></article>`).join(""):`<div class="empty-state"><strong>No matching recipes found.</strong><p>Recipes imported from this cookbook will appear here.</p></div>`;
+  $("cookbookRecipeGrid").innerHTML=list.length?list.map(r=>`<article class="card cookbook-recipe-card">${recipePhotoMarkup(r)}<div class="card-body"><p class="eyebrow">PAGE ${escapeHTML(r.cookbook_page||String(r.source||"").match(/p\.\s*(\d+)/i)?.[1]||"—")}</p><h3>${escapeHTML(r.name||"Untitled recipe")}</h3><p>${escapeHTML(r.protein||r.type||r.cuisine||"")}</p><a class="secondary linkbtn" href="index.html?recipe=${encodeURIComponent(r.id||"")}">Open recipe</a></div></article>`).join(""):`<div class="empty-state"><strong>No matching recipes found.</strong><p>Recipes imported from this cookbook will appear here.</p></div>`;
 }
 function showImport(){ $("libraryView").hidden=true;$("cookbookDetailView").hidden=true;$("importView").hidden=false;$("choosePdfPanel").hidden=false;$("analyzePanel").hidden=true;$("reviewPanel").hidden=true;$("importResults").hidden=true;importState=null; }
 function cancelImport(){ $("importView").hidden=true;$("libraryView").hidden=false;$("cookbookFile").value="";renderShelf(); }
@@ -78,10 +80,72 @@ async function analyzePdf(file){
     }
     $("analyzeStatus").textContent="Separating recipes from the rest of the book…";$("analyzeProgress").value=92;
     const candidates=detectRecipes(pages);
+    $("analyzeStatus").textContent="Matching cookbook photos to recipes…";
+    for(let i=0;i<candidates.length;i++){
+      const candidate=candidates[i];
+      $("analyzeCurrent").textContent=`Checking photos for ${candidate.title}`;
+      $("analyzeProgress").value=92+Math.round(((i+1)/Math.max(1,candidates.length))*8);
+      candidate.image=await extractRecipePhoto(pdf,candidate).catch(()=>"");
+      candidate.useImage=Boolean(candidate.image);
+    }
     importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:""};
     $("analyzeProgress").value=100; showReview();
   }catch(error){$("analyzePanel").innerHTML=`<div class="cookbook-analyze-card"><h3>Could not read this PDF</h3><p>${escapeHTML(error.message||"PDF analysis failed.")}</p><button class="secondary" onclick="location.reload()">Start over</button></div>`;}
 }
+
+async function extractRecipePhoto(pdf,candidate){
+  let best=null;
+  for(let pageNo=candidate.page;pageNo<=Math.min(candidate.endPage,candidate.page+2);pageNo++){
+    const page=await pdf.getPage(pageNo);
+    const found=await extractImagesFromPage(page);
+    for(const image of found){
+      const area=(image.width||0)*(image.height||0);
+      const ratio=(image.width||1)/(image.height||1);
+      if(area<PHOTO_MIN_AREA||ratio<.45||ratio>2.4)continue;
+      if(!best||area>best.area)best={...image,area};
+    }
+  }
+  return best?.dataUrl||"";
+}
+async function extractImagesFromPage(page){
+  const pdfjs=await getPdfJs();
+  const ops=await page.getOperatorList();
+  const found=[];
+  for(let i=0;i<ops.fnArray.length;i++){
+    const fn=ops.fnArray[i],args=ops.argsArray[i]||[];
+    if(fn===pdfjs.OPS.paintInlineImageXObject&&args[0]){
+      const converted=imageObjectToDataUrl(args[0]); if(converted)found.push(converted);
+    }
+    if(fn===pdfjs.OPS.paintImageXObject&&args[0]){
+      const obj=await getPdfObject(page.objs,args[0]);
+      const converted=imageObjectToDataUrl(obj); if(converted)found.push(converted);
+    }
+  }
+  return found;
+}
+function getPdfObject(store,name){
+  return new Promise(resolve=>{try{const immediate=store.get(name,obj=>resolve(obj));if(immediate)resolve(immediate);}catch{resolve(null);}});
+}
+function imageObjectToDataUrl(obj){
+  if(!obj)return null;
+  const width=obj.width||obj.naturalWidth||0,height=obj.height||obj.naturalHeight||0;
+  if(!width||!height)return null;
+  const maxSide=520,scale=Math.min(1,maxSide/Math.max(width,height));
+  const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+  const ctx=canvas.getContext("2d");
+  try{
+    if(obj.data&&obj.width&&obj.height){
+      let data=obj.data;
+      if(data.length===width*height*3){const rgba=new Uint8ClampedArray(width*height*4);for(let s=0,d=0;s<data.length;s+=3,d+=4){rgba[d]=data[s];rgba[d+1]=data[s+1];rgba[d+2]=data[s+2];rgba[d+3]=255;}data=rgba;}
+      const temp=document.createElement("canvas");temp.width=width;temp.height=height;const tctx=temp.getContext("2d");tctx.putImageData(new ImageData(new Uint8ClampedArray(data),width,height),0,0);ctx.drawImage(temp,0,0,canvas.width,canvas.height);
+    }else ctx.drawImage(obj,0,0,canvas.width,canvas.height);
+    let dataUrl="";
+    for(const quality of [.72,.62,.52,.42]){dataUrl=canvas.toDataURL("image/jpeg",quality);if(dataUrl.length<47000)break;}
+    if(dataUrl.length>=50000)return null;
+    return {width,height,dataUrl};
+  }catch{return null;}
+}
+
 function itemsToLines(items){
   const groups=[]; for(const item of items){const x=item.transform?.[4]||0,y=Math.round(item.transform?.[5]||0);let g=groups.find(a=>Math.abs(a.y-y)<=3);if(!g){g={y,items:[]};groups.push(g);}g.items.push({x,text:item.str});}
   return groups.sort((a,b)=>b.y-a.y).map(g=>g.items.sort((a,b)=>a.x-b.x).map(x=>x.text).join(" ").replace(/\s+/g," ").trim()).filter(Boolean);
@@ -112,15 +176,15 @@ function showReview(){
 }
 function renderReview(){
   const selected=importState.candidates.filter(x=>x.include).length;$("reviewSummary").textContent=`${importState.candidates.length} possible recipes found · ${selected} selected`;
-  $("recipeReviewList").innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?"":"excluded"}"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?"checked":""}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:""}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.join("\n"))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join("\n"))}</textarea></label></div></details></article>`).join("");
+  $("recipeReviewList").innerHTML=importState.candidates.map((r,i)=>`<article class="recipe-review-card ${r.include?"":"excluded"}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="Extracted cookbook photo">`:`<div class="cookbook-photo-placeholder">No separate photo found</div>`}${r.image?`<label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?"checked":""}><span>Use this photo</span></label>`:""}</div><div class="recipe-review-content"><div class="recipe-review-head"><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?"checked":""}><span>Import</span></label><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:""}</span></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.join("\n"))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join("\n"))}</textarea></label></div></details></div></div></article>`).join("");
 }
-function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.title=document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title;r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join("\n"));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join("\n"));});}
+function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title;r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join("\n"));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join("\n"));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
 async function importSelected(){
   syncReviewFields(); const selected=importState.candidates.filter(r=>r.include); if(!selected.length)return alert("Select at least one recipe.");
   const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=makeId(); let imported=0,skipped=0,failed=0;
   const btn=$("importCookbookRecipes");btn.disabled=true;
-  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const recipe={name:r.title,url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions,nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",notes:`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`,made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_page:r.page};
+  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const recipe={name:r.title,url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions,nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",notes:`Imported from ${title}${author?` by ${author}`:""}, page ${r.page}.`,made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_page:r.page};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
   library.unshift({id,title,author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,addedAt:new Date().toISOString(),fileName:importState.fileName});saveLibrary();btn.disabled=false;btn.textContent="Import selected";
