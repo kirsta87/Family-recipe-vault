@@ -1,0 +1,7 @@
+Recipe Vault v1.5.3 — Cookbook title and image extraction fix
+
+- Uses PDF font size and page position to identify recipe titles instead of selecting the first ingredient line.
+- Preserves structured PDF text lines during analysis.
+- Falls back to a rendered cookbook page preview when a PDF does not expose its photography as a separate image object.
+- Labels review images as either Recipe photo or Page preview.
+- Keeps photo extraction timeouts so imports cannot freeze.
