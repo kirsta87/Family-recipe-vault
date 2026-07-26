@@ -1,0 +1,9 @@
+Recipe Vault v1.4.4 — Inspire Me 2.1
+
+- Inspire Me is collapsible inside the main search panel and stays open until manually closed.
+- Shortcut buttons are rectangular cards with live recipe counts.
+- Selected buttons remain visible and highlighted.
+- Active selections can be removed from chips above the card grid.
+- Added trait families for Mexican Night, Pasta Night, Handhelds, Grill, Crockpot, proteins, bowls, breakfast, and crowd-pleasers.
+- Mexican Night now recognizes burritos, tacos, quesadillas, tortillas, salsa, cilantro, chipotle, and Tex-Mex terms.
+- Recipe Intelligence engine bumped to v3, so the library will offer to reanalyze.

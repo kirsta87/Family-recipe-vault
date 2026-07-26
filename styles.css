@@ -814,19 +814,20 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .pantry-bulk-toolbar .danger:hover,
 #deleteSelectedPantryItems.danger:hover{background:#743b35!important;color:#fff!important}
 /* Dinner by vibe -------------------------------------------------------- */
-.vibe-finder{margin-bottom:18px;padding:16px;border:1px solid var(--line);border-radius:18px;background:#faf6ee}
+.inspire-search-block{margin-bottom:14px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+.inspire-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;border:0;background:#fff;color:var(--ink);padding:14px 16px;font:inherit;font-weight:850;cursor:pointer}
+.inspire-toggle:hover{background:#faf6ee}
+.vibe-finder{margin:0;padding:16px;border-top:1px solid var(--line);background:#faf6ee}
 .vibe-heading-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:10px}
-.vibe-heading-row h3{margin:0;font-family:Georgia,serif;font-size:1.25rem}
-.vibe-heading-row .eyebrow{margin-bottom:3px}
-.vibe-text-field{margin-bottom:10px}
-.vibe-chips{display:flex;flex-wrap:wrap;gap:8px}
-.vibe-chip{display:inline-flex;align-items:center;justify-content:center;min-height:40px;border:1px solid var(--line);border-radius:999px;background:white;color:var(--ink);padding:9px 13px;font:inherit;font-weight:750;cursor:pointer;visibility:visible;opacity:1}
-.vibe-chip:hover{border-color:var(--green)}
-.vibe-chip.active{background:#e4ead8;border-color:var(--sage-dark);color:var(--ink);box-shadow:inset 0 0 0 1px var(--sage-dark)}
-.vibe-chip.active::before{content:"✓ ";font-weight:900;color:var(--sage-dark)}
-.vibe-status{min-height:1.25em;margin:10px 0 0;color:var(--muted);font-size:.88rem}
-.card.vibe-pick{outline:4px solid rgba(105,116,84,.24);outline-offset:2px}
-@media(max-width:560px){.vibe-heading-row{display:block}.vibe-heading-row button{margin-top:10px;width:100%}.vibe-chip{flex:1 1 auto}}
+.vibe-heading-row h3{margin:0;font-family:Georgia,serif;font-size:1.25rem}.vibe-heading-row .eyebrow{margin-bottom:3px}.vibe-text-field{margin-bottom:10px}
+.vibe-chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.vibe-chip{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:70px;border:1px solid var(--line);border-radius:10px;background:white;color:var(--ink);padding:11px 13px;font:inherit;font-weight:800;cursor:pointer;text-align:left}
+.vibe-chip:hover{border-color:var(--green);transform:translateY(-1px)}
+.vibe-chip.active{background:#e8eee1;border-color:var(--green);color:var(--ink);box-shadow:inset 4px 0 0 var(--green)}
+.vibe-chip.active span::after{content:"  ✓"}.vibe-count{display:block;margin-top:5px;color:var(--muted);font-size:.76rem;font-weight:650}
+.active-vibe-chips{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}.active-vibe-chip{border:1px solid var(--green);border-radius:8px;background:#eef3e9;color:var(--ink);padding:6px 9px;font:inherit;font-size:.82rem;font-weight:750;cursor:pointer}
+.vibe-status{min-height:1.25em;margin:10px 0 0;color:var(--muted);font-size:.88rem}.card.vibe-pick{outline:4px solid rgba(105,116,84,.24);outline-offset:2px}
+@media(max-width:560px){.vibe-heading-row{display:block}.vibe-heading-row button{margin-top:10px;width:100%}.vibe-chips{grid-template-columns:1fr 1fr}.vibe-chip{min-height:76px;padding:10px}.vibe-chip span{font-size:.9rem}}
 
 /* v1.4.1 recipe intelligence */
 .recipe-intelligence-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border, #ddd)}

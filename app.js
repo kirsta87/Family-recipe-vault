@@ -558,22 +558,24 @@ function searchScore(recipe, query){
 
 
 const VIBE_PROFILES = {
-  cold: {label:"cold & fresh", minimum:52},
-  cozy: {label:"cozy night", minimum:30},
-  light: {label:"light & bright", minimum:28},
-  hearty: {label:"hearty & filling", minimum:28},
-  easy: {label:"low effort", minimum:25},
-  summer: {label:"summer / grilled", minimum:28},
-  creamy: {label:"creamy & cheesy", minimum:25},
-  comfort: {label:"comfort food", minimum:28},
-  handheld: {label:"tacos & handhelds", minimum:30},
-  pasta: {label:"pasta night", minimum:30},
-  bowl: {label:"bowls & salads", minimum:28},
-  crockpot: {label:"crockpot", minimum:32},
-  chicken: {label:"chicken dinner", minimum:28},
-  beef: {label:"beef dinner", minimum:28},
-  crowd: {label:"crowd pleaser", minimum:26},
-  breakfast: {label:"breakfast", minimum:30}
+  mexican:{label:"Mexican night", minimum:26, terms:["mexican","tex mex","tex-mex","taco","tacos","burrito","burritos","quesadilla","enchilada","fajita","nachos","tortilla","salsa","pico","cilantro","chipotle","adobo"], penalties:["italian","alfredo","teriyaki"]},
+  pasta:{label:"Pasta night", minimum:24, terms:["pasta","spaghetti","penne","rotini","rigatoni","linguine","fettuccine","alfredo","lasagna","ravioli","tortellini","gnocchi","mac and cheese","macaroni"]},
+  handheld:{label:"Tacos & handhelds", minimum:22, terms:["taco","burrito","quesadilla","sandwich","burger","wrap","sub","slider","hot dog","panini","pita","gyro"]},
+  cold:{label:"Cold & fresh", minimum:58},
+  cozy:{label:"Cozy night", minimum:35},
+  light:{label:"Fresh & light", minimum:32},
+  hearty:{label:"Hearty & filling", minimum:32},
+  easy:{label:"Quick & easy", minimum:30},
+  summer:{label:"Summer / grilled", minimum:34},
+  creamy:{label:"Creamy & cheesy", minimum:30},
+  comfort:{label:"Comfort food", minimum:34},
+  grill:{label:"Grill night", minimum:22, terms:["grill","grilled","barbecue","bbq","kabob","kebab","skewer","smoker","smoked"]},
+  crockpot:{label:"Crockpot", minimum:22, terms:["crockpot","slow cooker","cook on low","cook on high"]},
+  chicken:{label:"Chicken dinner", minimum:18, terms:["chicken","chicken breast","chicken thigh","rotisserie chicken"]},
+  beef:{label:"Beef dinner", minimum:18, terms:["beef","steak","ground beef","roast","sirloin","brisket"]},
+  bowls:{label:"Bowls & salads", minimum:22, terms:["bowl","salad","pasta salad","grain bowl","rice bowl","taco bowl","power bowl"]},
+  breakfast:{label:"Breakfast", minimum:20, terms:["breakfast","brunch","pancake","waffle","egg","omelet","french toast","oatmeal","biscuit","hash brown"]},
+  crowd:{label:"Crowd pleaser", minimum:24, terms:["party","potluck","crowd","slider","dip","nachos","casserole","sheet pan","barbecue","bbq","pizza"]}
 };
 
 function readRecipeDNAStore(){
@@ -903,6 +905,21 @@ function activeVibes(){
   return combined;
 }
 
+function profileTextScore(recipe, profile){
+  const text = recipeVibeText(recipe);
+  const title = normalizeSearchText(recipe.name || "");
+  let score = 0;
+  (profile.terms || []).forEach(term => {
+    const normalized = normalizeSearchText(term);
+    if(title.includes(normalized)) score += 22;
+    else if(text.includes(normalized)) score += 10;
+  });
+  (profile.penalties || []).forEach(term => {
+    if(text.includes(normalizeSearchText(term))) score -= 14;
+  });
+  return score;
+}
+
 function vibeScore(recipe, vibes){
   if(!vibes.size) return 0;
   const id = String(recipe.id || recipe.name || "");
@@ -915,11 +932,30 @@ function vibeScore(recipe, vibes){
   let total = 0;
   for(const key of vibes){
     const profile = VIBE_PROFILES[key];
-    const score = Number(dna.scores?.[key] || 0);
-    if(!profile || score < profile.minimum) return -999; // every selected vibe must genuinely match.
+    if(!profile) return -999;
+    const storedScore = Number(dna.scores?.[key] || 0);
+    const familyScore = profileTextScore(recipe, profile);
+    const score = Math.max(storedScore, familyScore);
+    if(score < profile.minimum) return -999;
     total += score;
   }
   return total;
+}
+
+function updateVibeCounts(){
+  document.querySelectorAll("[data-vibe]").forEach(button => {
+    const key = button.dataset.vibe;
+    const count = recipes.filter(recipe => !recipe.hidden && vibeScore(recipe, new Set([key])) > 0).length;
+    const countNode = button.querySelector(".vibe-count");
+    if(countNode) countNode.textContent = `${count} recipe${count===1?"":"s"}`;
+  });
+}
+
+function renderActiveVibeChips(){
+  const host = $("activeVibeChips");
+  if(!host) return;
+  host.innerHTML = [...selectedVibes].map(key => `<button type="button" class="active-vibe-chip" data-remove-vibe="${escapeHTML(key)}">${escapeHTML(VIBE_PROFILES[key]?.label || key)} <span aria-hidden="true">×</span></button>`).join("");
+  host.hidden = selectedVibes.size === 0;
 }
 
 function updateVibeUI(){
@@ -928,6 +964,8 @@ function updateVibeUI(){
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+  renderActiveVibeChips();
+  updateVibeCounts();
 }
 
 function parseDateValue(value){
@@ -997,6 +1035,7 @@ function renderInlineEditor(recipe){
 }
 
 function render(){
+  if(document.querySelector("[data-vibe]")) updateVibeCounts();
   const query = $("searchInput").value.trim().toLowerCase();
   const vibes = activeVibes();
   const protein = $("proteinSelect").value;
@@ -2283,7 +2322,23 @@ on("toggleSearchBtn", "click", () => {
 });
 
 
+on("toggleInspireBtn", "click", () => {
+  const panel = $("inspirePanel");
+  const button = $("toggleInspireBtn");
+  const isOpen = button.getAttribute("aria-expanded") === "true";
+  button.setAttribute("aria-expanded", String(!isOpen));
+  panel.hidden = isOpen;
+});
+
 document.addEventListener("click", event => {
+  const removeChip = event.target.closest("[data-remove-vibe]");
+  if(removeChip){
+    selectedVibes.delete(removeChip.dataset.removeVibe);
+    surpriseRecipeId = null;
+    updateVibeUI();
+    render();
+    return;
+  }
   const chip = event.target.closest("[data-vibe]");
   if(!chip) return;
   const vibe = chip.dataset.vibe;

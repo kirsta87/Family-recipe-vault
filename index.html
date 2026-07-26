@@ -42,50 +42,41 @@
       <button id="clearBtn" class="secondary">Clear</button>
     </div>
 
-    <section class="vibe-finder" aria-labelledby="vibeHeading">
-      <div class="vibe-heading-row">
-        <div>
-          <p class="eyebrow">DINNER BY VIBE</p>
-          <h3 id="vibeHeading">What sounds good tonight?</h3>
+    <div class="inspire-search-block">
+      <button id="toggleInspireBtn" class="inspire-toggle" type="button" aria-expanded="false" aria-controls="inspirePanel">
+        <span>✨ Inspire Me</span><span aria-hidden="true">⌄</span>
+      </button>
+      <section id="inspirePanel" class="vibe-finder" aria-labelledby="vibeHeading" hidden>
+        <div class="vibe-heading-row">
+          <div><p class="eyebrow">DINNER BY VIBE</p><h3 id="vibeHeading">What sounds good tonight?</h3></div>
+          <button id="vibeSurpriseBtn" class="secondary" type="button">Pick one for me</button>
         </div>
-        <button id="vibeSurpriseBtn" class="secondary" type="button">Pick one for me</button>
-      </div>
-      <label class="search-field vibe-text-field">
-        <span>Describe the mood</span>
-        <input id="vibeInput" type="search" placeholder="cold and fresh, cozy but not heavy, easy summer dinner…">
-      </label>
-      <div id="vibeChips" class="vibe-chips" aria-label="Dinner vibe shortcuts">
-        <button type="button" class="vibe-chip" data-vibe="cold">Cold & fresh</button>
-        <button type="button" class="vibe-chip" data-vibe="cozy">Cozy night</button>
-        <button type="button" class="vibe-chip" data-vibe="light">Light & bright</button>
-        <button type="button" class="vibe-chip" data-vibe="hearty">Hearty & filling</button>
-        <button type="button" class="vibe-chip" data-vibe="easy">Low effort</button>
-        <button type="button" class="vibe-chip" data-vibe="summer">Summer / grilled</button>
-        <button type="button" class="vibe-chip" data-vibe="handheld">Tacos & handhelds</button>
-        <button type="button" class="vibe-chip" data-vibe="pasta">Pasta night</button>
-        <button type="button" class="vibe-chip" data-vibe="bowl">Bowls & salads</button>
-        <button type="button" class="vibe-chip" data-vibe="crockpot">Crockpot</button>
-        <button type="button" class="vibe-chip" data-vibe="chicken">Chicken dinner</button>
-        <button type="button" class="vibe-chip" data-vibe="beef">Beef dinner</button>
-        <button type="button" class="vibe-chip" data-vibe="creamy">Creamy & cheesy</button>
-        <button type="button" class="vibe-chip" data-vibe="comfort">Comfort food</button>
-        <button type="button" class="vibe-chip" data-vibe="crowd">Crowd pleaser</button>
-        <button type="button" class="vibe-chip" data-vibe="breakfast">Breakfast</button>
-        <button type="button" class="vibe-chip" data-vibe="mexican">Mexican night</button>
-        <button type="button" class="vibe-chip" data-vibe="pasta">Pasta night</button>
-        <button type="button" class="vibe-chip" data-vibe="bowls">Bowls</button>
-        <button type="button" class="vibe-chip" data-vibe="handheld">Handheld favorites</button>
-        <button type="button" class="vibe-chip" data-vibe="grill">Grill night</button>
-        <button type="button" class="vibe-chip" data-vibe="fresh">Bright & fresh</button>
-        <button type="button" class="vibe-chip" data-vibe="family">Family-friendly</button>
-        <button type="button" class="vibe-chip" data-vibe="fancy">Feels fancy</button>
-      </div>
-      <p id="vibeStatus" class="vibe-status" aria-live="polite"></p>
-      <div class="recipe-intelligence-row">
-        <p id="recipeIntelligenceStatus" class="recipe-intelligence-status" aria-live="polite">Recipe intelligence will check your library automatically.</p>
-        <button id="recheckRecipeIntelligence" class="secondary compact-button" type="button">Recheck recipes now</button>
-      </div>
-    </section>
+        <label class="search-field vibe-text-field"><span>Describe the mood</span><input id="vibeInput" type="search" placeholder="Mexican night, quick comfort food, cold and fresh…"></label>
+        <div id="activeVibeChips" class="active-vibe-chips" hidden aria-label="Active Inspire Me filters"></div>
+        <div id="vibeChips" class="vibe-chips" aria-label="Dinner vibe shortcuts">
+          <button type="button" class="vibe-chip" data-vibe="mexican"><span>🌮 Mexican Night</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="pasta"><span>🍝 Pasta Night</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="handheld"><span>🥙 Tacos & Handhelds</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="cold"><span>🥗 Cold & Fresh</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="light"><span>🍋 Fresh & Light</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="cozy"><span>🥣 Cozy Night</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="comfort"><span>🍔 Comfort Food</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="easy"><span>⚡ Quick & Easy</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="summer"><span>☀️ Summer Favorites</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="grill"><span>🔥 Grill Night</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="crockpot"><span>🍲 Crockpot</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="hearty"><span>🥔 Hearty & Filling</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="creamy"><span>🧀 Creamy & Cheesy</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="chicken"><span>🍗 Chicken Dinner</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="beef"><span>🥩 Beef Dinner</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="bowls"><span>🥗 Bowls & Salads</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="breakfast"><span>🍳 Breakfast</span><small class="vibe-count">0 recipes</small></button>
+          <button type="button" class="vibe-chip" data-vibe="crowd"><span>🍽️ Crowd Pleaser</span><small class="vibe-count">0 recipes</small></button>
+        </div>
+        <p id="vibeStatus" class="vibe-status" aria-live="polite"></p>
+        <div class="recipe-intelligence-row"><p id="recipeIntelligenceStatus" class="recipe-intelligence-status" aria-live="polite">Recipe intelligence will check your library automatically.</p><button id="recheckRecipeIntelligence" class="secondary compact-button" type="button">Recheck recipes now</button></div>
+      </section>
+    </div>
 
     <label class="search-field">
       <span>Search everything</span>
