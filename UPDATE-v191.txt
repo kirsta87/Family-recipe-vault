@@ -1,0 +1,8 @@
+Build 191 — Exact Cookbook Re-import Choice
+
+- Detects when the exact cookbook is already on the shelf.
+- Asks whether to update existing recipes or import missing recipes.
+- Updating existing recipes skips the review/deselect workflow.
+- Safely attaches original PDF page previews and restores only missing cookbook metadata.
+- Preserves Family Notes and personal recipe edits.
+- Import Missing Recipes opens the review with only genuinely new recipes selected.

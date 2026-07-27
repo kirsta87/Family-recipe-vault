@@ -1,5 +1,5 @@
 {
-  "build": 190,
-  "label": "Smart Re-import & Duplicate Sensing",
-  "updated": "2026-07-26"
+  "build": 191,
+  "name": "Exact Cookbook Re-import Choice",
+  "engine": "3.3.0"
 }
