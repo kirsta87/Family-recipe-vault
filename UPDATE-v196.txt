@@ -1,0 +1,5 @@
+Build 196 — PDF Parser Crash Guard
+
+- Prevents one malformed PDF text item or page from crashing the entire cookbook import.
+- Safely handles missing filenames, text lines, annotations, and parser values.
+- Skips only the unreadable page and continues analyzing the cookbook.

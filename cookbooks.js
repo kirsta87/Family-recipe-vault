@@ -484,7 +484,7 @@ function applyTocTitles(candidates,tocMap){
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:195,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:196,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -498,14 +498,19 @@ async function analyzePdf(file){
     const pages=[]; let cover=""; const tocMap=await buildTocTitleMap(pdf);
     for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
       $("analyzeStatus").textContent=`Reading page ${pageNo} of ${pdf.numPages}`;$("analyzeCurrent").textContent="Looking for titles, ingredient lists, and cooking steps…";$("analyzeProgress").value=Math.round(pageNo/pdf.numPages*85);
-      const page=await pdf.getPage(pageNo); const content=await page.getTextContent();
-      const richLines=itemsToStructuredLines(content.items);
-      const lines=richLines.map(line=>line.text);
-      const annotations=await page.getAnnotations({intent:"display"}).catch(()=>[]);
-      const links=extractPageLinks(annotations,richLines);
-      const baseViewport=page.getViewport({scale:1});
-      pages.push({page:pageNo,lines,richLines,links,text:lines.join("\n"),width:baseViewport.width,height:baseViewport.height});
-      if(pageNo===1){const viewport=page.getViewport({scale:.45});const canvas=document.createElement("canvas");canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;cover=canvas.toDataURL("image/jpeg",.7);}
+      try{
+        const page=await pdf.getPage(pageNo); const content=await page.getTextContent();
+        const richLines=itemsToStructuredLines(Array.isArray(content?.items)?content.items:[]);
+        const lines=richLines.map(line=>String(line?.text||"")).filter(Boolean);
+        const annotations=await page.getAnnotations({intent:"display"}).catch(()=>[]);
+        const links=extractPageLinks(Array.isArray(annotations)?annotations:[],richLines);
+        const baseViewport=page.getViewport({scale:1});
+        pages.push({page:pageNo,lines,richLines,links,text:lines.join("\n"),width:Number(baseViewport?.width||0),height:Number(baseViewport?.height||0)});
+        if(pageNo===1){const viewport=page.getViewport({scale:.45});const canvas=document.createElement("canvas");canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;cover=canvas.toDataURL("image/jpeg",.7);}
+      }catch(pageError){
+        console.warn(`Recipe Vault skipped unreadable PDF page ${pageNo}`,pageError);
+        pages.push({page:pageNo,lines:[],richLines:[],links:[],text:"",width:0,height:0,parseWarning:String(pageError?.message||"Unreadable page")});
+      }
     }
     $("analyzeStatus").textContent="Separating recipes from the rest of the book…";$("analyzeProgress").value=92;
     const candidates=detectRecipes(pages); applyTocTitles(candidates,tocMap);
@@ -1157,7 +1162,7 @@ function buildCandidate(group){
   const titleish=t=>{const words=normalize(t).split(/\s+/).filter(Boolean);return words.length>1&&words.every(w=>titleParts.has(w));};
   instructionLines=instructionLines.filter(l=>!yieldLike(l.text)&&!titleish(l.text)&&!descriptionSet.has(l));
   let instructions=mergeInstructionLines(instructionLines,W)
-    .filter(t=>t&&!LINK_NOISE.test(t)&&!ingredientLike(t.replace(/^\d+[.)]\s*/,'')))
+    .filter(t=>{const safe=String(t||'');return safe&&!LINK_NOISE.test(safe)&&!ingredientLike(safe.replace(/^\d+[.)]\s*/,''));})
     .slice(0,60);
 
   // Keep prose descriptions out of directions. A valid directions list should be step-like and ordered.
@@ -1170,7 +1175,14 @@ function buildCandidate(group){
   const titleCandidates=(page.richLines||[]).filter(l=>plausibleVisualTitle(l,page,regions)).map(l=>({text:cleanLine(l.text),fontSize:l.fontSize,x:l.x,y:l.y,width:l.width,score:Math.round(titleScore(l,page,regions))})).sort((a,b)=>b.score-a.score).slice(0,20);
   return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText||extractYieldText(page),nutrition:extractMacroNutrition(page),description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
 }
-function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
+function guessBookTitle(pages,fileName){
+  const first=(Array.isArray(pages)?pages:[]).slice(0,4)
+    .flatMap(p=>Array.isArray(p?.lines)?p.lines:[])
+    .map(x=>String(x||"").trim())
+    .find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));
+  const safeFileName=String(fileName||"Cookbook");
+  return first||safeFileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");
+}
 
 function recipeTitleTokens(value){
   const stop=new Set(["the","a","an","and","or","with","of","for","to","in","on","style","easy","best","healthy","high","protein"]);
