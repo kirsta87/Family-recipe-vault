@@ -1,0 +1,5 @@
+Build 205
+- Fixed box dragging and resize handles.
+- Clone Recipe now duplicates every mapped box on the active page.
+- Active recipe selection is preserved.
+- Delete/Backspace removes the selected box.

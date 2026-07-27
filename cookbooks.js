@@ -3,7 +3,7 @@ const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
 const BUILD_193 = true;
 const COOKBOOK_ENGINE_VERSION = "3.4.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.1", parser:"Visual Cookbook Mapper v2"};
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.2", parser:"Visual Cookbook Mapper v3"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -1690,22 +1690,38 @@ function mapperEditBox(pageNo,groupId,field,patch){
 }
 function mapperBindBoxInteraction(el,pageNo,g,field){
  el.addEventListener("pointerdown",e=>{
-  if(e.target.closest("button"))return;e.stopPropagation();mapperSetActivePage(pageNo);visualMapperState.activeGroupId=g.id;mapperRefreshToolbar();
-  const layer=el.parentElement,r=layer.getBoundingClientRect(),original={...g.boxes[field]},handle=e.target.dataset.handle||"move",sx=e.clientX,sy=e.clientY;
-  el.setPointerCapture(e.pointerId);el.classList.add("editing");
-  const move=ev=>{const dx=(ev.clientX-sx)/r.width,dy=(ev.clientY-sy)/r.height;let b={...original};
-   if(handle==="move"){b.x+=dx;b.y+=dy;}else{if(handle.includes("e"))b.w+=dx;if(handle.includes("s"))b.h+=dy;if(handle.includes("w")){b.x+=dx;b.w-=dx;}if(handle.includes("n")){b.y+=dy;b.h-=dy;}}
-   mapperEditBox(pageNo,g.id,field,mapperClampBox(b));const live=mapperPageGroups(pageNo).find(x=>x.id===visualMapperState.activeGroupId)?.boxes[field]||b;el.style.left=`${live.x*100}%`;el.style.top=`${live.y*100}%`;el.style.width=`${live.w*100}%`;el.style.height=`${live.h*100}%`;
+  if(e.button!==0||e.target.closest("button"))return;
+  e.preventDefault();e.stopPropagation();
+  const s=visualMapperState;
+  s.activePage=pageNo;s.activeGroupId=g.id;s.selectedBox={pageNo,groupId:g.id,field};
+  document.querySelectorAll(".mapper-page-card").forEach(x=>x.classList.toggle("active",Number(x.dataset.page)===pageNo));
+  document.querySelectorAll(".mapper-box.selected").forEach(x=>x.classList.remove("selected"));el.classList.add("selected","editing");
+  const groupSel=$("mapperGroupSelect");if(groupSel&&[...groupSel.options].some(o=>o.value===g.id))groupSel.value=g.id;
+  const layer=el.parentElement,r=layer.getBoundingClientRect();
+  const shownGroup=mapperPageGroups(pageNo).find(x=>x.id===g.id);if(!shownGroup?.boxes?.[field])return;
+  const original={...shownGroup.boxes[field]},handle=e.target.closest(".mapper-handle")?.dataset.handle||"move",sx=e.clientX,sy=e.clientY,pid=e.pointerId;
+  try{el.setPointerCapture(pid);}catch(_e){}
+  const move=ev=>{
+   const dx=(ev.clientX-sx)/(r.width||1),dy=(ev.clientY-sy)/(r.height||1);let b={...original};
+   if(handle==="move"){b.x+=dx;b.y+=dy;}else{
+    if(handle.includes("e"))b.w+=dx;if(handle.includes("s"))b.h+=dy;
+    if(handle.includes("w")){b.x+=dx;b.w-=dx;}if(handle.includes("n")){b.y+=dy;b.h-=dy;}
+   }
+   b=mapperClampBox(b);mapperEditBox(pageNo,g.id,field,b);
+   el.style.left=`${b.x*100}%`;el.style.top=`${b.y*100}%`;el.style.width=`${b.w*100}%`;el.style.height=`${b.h*100}%`;
   };
-  const up=()=>{el.classList.remove("editing");el.removeEventListener("pointermove",move);el.removeEventListener("pointerup",up);el.removeEventListener("pointercancel",up);mapperRefreshToolbar();};
-  el.addEventListener("pointermove",move);el.addEventListener("pointerup",up);el.addEventListener("pointercancel",up);
+  const finish=()=>{
+   window.removeEventListener("pointermove",move,true);window.removeEventListener("pointerup",finish,true);window.removeEventListener("pointercancel",finish,true);
+   try{el.releasePointerCapture(pid);}catch(_e){}el.classList.remove("editing");mapperRefreshToolbar();
+  };
+  window.addEventListener("pointermove",move,true);window.addEventListener("pointerup",finish,true);window.addEventListener("pointercancel",finish,true);
  });
 }
 function mapperRenderOverlayForPage(pageNo){
  const wrap=document.querySelector(`.mapper-page-stage[data-page="${pageNo}"]`);if(!wrap)return;const canvas=wrap.querySelector("canvas"),layer=wrap.querySelector(".mapper-overlay");if(!canvas?.dataset.rendered)return;layer.style.width=canvas.style.width;layer.style.height=canvas.style.height;layer.innerHTML="";
  const groups=mapperPageGroups(pageNo);groups.forEach((g,gi)=>Object.entries(g.boxes||{}).forEach(([field,b])=>{if(!b)return;const el=document.createElement("div");el.className="mapper-box";el.dataset.page=pageNo;el.dataset.group=g.id;el.dataset.field=field;el.tabIndex=0;el.style.cssText=`left:${b.x*100}%;top:${b.y*100}%;width:${b.w*100}%;height:${b.h*100}%;border-color:${mapperBoxColor(field)};background:${mapperBoxColor(field)}22`;el.innerHTML=`<span style="background:${mapperBoxColor(field)}">R${gi+1} · ${MAPPER_LABELS[field]}</span><button type="button" title="Remove">×</button>${["n","ne","e","se","s","sw","w","nw"].map(h=>`<i class="mapper-handle h-${h}" data-handle="${h}"></i>`).join("")}`;
   el.querySelector("button").onclick=e=>{e.stopPropagation();const groups=mapperTargetGroups(pageNo,Boolean(visualMapperState.pageOverrides[pageNo]));let tg=groups.find(x=>x.id===g.id);if(!tg){const idx=mapperPageGroups(pageNo).findIndex(x=>x.id===g.id);tg=groups[idx];}if(tg)delete tg.boxes[field];mapperRefreshToolbar();};
-  el.onkeydown=e=>{if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;e.preventDefault();const d=(e.shiftKey?10:1)/(layer.getBoundingClientRect().width||700),dy=(e.shiftKey?10:1)/(layer.getBoundingClientRect().height||900);const patch={...b};if(e.key==="ArrowLeft")patch.x-=d;if(e.key==="ArrowRight")patch.x+=d;if(e.key==="ArrowUp")patch.y-=dy;if(e.key==="ArrowDown")patch.y+=dy;mapperEditBox(pageNo,g.id,field,patch);mapperRefreshToolbar();};
+  el.onkeydown=e=>{if(e.key==="Delete"||e.key==="Backspace"){e.preventDefault();el.querySelector("button")?.click();return;}if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;e.preventDefault();const d=(e.shiftKey?10:1)/(layer.getBoundingClientRect().width||700),dy=(e.shiftKey?10:1)/(layer.getBoundingClientRect().height||900);const live=mapperPageGroups(pageNo).find(x=>x.id===g.id)?.boxes[field]||b,patch={...live};if(e.key==="ArrowLeft")patch.x-=d;if(e.key==="ArrowRight")patch.x+=d;if(e.key==="ArrowUp")patch.y-=dy;if(e.key==="ArrowDown")patch.y+=dy;mapperEditBox(pageNo,g.id,field,patch);mapperRefreshToolbar();};
   mapperBindBoxInteraction(el,pageNo,g,field);layer.appendChild(el);
  }));
 }
@@ -1718,7 +1734,15 @@ async function launchVisualCookbookMapper(pdf,pages,tocMap){
  const observer=new IntersectionObserver(entries=>entries.forEach(en=>{if(en.isIntersecting){const card=en.target,n=Number(card.dataset.page);mapperRenderPage(n,card.querySelector("canvas"));observer.unobserve(card);}}),{root:pagesHost,rootMargin:"800px"});document.querySelectorAll(".mapper-page-card").forEach(c=>observer.observe(c));
  $("mapperFieldSelect").onchange=e=>{visualMapperState.activeField=e.target.value;mapperRefreshToolbar();};$("mapperGroupSelect").onchange=e=>{visualMapperState.activeGroupId=e.target.value;mapperRefreshToolbar();};$("mapperPageOnly").onchange=e=>{visualMapperState.editPageOnly=e.target.checked;if(e.target.checked){const oldIndex=mapperGroupIndex(mapperPageGroups(visualMapperState.activePage),visualMapperState.activeGroupId),groups=mapperEnsureOverride(visualMapperState.activePage);visualMapperState.activeGroupId=groups[oldIndex]?.id||groups[0]?.id||"";}mapperRefreshToolbar();};
  $("mapperAddGroup").onclick=()=>{const groups=mapperEnsureOverride(visualMapperState.activePage),g=mapperDefaultGroup();groups.push(g);visualMapperState.editPageOnly=true;$("mapperPageOnly").checked=true;visualMapperState.activeGroupId=g.id;mapperRefreshToolbar();};
- $("mapperDuplicateGroup").onclick=()=>{const pageNo=visualMapperState.activePage,sourceGroups=mapperPageGroups(pageNo),src=sourceGroups.find(g=>g.id===visualMapperState.activeGroupId)||sourceGroups[0];if(!src)return;const groups=mapperEnsureOverride(pageNo),srcIndex=sourceGroups.indexOf(src),actual=groups[srcIndex]||groups[0],g=mapperCloneGroups([actual])[0];g.id=mapperId();Object.values(g.boxes||{}).forEach(b=>{b.x=Math.min(1-b.w,b.x+.035);b.y=Math.min(1-b.h,b.y+.035);});groups.push(g);visualMapperState.editPageOnly=true;$("mapperPageOnly").checked=true;visualMapperState.activeGroupId=g.id;mapperRefreshToolbar();};
+ $("mapperDuplicateGroup").onclick=()=>{
+ const s=visualMapperState,pageNo=s.activePage,visible=mapperPageGroups(pageNo),srcIndex=Math.max(0,visible.findIndex(g=>g.id===s.activeGroupId));
+ const src=visible[srcIndex]||visible[0];if(!src)return;
+ const groups=mapperEnsureOverride(pageNo),actual=groups[srcIndex]||groups.find(g=>g.id===src.id)||groups[0];if(!actual)return;
+ const clone=mapperCloneGroups([actual])[0];clone.id=mapperId();
+ Object.values(clone.boxes||{}).forEach(b=>{b.x=Math.max(0,Math.min(1-b.w,b.x+.04));b.y=Math.max(0,Math.min(1-b.h,b.y+.04));});
+ groups.push(clone);s.editPageOnly=true;$("mapperPageOnly").checked=true;s.activeGroupId=clone.id;s.selectedBox=null;mapperRefreshToolbar();
+ const sel=$("mapperGroupSelect");if(sel)sel.value=clone.id;
+};
  $("mapperResetPage").onclick=()=>{delete visualMapperState.pageOverrides[visualMapperState.activePage];visualMapperState.editPageOnly=false;$("mapperPageOnly").checked=false;visualMapperState.activeGroupId=visualMapperState.templateGroups[0]?.id||"";mapperRefreshToolbar();};$("mapperCancel").onclick=cancelImport;$("mapperBuildReview").onclick=buildReviewFromVisualMapper;
  mapperSetActivePage(visualMapperState.activePage);document.querySelector(`.mapper-page-card[data-page="${visualMapperState.activePage}"]`)?.scrollIntoView({block:"start"});
 }
