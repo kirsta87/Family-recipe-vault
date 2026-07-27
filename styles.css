@@ -983,3 +983,7 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 
 .review-description-field{grid-column:1/-1}
 @media(max-width:760px){.review-description-field{grid-column:auto}}
+
+/* Build 197: parser diagnostics */
+.parser-diagnostics-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 18px;padding:14px 16px;border:1px solid var(--border,#d8d2c8);border-radius:14px;background:var(--surface-soft,#f7f3ec)}
+.parser-diagnostics-banner strong{display:block}.parser-diagnostics-banner span{flex:1;min-width:220px;color:var(--muted,#6f685f)}

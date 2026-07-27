@@ -1,0 +1,6 @@
+Build 197 — Parser Diagnostics & Crash Recovery
+
+- Isolates recipe parsing page by page so one malformed page cannot stop the whole cookbook.
+- Records the exact parser stage, page, recipe candidate, error message, and stack trace.
+- Adds a downloadable JSON parser log after a recovered error or fatal failure.
+- Keeps all Build 196 parser and cookbook fixes.

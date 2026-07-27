@@ -1,4 +1,6 @@
 {
-  "build": 196,
-  "label": "PDF parser crash guard"
+  "build": 197,
+  "label": "PDF parser crash guard",
+  "version": "197",
+  "name": "Parser Diagnostics & Crash Recovery"
 }

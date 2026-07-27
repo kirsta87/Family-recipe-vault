@@ -484,12 +484,83 @@ function applyTocTitles(candidates,tocMap){
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:196,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:197,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
+
+let parserDiagnostics=[];
+function parserValuePreview(value){
+  try{
+    if(value===undefined)return "undefined";
+    if(value===null)return "null";
+    if(typeof value==="string")return value.slice(0,500);
+    return JSON.stringify(value,(key,val)=>typeof val==="string"&&val.length>500?val.slice(0,500)+"…":val,2).slice(0,2500);
+  }catch{return String(value);}
+}
+function recordParserDiagnostic({stage,page=null,recipe="",error,value,context={}}){
+  const entry={
+    time:new Date().toISOString(),
+    build:197,
+    engine:COOKBOOK_ENGINE_VERSION,
+    fileName:importState?.fileName||currentAnalyzingFileName||"",
+    stage,
+    page,
+    recipe:recipe||"",
+    message:String(error?.message||error||"Unknown parser error"),
+    stack:String(error?.stack||""),
+    value:parserValuePreview(value),
+    context
+  };
+  parserDiagnostics.push(entry);
+  console.error("Recipe Vault parser diagnostic",entry);
+  return entry;
+}
+let currentAnalyzingFileName="";
+function downloadParserDiagnostics(){
+  const payload={build:197,engine:COOKBOOK_ENGINE_VERSION,fileName:currentAnalyzingFileName||importState?.fileName||"",errors:parserDiagnostics};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`recipe-vault-parser-log-${Date.now()}.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+window.downloadParserDiagnostics=downloadParserDiagnostics;
+function detectRecipesWithDiagnostics(pages){
+  const result=[];
+  for(const p of pages){
+    let score=0;
+    try{score=pageScore(p);}catch(error){recordParserDiagnostic({stage:"score page",page:p?.page,error,value:p?.text,context:{lineCount:p?.lines?.length||0}});continue;}
+    if(score<9)continue;
+    try{
+      const candidate=buildCandidate({pages:[p],startPage:p.page,endPage:p.page});
+      if(candidate?.title&&Array.isArray(candidate.ingredients)&&candidate.ingredients.length>=1&&Array.isArray(candidate.instructions)&&candidate.instructions.length>=1)result.push(candidate);
+    }catch(error){
+      recordParserDiagnostic({stage:"build recipe candidate",page:p?.page,error,value:p?.text,context:{score,lineCount:p?.lines?.length||0,richLineCount:p?.richLines?.length||0}});
+    }
+  }
+  return result;
+}
+function applyTocTitlesWithDiagnostics(candidates,tocMap){
+  for(const candidate of candidates){
+    try{applyTocTitles([candidate],tocMap);}catch(error){recordParserDiagnostic({stage:"apply TOC title",page:candidate?.page,recipe:candidate?.title,error,value:candidate?.debugReport||candidate});}
+  }
+}
+function showParserDiagnosticsBanner(){
+  if(!parserDiagnostics.length)return;
+  const panel=$("importHealthPanel")||$("reviewPanel");
+  if(!panel)return;
+  const banner=document.createElement("div");
+  banner.className="parser-diagnostics-banner";
+  banner.innerHTML=`<strong>Import continued after ${parserDiagnostics.length} parser ${parserDiagnostics.length===1?"error":"errors"}.</strong><span>The affected page${parserDiagnostics.length===1?" was":"s were"} skipped instead of stopping the cookbook.</span><button type="button" class="secondary compact-button">Download parser log</button>`;
+  banner.querySelector("button").addEventListener("click",downloadParserDiagnostics);
+  panel.prepend(banner);
+}
+
 async function analyzePdf(file){
+  currentAnalyzingFileName=file?.name||""; parserDiagnostics=[];
   $("choosePdfPanel").hidden=true;$("analyzePanel").hidden=false;$("importHeading").textContent="Analyzing cookbook";
   try{
     const pdfjs=await getPdfJs(); const buffer=await file.arrayBuffer(); const pdfBlob=new Blob([buffer],{type:"application/pdf"});
@@ -513,7 +584,7 @@ async function analyzePdf(file){
       }
     }
     $("analyzeStatus").textContent="Separating recipes from the rest of the book…";$("analyzeProgress").value=92;
-    const candidates=detectRecipes(pages); applyTocTitles(candidates,tocMap);
+    const candidates=detectRecipesWithDiagnostics(pages); applyTocTitlesWithDiagnostics(candidates,tocMap);
     $("analyzeStatus").textContent="Creating recipe photos…";
     // Digital cookbooks often contain dozens of PDF image objects per page. Scanning
     // every object was much slower than rendering one small crop, so photo creation
@@ -534,8 +605,12 @@ async function analyzePdf(file){
       await nextFrame();
     }
     importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:"",tocCount:tocMap.size,pdfBlob};
-    $("analyzeProgress").value=100; showReview();
-  }catch(error){$("analyzePanel").innerHTML=`<div class="cookbook-analyze-card"><h3>Could not read this PDF</h3><p>${escapeHTML(error.message||"PDF analysis failed.")}</p><button class="secondary" onclick="location.reload()">Start over</button></div>`;}
+    $("analyzeProgress").value=100; showReview(); showParserDiagnosticsBanner();
+  }catch(error){
+    recordParserDiagnostic({stage:"analyze cookbook",error,value:{fileName:file?.name,size:file?.size,type:file?.type}});
+    $("analyzePanel").innerHTML=`<div class="cookbook-analyze-card"><h3>Could not finish this PDF</h3><p>${escapeHTML(error.message||"PDF analysis failed.")}</p><p class="muted">The parser log includes the exact stage and stack trace.</p><div class="button-row"><button type="button" class="secondary" id="downloadFatalParserLog">Download parser log</button><button type="button" class="secondary" onclick="location.reload()">Start over</button></div></div>`;
+    $("downloadFatalParserLog")?.addEventListener("click",downloadParserDiagnostics);
+  }
 }
 
 async function renderRecipePagePreview(pdf,pageNo){
