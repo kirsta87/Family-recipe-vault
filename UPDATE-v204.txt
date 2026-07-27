@@ -1,0 +1,6 @@
+Build 204
+- Move and resize mapper boxes after drawing
+- Keep the selected recipe active while drawing
+- Add and duplicate complete recipe layouts on the current page
+- Per-page Import checkbox for fast skipping
+- Smart text continuation just beyond ingredient/instruction boxes
