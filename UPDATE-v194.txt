@@ -1,0 +1,6 @@
+Build 194 — Source Page Recovery
+
+- Recovers original PDF page numbers from legacy Source and Tags fields.
+- View Original PDF works for older cookbook recipes without rewriting every row.
+- Cookbook refresh skips unnecessary recipe-by-recipe updates.
+- Stores the cookbook PDF once and renders the requested page on demand.

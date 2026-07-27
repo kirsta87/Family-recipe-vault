@@ -211,6 +211,14 @@ function normalizeRecipeList(value){
     .map(x=>x.replace(/^\s*[•▪◦-]\s*/,"").trim())
     .filter(Boolean);
 }
+
+function recipeSourcePage(recipe){
+  const direct=Number(recipeField(recipe,"cookbook_page","cookbookPage","source_page","sourcePage","page"));
+  if(Number.isFinite(direct)&&direct>0)return direct;
+  const hay=[recipe?.source,recipe?.tags,recipe?.collections].flatMap(value=>Array.isArray(value)?value:[value]).filter(Boolean).join(" | ");
+  const match=hay.match(/(?:\bpage\s*|\bp\.?\s*)(\d{1,4})\b/i);
+  return match?Number(match[1]):0;
+}
 function recipeField(recipe,...names){
   if(!recipe||typeof recipe!=="object")return "";
   for(const name of names){
@@ -1319,13 +1327,13 @@ async function updateExistingCookbookRecipes(){
     const missingVideo=!recipeField(existing,"video_url","videoUrl","tutorial_url","tutorialUrl")&&(candidate.links||[])[0];
     const missingLinks=!normalizeRecipeList(recipeField(existing,"recipe_links","recipeLinks","links","tutorial_links")).length&&(candidate.links||[]).length;
     return {candidate,existing,missingPage,missingYield,missingDescription,missingVideo,missingLinks};
-  }).filter(job=>job.missingPage||job.missingYield||job.missingDescription||job.missingVideo||job.missingLinks||!recipeField(job.existing,"cookbook_id","cookbookId"));
+  }).filter(job=>job.missingPage||job.missingYield||job.missingDescription||job.missingVideo||job.missingLinks);
 
   const choicePanel=$("reimportChoicePanel"),progressPanel=$("cookbookUpdateProgress");
   choicePanel.hidden=true;progressPanel.hidden=false;
   const bar=$("updateProgressBar"),count=$("updateProgressCount"),detail=$("updateProgressDetail"),status=$("updateProgressStatus"),title=$("updateProgressTitle");
   title.textContent=`Refreshing ${book.title}`;
-  status.textContent=jobs.length?`Updating ${jobs.length} recipes with missing cookbook details.`:"Linking the original PDF. No recipe-by-recipe refresh is needed.";
+  status.textContent=jobs.length?`Updating ${jobs.length} recipes that are actually missing cookbook details.`:"Linking the original PDF. Existing source-page references are already usable.";
   bar.value=jobs.length?0:100;count.textContent=`0 of ${jobs.length}`;detail.textContent=jobs.length?"Preparing updates":"Linking PDF";
 
   let updated=0,failed=0,pagesAttached=0,descriptionsAdded=0,yieldsAdded=0,linksAdded=0,completed=0;
@@ -1338,13 +1346,19 @@ async function updateExistingCookbookRecipes(){
   };
   const runJob=async job=>{
     const {candidate,existing}=job;
-    const updates={cookbook_id:book.id,cookbook_title:book.title,cookbook_author:book.author||importState.author||"",cookbook_page:candidate.page};
+    const updates={};
+    if(!recipeField(existing,"cookbook_id","cookbookId"))updates.cookbook_id=book.id;
+    if(!recipeField(existing,"cookbook_title","cookbookTitle"))updates.cookbook_title=book.title;
+    if(!recipeField(existing,"cookbook_author","cookbookAuthor")&&(book.author||importState.author))updates.cookbook_author=book.author||importState.author||"";
+    // Legacy imports already contain the page in Source/Tags. Read that directly instead of
+    // forcing a slow server write for every recipe.
+    if(!recipeSourcePage(existing)&&candidate.page)updates.cookbook_page=candidate.page;
     // Source pages are rendered from the locally stored PDF instead of uploading a huge image for every recipe.
     if(job.missingYield){updates.yield=candidate.yieldText;yieldsAdded++;}
     if(job.missingDescription){updates.description=candidate.description;descriptionsAdded++;}
     if(job.missingVideo){updates.video_url=candidate.links[0];linksAdded++;}
     if(job.missingLinks){updates.recipe_links=candidate.links;}
-    try{await postVault({action:"update",id:existing.id,url:existing.url,updates});Object.assign(existing,updates);updated++;}
+    try{if(Object.keys(updates).length){await postVault({action:"update",id:existing.id,url:existing.url,updates});Object.assign(existing,updates);updated++;}}
     catch(e){failed++;}
     finally{updateProgress();}
   };
@@ -1402,7 +1416,7 @@ async function saveActiveCookbookNotes(){if(!activeCookbookRecipe)return;const f
 async function showImportedSource(recipe){
   if(!recipe)return;
   const sourcePreview=recipeField(recipe,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage","page_image","pageImage");
-  const sourcePage=Number(recipeField(recipe,"cookbook_page","cookbookPage","source_page","sourcePage","page"))||0;
+  const sourcePage=recipeSourcePage(recipe);
   const currentBook=library.find(cb=>String(cb.id)===String(recipe.cookbook_id));
   sourceReturnToRecipe=$("cookbookRecipeDialog").open;
   if(sourceReturnToRecipe)$("cookbookRecipeDialog").close();

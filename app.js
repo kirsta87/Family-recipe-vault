@@ -1522,6 +1522,14 @@ function formatDisplayDate(value){
   });
 }
 
+
+function inferredCookbookPage(recipe){
+  const direct=Number(recipe?.cookbook_page||recipe?.source_page||recipe?.page);
+  if(Number.isFinite(direct)&&direct>0)return direct;
+  const hay=[recipe?.source,recipe?.tags,recipe?.collections].flatMap(value=>Array.isArray(value)?value:[value]).filter(Boolean).join(" | ");
+  const match=hay.match(/(?:\bpage\s*|\bp\.?\s*)(\d{1,4})\b/i);
+  return match?Number(match[1]):0;
+}
 function pdfURL(recipe){
   return `https://www.hellofresh.com/recipecards/card/${recipe.id}.pdf`;
 }
@@ -1580,7 +1588,7 @@ function openRecipe(recipe){
   $("hideBtn").textContent = recipe.hidden ? "Restore recipe" : "Hide recipe";
   $("sourceLink").href = recipe.url || "#";$("sourceLink").hidden=!recipe.url;
   $("pdfLink").href = recipe.pdf_url || "#";$("pdfLink").hidden=!recipe.pdf_url;
-  $("sourcePageBtn").hidden=!(recipe.source_page_image||recipe.cookbook_page);
+  $("sourcePageBtn").hidden=!(recipe.source_page_image||inferredCookbookPage(recipe));
   renderStars("kirstaStars", "kirsta_rating");
   renderStars("tjStars", "tj_rating");
   renderStars("torrinStars", "torrin_rating");
@@ -2318,14 +2326,15 @@ on("saveNotes", "click", () => write("update", active, {notes: $("notes").value.
 on("sourcePageBtn","click",()=>{
   if(active?.source_page_image){
     const dialog=$("sourcePagePreviewDialog"),img=$("sourcePagePreviewImage"),status=$("sourcePagePreviewStatus");
-    $("sourcePagePreviewTitle").textContent=`${active.name||"Original recipe page"}${active.cookbook_page?` · Page ${active.cookbook_page}`:""}`;
+    const inferredPage=inferredCookbookPage(active);
+    $("sourcePagePreviewTitle").textContent=`${active.name||"Original recipe page"}${inferredPage?` · Page ${inferredPage}`:""}`;
     status.textContent="Loading page…";status.hidden=false;img.hidden=true;
     img.onload=()=>{status.hidden=true;img.hidden=false;};
     img.onerror=()=>{status.hidden=false;status.textContent="This saved page preview could not be opened. Re-upload the cookbook and choose Update existing recipes to rebuild it.";img.hidden=true;};
     img.src=active.source_page_image;
     if(!dialog.open)dialog.showModal();
-  }else if(active?.cookbook_page){
-    location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(active.cookbook_page)}`;
+  }else if(inferredPage){
+    location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(inferredPage)}`;
   }
 });
 on("closeSourcePagePreview","click",()=>{$("sourcePagePreviewDialog").close();});
