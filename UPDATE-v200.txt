@@ -1,0 +1,5 @@
+Build 200 — Cookbook Section Boundary Fix
+
+- Uses a hard visual divider between side-by-side ingredient and instruction columns.
+- Prevents directions from leaking into ingredient lists.
+- Removes embedded section markers from imported ingredients.

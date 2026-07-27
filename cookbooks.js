@@ -1237,18 +1237,26 @@ function buildCandidate(group){
       ingredientLines=column.filter(l=>l.y<ingredientsHeader.y-3 && l.y>instructionsHeader.y+8);
       instructionLines=column.filter(l=>l.y<instructionsHeader.y-3);
     }else{
-      // Side-by-side template: constrain each section to its own visual column instead of using all page text.
-      const ingColumn=linesInHeaderColumn(lines,ingredientsHeader,W);
-      const insColumn=linesInHeaderColumn(lines,instructionsHeader,W);
-      ingredientLines=ingColumn.filter(l=>l.y<ingredientsHeader.y-3);
-      instructionLines=insColumn.filter(l=>l.y<instructionsHeader.y-3);
+      // Side-by-side template: use a hard visual divider between the two
+      // section headers. The previous overlapping column windows could pull
+      // right-column directions into the ingredient list on designed PDFs.
+      const ingCenter=(ingredientsHeader.x||0)+(ingredientsHeader.width||0)/2;
+      const insCenter=(instructionsHeader.x||0)+(instructionsHeader.width||0)/2;
+      const divider=(ingCenter+insCenter)/2;
+      const ingredientsOnLeft=ingCenter<insCenter;
+      const lineCenter=l=>(l.x||0)+(l.width||0)/2;
+      const inIngredientSide=l=>ingredientsOnLeft ? lineCenter(l)<divider : lineCenter(l)>divider;
+      const inInstructionSide=l=>ingredientsOnLeft ? lineCenter(l)>=divider : lineCenter(l)<=divider;
+      ingredientLines=lines.filter(l=>l.y<ingredientsHeader.y-3&&inIngredientSide(l));
+      instructionLines=lines.filter(l=>l.y<instructionsHeader.y-3&&inInstructionSide(l));
     }
   }
   if(!ingredientLines.length)ingredientLines=lines.filter(l=>ingredientLike(l.text));
   if(!instructionLines.length)instructionLines=lines.filter(l=>instructionLike(l.text)||/^\d+[.)]?\s*/.test(l.text));
 
   let ingredients=mergeIngredientLines(ingredientLines)
-    .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t))
+    .map(t=>String(t||'').split(/\b(?:directions?|instructions?|method)\s*:/i)[0].trim())
+    .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&!instructionLike(t))
     .slice(0,80);
   const titleParts=new Set(normalize(title).split(/\s+/).filter(Boolean));
   const titleish=t=>{const words=normalize(t).split(/\s+/).filter(Boolean);return words.length>1&&words.every(w=>titleParts.has(w));};
