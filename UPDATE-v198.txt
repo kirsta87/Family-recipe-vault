@@ -1,0 +1,5 @@
+Build 198
+- Fixes the stale/frozen Update ready badge by aligning every page, asset, and service worker to the same build.
+- Prevents a newly installed service worker from taking over an active import session.
+- Adds an importer summary when unusually few recipes are detected.
+- Keeps parser diagnostics downloadable from the review screen.

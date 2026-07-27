@@ -1,5 +1,5 @@
 "use strict";
-const BUILD = 193;
+const BUILD = 198;
 const CACHE_NAME = `recipe-vault-v${BUILD}`;
 const APP_SHELL = [
   "./", "./index.html", `./styles.css?v=${BUILD}`, `./app.js?v=${BUILD}`,
@@ -11,8 +11,15 @@ const APP_SHELL = [
   `./config.js?v=${BUILD}`, `./build-status.js?v=${BUILD}`, "./build.json",
   "./recipe-pack-schema.js", "./sample-recipe-pack.zip", "./manifest.webmanifest"
 ];
-self.addEventListener("install",event=>{event.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)).catch(()=>undefined));self.skipWaiting();});
-self.addEventListener("activate",event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME&&k.startsWith("recipe-vault-")).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+self.addEventListener("install",event=>{
+  // Cache the new shell, but do not take over an open tab mid-import.
+  event.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)).catch(()=>undefined));
+});
+self.addEventListener("activate",event=>{
+  // The new worker becomes active on the next navigation/reload. Avoid clients.claim()
+  // so a deployment cannot mix old page state with new JavaScript during an import.
+  event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME&&k.startsWith("recipe-vault-")).map(k=>caches.delete(k)))));
+});
 self.addEventListener("fetch",event=>{
   const req=event.request;if(req.method!=="GET")return;const url=new URL(req.url);
   if(url.pathname.endsWith("/build.json")){event.respondWith(fetch(req,{cache:"no-store"}));return;}
