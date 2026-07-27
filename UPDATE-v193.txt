@@ -1,0 +1,7 @@
+BUILD 193 — PDF LINK + MAINTENANCE LAYOUT FIX
+
+- Stores the uploaded cookbook PDF once in browser storage.
+- Original PDF pages render directly from that stored PDF.
+- Updating existing recipes no longer uploads 77 large page images one-by-one.
+- Fixed the maintenance progress card layout.
+- Fixed deployment badge getting stuck on Deploying when build.json lags behind.

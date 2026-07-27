@@ -1,9 +1,9 @@
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
-const BUILD_190 = true;
-const COOKBOOK_ENGINE_VERSION = "3.3.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.3", parser:"Coordinate Region Collector v2"};
+const BUILD_193 = true;
+const COOKBOOK_ENGINE_VERSION = "3.4.0";
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"3.4", parser:"Coordinate Region Collector v2"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -22,6 +22,32 @@ let activePdfDocument = null;
 let activeSourcePage = 1;
 let sourceReturnToRecipe = false;
 let activeCookbookRecipe = null;
+
+const PDF_STORE_DB = "recipeVaultCookbookPdfsV1";
+const PDF_STORE_NAME = "pdfs";
+function pdfStoreKey(value){return normalize(value||"").replace(/\s+/g,"-")||"cookbook";}
+function openPdfStore(){
+  return new Promise((resolve,reject)=>{
+    const request=indexedDB.open(PDF_STORE_DB,1);
+    request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(PDF_STORE_NAME))request.result.createObjectStore(PDF_STORE_NAME);};
+    request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+  });
+}
+async function saveCookbookPdf(blob,keys=[]){
+  if(!blob||!("indexedDB" in window))return false;
+  const unique=[...new Set(keys.map(pdfStoreKey).filter(Boolean))];if(!unique.length)return false;
+  const db=await openPdfStore();
+  await new Promise((resolve,reject)=>{const tx=db.transaction(PDF_STORE_NAME,"readwrite"),store=tx.objectStore(PDF_STORE_NAME);unique.forEach(key=>store.put(blob,key));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();return true;
+}
+async function loadCookbookPdf(keys=[]){
+  if(!("indexedDB" in window))return null;
+  const db=await openPdfStore();
+  try{
+    for(const raw of keys){const key=pdfStoreKey(raw);if(!key)continue;const blob=await new Promise((resolve,reject)=>{const tx=db.transaction(PDF_STORE_NAME,"readonly"),req=tx.objectStore(PDF_STORE_NAME).get(key);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});if(blob)return blob;}
+    return null;
+  }finally{db.close();}
+}
 
 function escapeHTML(value){ return String(value ?? "").replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch])); }
 function readLibrary(){ try{return JSON.parse(localStorage.getItem(LIBRARY_KEY)||"[]")||[];}catch{return [];} }
@@ -421,7 +447,9 @@ function downloadParserReport(index){
 async function analyzePdf(file){
   $("choosePdfPanel").hidden=true;$("analyzePanel").hidden=false;$("importHeading").textContent="Analyzing cookbook";
   try{
-    const pdfjs=await getPdfJs(); const buffer=await file.arrayBuffer(); const pdf=await pdfjs.getDocument({data:buffer}).promise; activePdfDocument=pdf;
+    const pdfjs=await getPdfJs(); const buffer=await file.arrayBuffer(); const pdfBlob=new Blob([buffer],{type:"application/pdf"});
+    await saveCookbookPdf(pdfBlob,[file.name]).catch(()=>false);
+    const pdf=await pdfjs.getDocument({data:buffer.slice(0)}).promise; activePdfDocument=pdf;
     const pages=[]; let cover=""; const tocMap=await buildTocTitleMap(pdf);
     for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
       $("analyzeStatus").textContent=`Reading page ${pageNo} of ${pdf.numPages}`;$("analyzeCurrent").textContent="Looking for titles, ingredient lists, and cooking steps…";$("analyzeProgress").value=Math.round(pageNo/pdf.numPages*85);
@@ -455,7 +483,7 @@ async function analyzePdf(file){
       }));
       await nextFrame();
     }
-    importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:"",tocCount:tocMap.size};
+    importState={fileName:file.name,pageCount:pdf.numPages,cover,candidates,title:guessBookTitle(pages,file.name),author:"",tocCount:tocMap.size,pdfBlob};
     $("analyzeProgress").value=100; showReview();
   }catch(error){$("analyzePanel").innerHTML=`<div class="cookbook-analyze-card"><h3>Could not read this PDF</h3><p>${escapeHTML(error.message||"PDF analysis failed.")}</p><button class="secondary" onclick="location.reload()">Start over</button></div>`;}
 }
@@ -1285,7 +1313,7 @@ async function updateExistingCookbookRecipes(){
   const allMatches=importState.candidates.filter(r=>r.importStatus==="already"&&r.duplicateMatch);
   const jobs=allMatches.map(candidate=>{
     const existing=candidate.duplicateMatch;
-    const missingPage=!recipeField(existing,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage","page_image","pageImage");
+    const missingPage=false;
     const missingYield=!recipeField(existing,"yield","yieldText","servings","recipe_yield","serving_size")&&candidate.yieldText;
     const missingDescription=!recipeField(existing,"description","author_note","authorNotes","headnote")&&candidate.description;
     const missingVideo=!recipeField(existing,"video_url","videoUrl","tutorial_url","tutorialUrl")&&(candidate.links||[])[0];
@@ -1297,10 +1325,11 @@ async function updateExistingCookbookRecipes(){
   choicePanel.hidden=true;progressPanel.hidden=false;
   const bar=$("updateProgressBar"),count=$("updateProgressCount"),detail=$("updateProgressDetail"),status=$("updateProgressStatus"),title=$("updateProgressTitle");
   title.textContent=`Refreshing ${book.title}`;
-  status.textContent=jobs.length?`Updating only ${jobs.length} recipes that are missing cookbook data.`:"Everything in this cookbook is already complete.";
-  bar.value=jobs.length?0:100;count.textContent=`0 of ${jobs.length}`;detail.textContent=jobs.length?"Preparing updates":"No changes needed";
+  status.textContent=jobs.length?`Updating ${jobs.length} recipes with missing cookbook details.`:"Linking the original PDF. No recipe-by-recipe refresh is needed.";
+  bar.value=jobs.length?0:100;count.textContent=`0 of ${jobs.length}`;detail.textContent=jobs.length?"Preparing updates":"Linking PDF";
 
   let updated=0,failed=0,pagesAttached=0,descriptionsAdded=0,yieldsAdded=0,linksAdded=0,completed=0;
+  const pdfLinked=await saveCookbookPdf(importState.pdfBlob,[book.id,book.fileName,importState.fileName,book.title]).catch(()=>false);
   const updateProgress=()=>{
     completed++;
     bar.value=jobs.length?Math.round((completed/jobs.length)*100):100;
@@ -1310,7 +1339,7 @@ async function updateExistingCookbookRecipes(){
   const runJob=async job=>{
     const {candidate,existing}=job;
     const updates={cookbook_id:book.id,cookbook_title:book.title,cookbook_author:book.author||importState.author||"",cookbook_page:candidate.page};
-    if(job.missingPage){const preview=await renderImportedSourcePreview(candidate.page);if(preview){updates.source_page_image=preview;pagesAttached++;}}
+    // Source pages are rendered from the locally stored PDF instead of uploading a huge image for every recipe.
     if(job.missingYield){updates.yield=candidate.yieldText;yieldsAdded++;}
     if(job.missingDescription){updates.description=candidate.description;descriptionsAdded++;}
     if(job.missingVideo){updates.video_url=candidate.links[0];linksAdded++;}
@@ -1328,7 +1357,7 @@ async function updateExistingCookbookRecipes(){
   book.fileName=importState.fileName;book.pageCount=importState.pageCount;book.cover=book.cover||importState.cover;book.aliases=[...new Set([...(book.aliases||[]),book.title,importState.title].filter(Boolean))];saveLibrary();
   progressPanel.hidden=true;$("importResults").hidden=false;
   const unchanged=Math.max(0,allMatches.length-jobs.length);
-  $("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(book.title)} is updated</h2><p>${updated} recipes refreshed${unchanged?` · ${unchanged} were already complete`:""}${failed?` · ${failed} could not be updated`:""}.</p><div class="maintenance-summary"><div><strong>${pagesAttached}</strong><span>PDF pages attached</span></div><div><strong>${descriptionsAdded}</strong><span>descriptions restored</span></div><div><strong>${yieldsAdded}</strong><span>serving sizes restored</span></div><div><strong>${linksAdded}</strong><span>tutorial links restored</span></div></div><p class="muted">Family Notes, ratings, collections, and personal edits were left untouched.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;
+  $("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(book.title)} is updated</h2><p>${updated} recipes refreshed${unchanged?` · ${unchanged} were already complete`:""}${failed?` · ${failed} could not be updated`:""}.</p><div class="maintenance-summary"><div><strong>${pdfLinked?"✓":"—"}</strong><span>original PDF linked</span></div><div><strong>${descriptionsAdded}</strong><span>descriptions restored</span></div><div><strong>${yieldsAdded}</strong><span>serving sizes restored</span></div><div><strong>${linksAdded}</strong><span>tutorial links restored</span></div></div><p class="muted">Family Notes, ratings, collections, and personal edits were left untouched.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;
   $("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(book.id));};
 }
 async function importSelected(){
@@ -1346,7 +1375,8 @@ async function importSelected(){
       try{await postVault({action:"update",id:recipe.id,url:recipe.url,updates:{source_page_image:preview}});recipe.source_page_image=preview;previewsAttached++;}catch{}
     }
   }
-  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage=await renderImportedSourcePreview(r.page);const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
+  await saveCookbookPdf(importState.pdfBlob,[id,importState.fileName,title]).catch(()=>false);
+  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage="";const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
   if(existingBook){existingBook.title=title;existingBook.author=author;existingBook.collection=collection;existingBook.cover=existingBook.cover||importState.cover;existingBook.pageCount=importState.pageCount;existingBook.importedCount=(cookbookRecipes(existingBook,{remember:false}).length||existingBook.importedCount||0)+imported;existingBook.fileName=importState.fileName;existingBook.aliases=[...new Set([...(existingBook.aliases||[]),title,importState.title].filter(Boolean))];}
@@ -1369,23 +1399,33 @@ async function saveCookbookMetadata(){
   $("editCookbookDialog").close();openCookbook(id);
 }
 async function saveActiveCookbookNotes(){if(!activeCookbookRecipe)return;const family_notes=$("cookbookRecipeNotes").value.trim();await postVault({action:"update",id:activeCookbookRecipe.id,url:activeCookbookRecipe.url,updates:{family_notes}});activeCookbookRecipe.family_notes=family_notes;}
-function showImportedSource(recipe){
+async function showImportedSource(recipe){
   if(!recipe)return;
   const sourcePreview=recipeField(recipe,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage","page_image","pageImage");
   const sourcePage=Number(recipeField(recipe,"cookbook_page","cookbookPage","source_page","sourcePage","page"))||0;
+  const currentBook=library.find(cb=>String(cb.id)===String(recipe.cookbook_id));
   sourceReturnToRecipe=$("cookbookRecipeDialog").open;
   if(sourceReturnToRecipe)$("cookbookRecipeDialog").close();
   if(sourcePreview){
-    const currentBook=library.find(cb=>String(cb.id)===String(recipe.cookbook_id));
     $("sourcePageTitle").textContent=`${currentBook?.title||recipe.cookbook_title||"Cookbook"}${sourcePage?` · Page ${sourcePage}`:""}`;
     $("sourcePagePrev").hidden=true;$("sourcePageNext").hidden=true;$("sourcePageLoading").hidden=true;
     $("sourcePageImage").src=sourcePreview;$("sourcePageImage").hidden=false;
     $("sourcePageDialog").showModal();return;
   }
-  if(activePdfDocument&&sourcePage){showSourcePage(sourcePage);return;}
-  sourceReturnToRecipe=false;
-  alert("The original page was not saved with this older cookbook import. Re-upload the cookbook PDF once to attach source-page previews to newly imported recipes.");
-  if(activeCookbookRecipe)$("cookbookRecipeDialog").showModal();
+  if(!sourcePage){alert("This recipe does not have a source page number saved.");if(sourceReturnToRecipe)$("cookbookRecipeDialog").showModal();return;}
+  try{
+    if(!activePdfDocument){
+      const blob=await loadCookbookPdf([currentBook?.id,currentBook?.fileName,recipe.cookbook_title,currentBook?.title]);
+      if(!blob)throw new Error("missing");
+      const pdfjs=await getPdfJs();activePdfDocument=await pdfjs.getDocument({data:await blob.arrayBuffer()}).promise;
+    }
+    $("sourcePagePrev").hidden=false;$("sourcePageNext").hidden=false;
+    await showSourcePage(sourcePage);
+  }catch{
+    sourceReturnToRecipe=false;
+    alert("The PDF is not linked in this browser yet. Re-upload this cookbook once and choose Update existing recipes. After that, original pages will open without updating every recipe individually.");
+    if(activeCookbookRecipe)$("cookbookRecipeDialog").showModal();
+  }
 }
 async function deleteCookbook(removeRecipes){
   const cb=library.find(x=>x.id===deleteTargetId);if(!cb)return; let deletionFailed=false;

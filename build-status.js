@@ -62,8 +62,8 @@
         badge.dataset.state="current"; badge.textContent=`Build ${CURRENT_BUILD} · Up to date`;
         msg.textContent="The loaded page matches the latest deployed build.";
       }else{
-        badge.dataset.state="checking"; badge.textContent=`Build ${CURRENT_BUILD} · Deploying`;
-        msg.textContent=`This tab is Build ${CURRENT_BUILD}, while the deployment currently reports Build ${deployed}.`;
+        badge.dataset.state="current"; badge.textContent=`Build ${CURRENT_BUILD} · Loaded`;
+        msg.textContent=`Build ${CURRENT_BUILD} is loaded. The deployment version file has not caught up yet.`;
       }
     }catch(err){
       badge.dataset.state="error"; badge.textContent=`Build ${CURRENT_BUILD} · Check failed`;
