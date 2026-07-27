@@ -1,6 +1,6 @@
 {
-  "build": 201,
-  "label": "Layout-aware multi-recipe parser",
-  "version": "201",
-  "name": "Layout-Aware Parser"
+  "build": 202,
+  "label": "Stable parser rollback + navigation title guard",
+  "version": "202",
+  "name": "Stable Parser Recovery"
 }
