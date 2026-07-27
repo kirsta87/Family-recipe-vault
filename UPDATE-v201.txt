@@ -1,0 +1,6 @@
+BUILD 201 — LAYOUT-AWARE MULTI-RECIPE PARSER
+
+- Detects multiple recipe regions on one PDF page
+- Keeps nutrition and yield data out of ingredients
+- Preserves unnumbered cooking directions
+- Adds region diagnostics for multi-recipe pages

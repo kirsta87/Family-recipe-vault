@@ -485,7 +485,7 @@ function applyTocTitles(candidates,tocMap){
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:200,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:201,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -520,7 +520,7 @@ function recordParserDiagnostic({stage,page=null,recipe="",error,value,context={
 }
 let currentAnalyzingFileName="";
 function downloadParserDiagnostics(){
-  const payload={build:200,engine:COOKBOOK_ENGINE_VERSION,fileName:currentAnalyzingFileName||importState?.fileName||"",errors:parserDiagnostics};
+  const payload={build:201,engine:COOKBOOK_ENGINE_VERSION,fileName:currentAnalyzingFileName||importState?.fileName||"",errors:parserDiagnostics};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
@@ -530,22 +530,70 @@ function downloadParserDiagnostics(){
 }
 window.downloadParserDiagnostics=downloadParserDiagnostics;
 let importerInspector={pagesScanned:0,pagesMeetingThreshold:0,candidatesBuilt:0,rejectedIncomplete:0,parserErrors:0};
+function recipeRegionPages(page){
+  const lines=Array.isArray(page?.richLines)?page.richLines:[];
+  const W=Number(page?.width||600), H=Number(page?.height||800);
+  if(lines.length<8)return [page];
+  const bodyFonts=lines.map(l=>Number(l.fontSize||0)).filter(v=>v>4&&v<22).sort((a,b)=>a-b);
+  const body=bodyFonts[Math.floor(bodyFonts.length*.65)]||10;
+  const headings=lines.filter(l=>{
+    const t=cleanLine(l.text), words=t.split(/\s+/).filter(Boolean).length;
+    if(!t||SECTION_NOISE.test(t)||LINK_NOISE.test(t)||yieldLike(t)||ingredientLike(t)||instructionLike(t))return false;
+    if(words<1||words>8||t.length>72)return false;
+    return Number(l.fontSize||0)>=Math.max(14,body*1.28);
+  });
+  const centers=headings.map(l=>({line:l,c:(l.x||0)+(l.width||0)/2})).sort((a,b)=>a.c-b.c);
+  const groups=[];
+  for(const h of centers){
+    let g=groups.find(x=>Math.abs(x.c-h.c)<W*.20);
+    if(!g){g={c:h.c,items:[]};groups.push(g);}
+    g.items.push(h.line); g.c=g.items.reduce((n,l)=>n+(l.x||0)+(l.width||0)/2,0)/g.items.length;
+  }
+  const strong=groups.filter(g=>g.items.some(l=>(l.fontSize||0)>=Math.max(16,body*1.45)));
+  if(strong.length<2)return [page];
+  strong.sort((a,b)=>a.c-b.c);
+  const distinct=strong.filter((g,i,a)=>i===0||g.c-a[i-1].c>W*.24);
+  if(distinct.length<2)return [page];
+  const bounds=[0];
+  for(let i=0;i<distinct.length-1;i++)bounds.push((distinct[i].c+distinct[i+1].c)/2);
+  bounds.push(W);
+  const regions=[];
+  for(let i=0;i<bounds.length-1;i++){
+    const left=bounds[i],right=bounds[i+1];
+    const regionLines=lines.filter(l=>{
+      const c=(l.x||0)+(l.width||0)/2;
+      return c>=left-4&&c<right+4;
+    });
+    const text=regionLines.map(l=>String(l.text||'')).filter(Boolean).join('\n');
+    const sectionCount=regionLines.filter(l=>/^(ingredients?|directions?|instructions?|method)\s*:?$/i.test(cleanLine(l.text))).length;
+    const hasTitle=distinct[i]?.items?.some(t=>regionLines.includes(t));
+    if(regionLines.length>=6&&hasTitle&&(sectionCount||/\b(?:cup|tbsp|tsp|oz|grams?|ingredients?|directions?)\b/i.test(text))){
+      regions.push({...page,richLines:regionLines,lines:regionLines.map(l=>String(l.text||'')),text,regionIndex:i+1,regionBounds:{left,right},layoutRegionCount:distinct.length});
+    }
+  }
+  return regions.length>=2?regions:[page];
+}
 function detectRecipesWithDiagnostics(pages){
   const result=[];
   importerInspector={pagesScanned:Array.isArray(pages)?pages.length:0,pagesMeetingThreshold:0,candidatesBuilt:0,rejectedIncomplete:0,parserErrors:0};
-  for(const p of pages){
-    let score=0;
-    try{score=pageScore(p);}catch(error){importerInspector.parserErrors++;recordParserDiagnostic({stage:"score page",page:p?.page,error,value:p?.text,context:{lineCount:p?.lines?.length||0}});continue;}
-    if(score<9)continue;
-    importerInspector.pagesMeetingThreshold++;
-    try{
-      const candidate=buildCandidate({pages:[p],startPage:p.page,endPage:p.page});
-      importerInspector.candidatesBuilt++;
-      if(candidate?.title&&Array.isArray(candidate.ingredients)&&candidate.ingredients.length>=1&&Array.isArray(candidate.instructions)&&candidate.instructions.length>=1)result.push(candidate);
-      else importerInspector.rejectedIncomplete++;
-    }catch(error){
-      importerInspector.parserErrors++;
-      recordParserDiagnostic({stage:"build recipe candidate",page:p?.page,error,value:p?.text,context:{score,lineCount:p?.lines?.length||0,richLineCount:p?.richLines?.length||0}});
+  for(const originalPage of pages){
+    const pageRegions=recipeRegionPages(originalPage);
+    for(const p of pageRegions){
+      let score=0;
+      try{score=pageScore(p);}catch(error){importerInspector.parserErrors++;recordParserDiagnostic({stage:"score page",page:p?.page,error,value:p?.text,context:{lineCount:p?.lines?.length||0}});continue;}
+      if(score<7)continue;
+      importerInspector.pagesMeetingThreshold++;
+      try{
+        const candidate=buildCandidate({pages:[p],startPage:p.page,endPage:p.page});
+        candidate.regionIndex=p.regionIndex||1;
+        candidate.regionCount=p.layoutRegionCount||1;
+        importerInspector.candidatesBuilt++;
+        if(candidate?.title&&Array.isArray(candidate.ingredients)&&candidate.ingredients.length>=1&&Array.isArray(candidate.instructions)&&candidate.instructions.length>=1)result.push(candidate);
+        else importerInspector.rejectedIncomplete++;
+      }catch(error){
+        importerInspector.parserErrors++;
+        recordParserDiagnostic({stage:"build recipe candidate",page:p?.page,error,value:p?.text,context:{score,lineCount:p?.lines?.length||0,richLineCount:p?.richLines?.length||0,region:p?.regionIndex||1}});
+      }
     }
   }
   return result;
@@ -1269,7 +1317,7 @@ function buildCandidate(group){
 
   let ingredients=mergeIngredientLines(ingredientLines)
     .map(t=>String(t||'').split(/\b(?:directions?|instructions?|method)\s*:/i)[0].trim())
-    .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&!instructionLike(t))
+    .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&!instructionLike(t)&&!yieldLike(t)&&!/(?:^|\b)(?:calories?|protein|carbs?|fat|macros?|nutrition)(?:\s*[:|-]|\b)/i.test(t))
     .slice(0,80);
   const titleParts=new Set(normalize(title).split(/\s+/).filter(Boolean));
   const titleish=t=>{const words=normalize(t).split(/\s+/).filter(Boolean);return words.length>1&&words.every(w=>titleParts.has(w));};
@@ -1278,8 +1326,10 @@ function buildCandidate(group){
     .filter(t=>{const safe=String(t||'');return safe&&!LINK_NOISE.test(safe)&&!ingredientLike(safe.replace(/^\d+[.)]\s*/,''));})
     .slice(0,60);
 
-  // Keep prose descriptions out of directions. A valid directions list should be step-like and ordered.
-  instructions=instructions.filter((t,i)=>i===0||/^\d+[.)]\s+/.test(t));
+  // Keep all reconstructed cooking steps. Some cookbook PDFs omit printed step numbers,
+  // so dropping unnumbered imperative lines can erase most of the directions.
+  instructions=instructions.filter(t=>instructionLike(String(t||'').replace(/^\d+[.)]\s*/,''))||/^\d+[.)]\s+/.test(String(t||'')));
+  instructions=instructions.map((t,i)=>/^\d+[.)]\s+/.test(t)?t:`${i+1}. ${t}`);
   const leftDensity=lines.filter(l=>l.x<W/2).reduce((n,l)=>n+l.text.length,0),rightDensity=lines.filter(l=>l.x>=W/2).reduce((n,l)=>n+l.text.length,0);
   const warnings=[];
   const headerCount=(page.richLines||[]).filter(l=>/^(ingredients?|directions?|instructions?|method)\s*:?$/i.test(cleanLine(l.text))).length;
