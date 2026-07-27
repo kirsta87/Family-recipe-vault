@@ -1,0 +1,7 @@
+Build 203
+Visual Cookbook Mapper
+- Draw reusable field boxes across the PDF
+- Page-only overrides
+- Multiple recipes per page
+- Skip pages and reset overrides
+- Extract title, ingredients, instructions, macros, yield, description, and image from mapped areas
