@@ -448,8 +448,9 @@ function extractYieldText(page){
 function extractMacroNutrition(page){
   const text=(page.richLines||[]).map(l=>cleanLine(l.text)).join('\n');
   const take=label=>{
-    const m=text.match(new RegExp('(?:^|\\n)\\s*'+label+'\\s*:\\s*([0-9]+(?:\\.[0-9]+)?\\s*(?:g|kcal|calories?)?)','i'));
-    return m?m[1].replace(/\s+/g,'').replace(/calories?/i,''):'';
+    const pattern=new RegExp('(?:^|\\n)\\s*(?:'+label+')\\s*:\s*([0-9]+(?:\\.[0-9]+)?\\s*(?:g|kcal|calories?)?)','i');
+    const value=text.match(pattern)?.[1];
+    return typeof value==='string' ? value.replace(/\s+/g,'').replace(/calories?/i,'') : '';
   };
   const calories=take('calories?'),fat=take('fat'),protein=take('protein'),carbs=take('carbs?|carbohydrates?');
   return [calories&&`Calories: ${calories}`,protein&&`Protein: ${protein}`,carbs&&`Carbs: ${carbs}`,fat&&`Fat: ${fat}`].filter(Boolean).join(' | ');

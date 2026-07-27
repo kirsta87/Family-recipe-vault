@@ -1,0 +1,6 @@
+BUILD 199 — MACRO PARSER HARDENING
+
+- Prevents missing or partial nutrition blocks from crashing recipe imports.
+- Safely handles recipes with no macro values.
+- Fixes alternation handling for Carbs / Carbohydrates labels.
+- Recipes now continue importing even when nutrition data is unavailable.
