@@ -1,0 +1,8 @@
+Build 195 — Cookbook Template Parser Fix
+
+- Prevents oversized table-of-contents links from merging several recipe titles.
+- Uses the visual page heading when a TOC label contains multiple recipe names.
+- Extracts servings from notes such as “recipe is for 1 bowl.”
+- Extracts Calories, Protein, Carbs, and Fat from cookbook macro panels.
+- Adds an editable Macros / nutrition field to import review.
+- Corrects build metadata so the stale Update ready badge can clear.

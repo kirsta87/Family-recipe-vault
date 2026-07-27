@@ -417,6 +417,43 @@ async function buildTocTitleMap(pdf){
   }
   return map;
 }
+function chooseTocTitle(matchTitle, visualTitle){
+  const toc=cleanLine(matchTitle||"");
+  const visual=cleanLine(visualTitle||"");
+  if(!toc)return visual;
+  if(!visual)return toc;
+  const tocWords=toc.split(/\s+/).filter(Boolean);
+  const visualWords=visual.split(/\s+/).filter(Boolean);
+  const visualNorm=normalize(visual);
+  // Some cookbook TOC links use one oversized annotation rectangle that covers
+  // several neighboring recipe names. Prefer the heading printed on the page.
+  if(tocWords.length>Math.max(10,visualWords.length*2+2)||toc.length>visual.length*2.2){
+    if(visualWords.length>=2&&!titleRejected(visual))return visual;
+  }
+  if(visualNorm&&normalize(toc).includes(visualNorm)&&tocWords.length>visualWords.length+3)return visual;
+  return toc;
+}
+function extractYieldText(page){
+  const text=(page.richLines||[]).map(l=>cleanLine(l.text));
+  const direct=text.find(t=>/^(?:yield\s*\/\s*servings?|servings?|serves?|makes?)\s*:\s*\S+/i.test(t));
+  if(direct)return direct.replace(/^(?:yield\s*\/\s*servings?|servings?|serves?|makes?)\s*:\s*/i,'').trim();
+  for(const raw of text){
+    let m=raw.match(/recipe\s+is\s+for\s+(\d+(?:\s*[-–]\s*\d+)?\s+(?:bowls?|servings?|wraps?|pieces?|portions?|cookies?|muffins?|pancakes?|waffles?|sandwiches?|cups?))/i);
+    if(m)return m[1];
+    m=raw.match(/suggested\s+servings?\s*[:,]?\s*(\d+(?:\s*[-–]\s*\d+)?)/i);
+    if(m)return m[1];
+  }
+  return '';
+}
+function extractMacroNutrition(page){
+  const text=(page.richLines||[]).map(l=>cleanLine(l.text)).join('\n');
+  const take=label=>{
+    const m=text.match(new RegExp('(?:^|\\n)\\s*'+label+'\\s*:\\s*([0-9]+(?:\\.[0-9]+)?\\s*(?:g|kcal|calories?)?)','i'));
+    return m?m[1].replace(/\s+/g,'').replace(/calories?/i,''):'';
+  };
+  const calories=take('calories?'),fat=take('fat'),protein=take('protein'),carbs=take('carbs?|carbohydrates?');
+  return [calories&&`Calories: ${calories}`,protein&&`Protein: ${protein}`,carbs&&`Carbs: ${carbs}`,fat&&`Fat: ${fat}`].filter(Boolean).join(' | ');
+}
 function applyTocTitles(candidates,tocMap){
   for(const candidate of candidates){
     let match=tocMap.get(candidate.page);
@@ -426,7 +463,7 @@ function applyTocTitles(candidates,tocMap){
     }
     if(match){
       candidate.visualTitle=candidate.title;
-      candidate.title=smartTitleCase(match.title);
+      candidate.title=smartTitleCase(chooseTocTitle(match.title,candidate.visualTitle));
       candidate.titleSource=match.source;
       candidate.titleConfidence=99;
       candidate.warnings=(candidate.warnings||[]).filter(w=>!/title/i.test(w));
@@ -447,7 +484,7 @@ function applyTocTitles(candidates,tocMap){
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:180,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:195,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -1075,7 +1112,7 @@ function findYieldAndDescription(page,lines,titleLine,title,regions){
     .join(' ')
     .replace(/\s+/g,' ')
     .trim();
-  return {yieldText:yieldLine?cleanLine(yieldLine.text):'',description,descriptionLines};
+  return {yieldText:yieldLine?cleanLine(yieldLine.text):extractYieldText(page),description,descriptionLines};
 }
 
 function buildCandidate(group){
@@ -1131,7 +1168,7 @@ function buildCandidate(group){
   if(headerCount>2)warnings.push("Multiple recipe regions detected on this page; review this card carefully.");
   if(titleRejected(title)||ingredientLike(title))warnings.push("Low-confidence title detected.");
   const titleCandidates=(page.richLines||[]).filter(l=>plausibleVisualTitle(l,page,regions)).map(l=>({text:cleanLine(l.text),fontSize:l.fontSize,x:l.x,y:l.y,width:l.width,score:Math.round(titleScore(l,page,regions))})).sort((a,b)=>b.score-a.score).slice(0,20);
-  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText,description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
+  return {include:true,title:smartTitleCase(title),titleLine,yieldText:meta.yieldText||extractYieldText(page),nutrition:extractMacroNutrition(page),description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
 }
 function guessBookTitle(pages,fileName){const first=pages.slice(0,4).flatMap(p=>p.lines).find(x=>x.length>5&&x.length<90&&!/copyright|contents|www\.|isbn/i.test(x));return first||fileName.replace(/\.pdf$/i,"").replace(/[_-]+/g," ");}
 
@@ -1305,10 +1342,10 @@ function renderReview(){
   const counts=importStatusCounts();$('reviewSummary').textContent=`${counts.new} new · ${counts.already} already imported · ${counts.duplicates} possible duplicates · ${counts.selected} selected`;
   const smart=$("smartImportSummary");if(smart){const book=importState.matchedCookbook;smart.hidden=false;smart.innerHTML=`<div><strong>${book?`Continuing ${escapeHTML(book.title)}`:"Smart duplicate scan"}</strong><p>${counts.new} new recipes found${counts.already?` · ${counts.already} already imported`:""}${counts.duplicates?` · ${counts.duplicates} possible duplicates need a decision`:""}.</p></div><button type="button" class="primary compact-button" data-select-new>Import all new recipes</button>`;}
   renderImportHealth();
-  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>{const health=assessImportCandidate(r);return `<article id="recipe-review-${i}" data-review-card="${i}" data-health="${health.severity}" class="recipe-review-card ${health.severity!=='good'?'needs-review':''} ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><div class="review-status-wrap">${r.importStatus==='already'?`<span class="import-status status-already">Already imported ✓</span>`:r.importStatus==='possible-duplicate'?`<span class="import-status status-duplicate">Possible duplicate · ${Math.round((r.duplicateConfidence||0)*100)}%</span>`:`<span class="import-status status-new">New</span>`}${r.duplicateMatch?`<small>Looks like: ${escapeHTML(r.duplicateMatch.name||'Existing recipe')}${recipeCookbookLabel(r.duplicateMatch)?` · ${escapeHTML(recipeCookbookLabel(r.duplicateMatch))}`:''}</small>`:''}</div><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''} ${r.importStatus==='already'?'disabled':''}><span>${r.importStatus==='possible-duplicate'?'Keep both':r.importStatus==='already'?'Imported':'Import'}</span></label><div class="recipe-review-page-tools"><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span><button type="button" class="secondary compact-button" data-view-source-page="${r.page}">View source page</button></div></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="parser-source-row"><span class="parser-source-badge">Title: ${escapeHTML(r.titleSource||"visual fallback")} · ${Number(r.titleConfidence||0)}%</span><div class="parser-card-actions"><button type="button" class="secondary compact-button" data-parser-report="${i}">Download parser report</button><button type="button" class="secondary compact-button" data-back-review-top>Back to report ↑</button></div></div><details class="parser-debug"><summary>🐞 Debug parser</summary><pre>${escapeHTML(JSON.stringify(r.debugReport||{},null,2))}</pre></details><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`}).join('');
+  $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>{const health=assessImportCandidate(r);return `<article id="recipe-review-${i}" data-review-card="${i}" data-health="${health.severity}" class="recipe-review-card ${health.severity!=='good'?'needs-review':''} ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><div class="review-status-wrap">${r.importStatus==='already'?`<span class="import-status status-already">Already imported ✓</span>`:r.importStatus==='possible-duplicate'?`<span class="import-status status-duplicate">Possible duplicate · ${Math.round((r.duplicateConfidence||0)*100)}%</span>`:`<span class="import-status status-new">New</span>`}${r.duplicateMatch?`<small>Looks like: ${escapeHTML(r.duplicateMatch.name||'Existing recipe')}${recipeCookbookLabel(r.duplicateMatch)?` · ${escapeHTML(recipeCookbookLabel(r.duplicateMatch))}`:''}</small>`:''}</div><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''} ${r.importStatus==='already'?'disabled':''}><span>${r.importStatus==='possible-duplicate'?'Keep both':r.importStatus==='already'?'Imported':'Import'}</span></label><div class="recipe-review-page-tools"><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span><button type="button" class="secondary compact-button" data-view-source-page="${r.page}">View source page</button></div></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="parser-source-row"><span class="parser-source-badge">Title: ${escapeHTML(r.titleSource||"visual fallback")} · ${Number(r.titleConfidence||0)}%</span><div class="parser-card-actions"><button type="button" class="secondary compact-button" data-parser-report="${i}">Download parser report</button><button type="button" class="secondary compact-button" data-back-review-top>Back to report ↑</button></div></div><details class="parser-debug"><summary>🐞 Debug parser</summary><pre>${escapeHTML(JSON.stringify(r.debugReport||{},null,2))}</pre></details><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Macros / nutrition<input data-review-nutrition="${i}" value="${escapeHTML(r.nutrition||'')}" placeholder="Calories: 336 | Protein: 38g | Carbs: 28g | Fat: 8g"></label><label class="field review-description-field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`}).join('');
 }
 
-function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title);r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
+function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title);r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.nutrition=document.querySelector(`[data-review-nutrition="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
 async function renderImportedSourcePreview(pageNo){
   if(!activePdfDocument)return "";
@@ -1390,7 +1427,7 @@ async function importSelected(){
     }
   }
   await saveCookbookPdf(importState.pdfBlob,[id,importState.fileName,title]).catch(()=>false);
-  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage="";const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
+  for(let i=0;i<selected.length;i++){const r=selected[i];btn.textContent=`Importing ${i+1} of ${selected.length}…`;const sourcePageImage="";const recipe={name:smartTitleCase(r.title),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:r.useImage?r.image||"":"",protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:r.nutrition||"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:sourcePageImage};
     try{const res=await postVault({action:"addManual",recipe,duplicateAction:"skip"});if(res.action==="duplicate")skipped++;else imported++;}catch(e){failed++;r.warnings.push(e.message);}
   }
   if(existingBook){existingBook.title=title;existingBook.author=author;existingBook.collection=collection;existingBook.cover=existingBook.cover||importState.cover;existingBook.pageCount=importState.pageCount;existingBook.importedCount=(cookbookRecipes(existingBook,{remember:false}).length||existingBook.importedCount||0)+imported;existingBook.fileName=importState.fileName;existingBook.aliases=[...new Set([...(existingBook.aliases||[]),title,importState.title].filter(Boolean))];}

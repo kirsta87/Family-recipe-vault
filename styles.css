@@ -980,3 +980,6 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .update-progress-card progress{display:block;width:100%;height:14px;margin:1.25rem 0 .75rem;}
 .update-progress-meta{display:flex!important;flex-direction:row!important;justify-content:space-between!important;align-items:center!important;width:100%;gap:1rem;}
 @media(max-width:560px){.update-progress-meta{align-items:flex-start!important;flex-direction:column!important;gap:.2rem;}}
+
+.review-description-field{grid-column:1/-1}
+@media(max-width:760px){.review-description-field{grid-column:auto}}
