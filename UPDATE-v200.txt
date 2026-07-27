@@ -1,5 +1,5 @@
-Build 200 — Cookbook Section Boundary Fix
+BUILD 200 — COOKBOOK COLUMN BOUNDARY FIX
 
-- Uses a hard visual divider between side-by-side ingredient and instruction columns.
-- Prevents directions from leaking into ingredient lists.
-- Removes embedded section markers from imported ingredients.
+- Keeps side-by-side ingredient and direction columns separate during PDF text extraction.
+- Prevents directions from being merged into ingredient lines.
+- Preserves the Build 199 macro parser hardening.

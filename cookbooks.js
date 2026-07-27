@@ -485,7 +485,7 @@ function applyTocTitles(candidates,tocMap){
 function downloadParserReport(index){
   syncReviewFields();
   const r=importState?.candidates?.[index];if(!r)return;
-  const payload={build:198,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
+  const payload={build:200,engine:COOKBOOK_ENGINE_VERSION,fileName:importState.fileName,recipe:r.debugReport||r};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`parser-report-page-${r.page}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -520,7 +520,7 @@ function recordParserDiagnostic({stage,page=null,recipe="",error,value,context={
 }
 let currentAnalyzingFileName="";
 function downloadParserDiagnostics(){
-  const payload={build:198,engine:COOKBOOK_ENGINE_VERSION,fileName:currentAnalyzingFileName||importState?.fileName||"",errors:parserDiagnostics};
+  const payload={build:200,engine:COOKBOOK_ENGINE_VERSION,fileName:currentAnalyzingFileName||importState?.fileName||"",errors:parserDiagnostics};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
@@ -757,13 +757,21 @@ function imageObjectToDataUrl(obj){
 
 function itemsToStructuredLines(items){
   const rows=[];
+  const normalized=[];
   for(const item of items){
     const raw=String(item.str||"").replace(/\s+/g," ").trim(); if(!raw)continue;
     const x=item.transform?.[4]||0,y=item.transform?.[5]||0;
     const fontSize=Math.max(Math.abs(item.transform?.[0]||0),Math.abs(item.transform?.[3]||0),item.height||0,1);
-    let row=rows.find(a=>Math.abs(a.y-y)<=Math.max(2.5,fontSize*.24));
-    if(!row){row={y,items:[]};rows.push(row);}
-    row.items.push({x,y,text:raw,fontSize,width:item.width||0,fontName:item.fontName||""});
+    const width=item.width||0;
+    normalized.push({x,y,text:raw,fontSize,width,fontName:item.fontName||""});
+  }
+  const pageMinX=Math.min(...normalized.map(v=>v.x||0),0);
+  const pageMaxX=Math.max(...normalized.map(v=>(v.x||0)+(v.width||v.text.length*(v.fontSize||10)*.45)),600);
+  const pageMid=(pageMinX+pageMaxX)/2;
+  for(const item of normalized){
+    let row=rows.find(a=>Math.abs(a.y-item.y)<=Math.max(2.5,item.fontSize*.24));
+    if(!row){row={y:item.y,items:[]};rows.push(row);}
+    row.items.push(item);
   }
   const lines=[];
   for(const row of rows.sort((a,b)=>b.y-a.y)){
@@ -779,9 +787,14 @@ function itemsToStructuredLines(items){
     for(const item of sorted){
       const prev=segment[segment.length-1];
       const prevEnd=prev ? prev.x+(prev.width||prev.text.length*(prev.fontSize||10)*.45) : 0;
+      const itemEnd=item.x+(item.width||item.text.length*(item.fontSize||10)*.45);
       const gap=prev ? item.x-prevEnd : 0;
-      // Large visual gap means a new column/region, even if PDF extraction order interleaves them.
-      if(prev && gap>Math.max(22,(prev.fontSize||10)*1.65))flush();
+      const crossesGutter=prev && prevEnd<pageMid-3 && item.x>pageMid+3;
+      const distinctColumns=prev && crossesGutter && gap>Math.max(5,(prev.fontSize||10)*.42);
+      // Split aggressively at the center gutter. Designed cookbook PDFs often
+      // place left-column ingredients and right-column directions on the same
+      // baseline, and PDF.js otherwise merges them into one corrupted line.
+      if(prev && (gap>Math.max(18,(prev.fontSize||10)*1.25) || distinctColumns))flush();
       segment.push(item);
     }
     flush();
