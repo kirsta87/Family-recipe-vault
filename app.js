@@ -2315,7 +2315,20 @@ on("closeRecipe", "click", () => {
   $("recipeDialog").close();
 });
 on("saveNotes", "click", () => write("update", active, {notes: $("notes").value.trim()}));
-on("sourcePageBtn","click",()=>{if(active?.source_page_image){const w=window.open();w.document.write(`<title>${escapeHTML(active.name||"Source page")}</title><img src="${active.source_page_image}" style="max-width:100%;display:block;margin:auto">`);w.document.close();}else if(active?.cookbook_page){location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(active.cookbook_page)}`;}});
+on("sourcePageBtn","click",()=>{
+  if(active?.source_page_image){
+    const dialog=$("sourcePagePreviewDialog"),img=$("sourcePagePreviewImage"),status=$("sourcePagePreviewStatus");
+    $("sourcePagePreviewTitle").textContent=`${active.name||"Original recipe page"}${active.cookbook_page?` · Page ${active.cookbook_page}`:""}`;
+    status.textContent="Loading page…";status.hidden=false;img.hidden=true;
+    img.onload=()=>{status.hidden=true;img.hidden=false;};
+    img.onerror=()=>{status.hidden=false;status.textContent="This saved page preview could not be opened. Re-upload the cookbook and choose Update existing recipes to rebuild it.";img.hidden=true;};
+    img.src=active.source_page_image;
+    if(!dialog.open)dialog.showModal();
+  }else if(active?.cookbook_page){
+    location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(active.cookbook_page)}`;
+  }
+});
+on("closeSourcePagePreview","click",()=>{$("sourcePagePreviewDialog").close();});
 on("madeBtn", "click", () => write("update", active, {
   made_count: Number(active.made_count || 0) + 1,
   last_made: new Date().toISOString().slice(0,10)

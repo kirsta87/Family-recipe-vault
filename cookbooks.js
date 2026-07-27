@@ -1282,31 +1282,53 @@ async function renderImportedSourcePreview(pageNo){
 }
 async function updateExistingCookbookRecipes(){
   const book=importState.matchedCookbook;if(!book)return;
-  const matches=importState.candidates.filter(r=>r.importStatus==="already"&&r.duplicateMatch);
-  const btn=$("updateExistingRecipes");
-  btn.disabled=true;
-  let updated=0,failed=0,pagesAttached=0;
-  for(let i=0;i<matches.length;i++){
-    const candidate=matches[i],existing=candidate.duplicateMatch;
-    btn.querySelector("strong").textContent=`Updating ${i+1} of ${matches.length}…`;
-    const preview=await renderImportedSourcePreview(candidate.page);
-    const updates={
-      cookbook_id:book.id,
-      cookbook_title:book.title,
-      cookbook_author:book.author||importState.author||"",
-      cookbook_page:candidate.page
-    };
-    if(preview){updates.source_page_image=preview;if(!recipeField(existing,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage"))pagesAttached++;}
-    if(!recipeField(existing,"yield","yieldText","servings","recipe_yield","serving_size")&&candidate.yieldText)updates.yield=candidate.yieldText;
-    if(!recipeField(existing,"description","author_note","authorNotes","headnote")&&candidate.description)updates.description=candidate.description;
-    if(!recipeField(existing,"video_url","videoUrl","tutorial_url","tutorialUrl")&&(candidate.links||[])[0])updates.video_url=candidate.links[0];
-    if((!normalizeRecipeList(recipeField(existing,"recipe_links","recipeLinks","links","tutorial_links")).length)&&(candidate.links||[]).length)updates.recipe_links=candidate.links;
-    try{await postVault({action:"update",id:existing.id,url:existing.url,updates});Object.assign(existing,updates);updated++;}catch(e){failed++;}
-  }
+  const allMatches=importState.candidates.filter(r=>r.importStatus==="already"&&r.duplicateMatch);
+  const jobs=allMatches.map(candidate=>{
+    const existing=candidate.duplicateMatch;
+    const missingPage=!recipeField(existing,"source_page_image","sourcePageImage","pdf_page_image","pdfPageImage","page_image","pageImage");
+    const missingYield=!recipeField(existing,"yield","yieldText","servings","recipe_yield","serving_size")&&candidate.yieldText;
+    const missingDescription=!recipeField(existing,"description","author_note","authorNotes","headnote")&&candidate.description;
+    const missingVideo=!recipeField(existing,"video_url","videoUrl","tutorial_url","tutorialUrl")&&(candidate.links||[])[0];
+    const missingLinks=!normalizeRecipeList(recipeField(existing,"recipe_links","recipeLinks","links","tutorial_links")).length&&(candidate.links||[]).length;
+    return {candidate,existing,missingPage,missingYield,missingDescription,missingVideo,missingLinks};
+  }).filter(job=>job.missingPage||job.missingYield||job.missingDescription||job.missingVideo||job.missingLinks||!recipeField(job.existing,"cookbook_id","cookbookId"));
+
+  const choicePanel=$("reimportChoicePanel"),progressPanel=$("cookbookUpdateProgress");
+  choicePanel.hidden=true;progressPanel.hidden=false;
+  const bar=$("updateProgressBar"),count=$("updateProgressCount"),detail=$("updateProgressDetail"),status=$("updateProgressStatus"),title=$("updateProgressTitle");
+  title.textContent=`Refreshing ${book.title}`;
+  status.textContent=jobs.length?`Updating only ${jobs.length} recipes that are missing cookbook data.`:"Everything in this cookbook is already complete.";
+  bar.value=jobs.length?0:100;count.textContent=`0 of ${jobs.length}`;detail.textContent=jobs.length?"Preparing updates":"No changes needed";
+
+  let updated=0,failed=0,pagesAttached=0,descriptionsAdded=0,yieldsAdded=0,linksAdded=0,completed=0;
+  const updateProgress=()=>{
+    completed++;
+    bar.value=jobs.length?Math.round((completed/jobs.length)*100):100;
+    count.textContent=`${completed} of ${jobs.length}`;
+    detail.textContent=completed<jobs.length?"Updating recipes":"Finishing cookbook";
+  };
+  const runJob=async job=>{
+    const {candidate,existing}=job;
+    const updates={cookbook_id:book.id,cookbook_title:book.title,cookbook_author:book.author||importState.author||"",cookbook_page:candidate.page};
+    if(job.missingPage){const preview=await renderImportedSourcePreview(candidate.page);if(preview){updates.source_page_image=preview;pagesAttached++;}}
+    if(job.missingYield){updates.yield=candidate.yieldText;yieldsAdded++;}
+    if(job.missingDescription){updates.description=candidate.description;descriptionsAdded++;}
+    if(job.missingVideo){updates.video_url=candidate.links[0];linksAdded++;}
+    if(job.missingLinks){updates.recipe_links=candidate.links;}
+    try{await postVault({action:"update",id:existing.id,url:existing.url,updates});Object.assign(existing,updates);updated++;}
+    catch(e){failed++;}
+    finally{updateProgress();}
+  };
+
+  // A small worker pool keeps Apps Script responsive while avoiding 77 fully sequential requests.
+  const queue=[...jobs];
+  const workers=Array.from({length:Math.min(4,Math.max(1,queue.length))},async()=>{while(queue.length)await runJob(queue.shift());});
+  await Promise.all(workers);
+
   book.fileName=importState.fileName;book.pageCount=importState.pageCount;book.cover=book.cover||importState.cover;book.aliases=[...new Set([...(book.aliases||[]),book.title,importState.title].filter(Boolean))];saveLibrary();
-  btn.disabled=false;btn.querySelector("strong").textContent="Update existing recipes";
-  $("reimportChoicePanel").hidden=true;$("importResults").hidden=false;
-  $("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(book.title)} is updated</h2><p>${updated} existing recipes refreshed${pagesAttached?`, ${pagesAttached} missing original PDF pages attached`:""}${failed?`, ${failed} could not be updated`:""}.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;
+  progressPanel.hidden=true;$("importResults").hidden=false;
+  const unchanged=Math.max(0,allMatches.length-jobs.length);
+  $("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(book.title)} is updated</h2><p>${updated} recipes refreshed${unchanged?` · ${unchanged} were already complete`:""}${failed?` · ${failed} could not be updated`:""}.</p><div class="maintenance-summary"><div><strong>${pagesAttached}</strong><span>PDF pages attached</span></div><div><strong>${descriptionsAdded}</strong><span>descriptions restored</span></div><div><strong>${yieldsAdded}</strong><span>serving sizes restored</span></div><div><strong>${linksAdded}</strong><span>tutorial links restored</span></div></div><p class="muted">Family Notes, ratings, collections, and personal edits were left untouched.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;
   $("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(book.id));};
 }
 async function importSelected(){

@@ -42,20 +42,32 @@
 
     <div id="reimportChoicePanel" hidden class="cookbook-reimport-choice">
       <div class="cookbook-metadata-card reimport-choice-card">
-        <p class="eyebrow">COOKBOOK ALREADY ON YOUR SHELF</p>
-        <h3 id="reimportChoiceTitle">This cookbook is already imported</h3>
-        <p id="reimportChoiceSummary" class="muted"></p>
+        <div class="reimport-choice-heading">
+          <p class="eyebrow">COOKBOOK ALREADY ON YOUR SHELF</p>
+          <h3 id="reimportChoiceTitle">This cookbook is already imported</h3>
+          <p id="reimportChoiceSummary" class="muted"></p>
+        </div>
         <div class="reimport-choice-grid">
           <button id="updateExistingRecipes" type="button" class="reimport-choice-button">
-            <strong>Update existing recipes</strong>
-            <span>Attach missing original PDF pages and safely restore missing cookbook details. Your Family Notes and personal edits stay untouched.</span>
+            <span class="reimport-choice-icon" aria-hidden="true">↻</span>
+            <span class="reimport-choice-copy"><strong>Update existing recipes</strong><span>Fill in missing PDF pages and cookbook details without changing Family Notes, ratings, or personal edits.</span></span>
           </button>
           <button id="importMissingRecipes" type="button" class="reimport-choice-button">
-            <strong>Import missing recipes</strong>
-            <span>Skip everything already in the vault and review only recipes that are new or possible duplicates.</span>
+            <span class="reimport-choice-icon" aria-hidden="true">＋</span>
+            <span class="reimport-choice-copy"><strong>Import missing recipes</strong><span>Review only recipes that are new or may duplicate something already in your vault.</span></span>
           </button>
         </div>
-        <button id="cancelReimportChoice" type="button" class="secondary">Choose a different PDF</button>
+        <button id="cancelReimportChoice" type="button" class="secondary reimport-cancel">Choose a different PDF</button>
+      </div>
+    </div>
+
+    <div id="cookbookUpdateProgress" hidden class="cookbook-update-progress" aria-live="polite">
+      <div class="cookbook-metadata-card update-progress-card">
+        <p class="eyebrow">UPDATING COOKBOOK</p>
+        <h3 id="updateProgressTitle">Refreshing recipes…</h3>
+        <p id="updateProgressStatus" class="muted">Preparing updates.</p>
+        <progress id="updateProgressBar" max="100" value="0"></progress>
+        <div class="update-progress-meta"><strong id="updateProgressCount">0 of 0</strong><span id="updateProgressDetail">Scanning recipes</span></div>
       </div>
     </div>
 
@@ -106,6 +118,6 @@
 </dialog>
 <dialog id="deleteCookbookDialog"><button id="closeDeleteCookbook" class="close">×</button><h2>Remove cookbook?</h2><p id="deleteCookbookMessage"></p><div class="stacked-actions"><button id="removeCookbookOnly" class="secondary">Remove cookbook from shelf only</button><button id="removeCookbookAndRecipes" class="danger">Remove cookbook and its recipes</button><button id="cancelDeleteCookbook" class="secondary">Cancel</button></div><p class="muted">Removing recipes requires the connected Apps Script to support recipe deletion. If it does not, the cookbook will still be removed from the shelf and the recipes will remain in the vault.</p></dialog>
 <script src="config.js?v=190"></script>
-<script type="module" src="cookbooks.js?v=191"></script>
+<script type="module" src="cookbooks.js?v=192"></script>
   <script src="build-status.js?v=190"></script>
 </body></html>

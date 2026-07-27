@@ -1,0 +1,8 @@
+Build 192 — Cookbook Maintenance
+
+- Redesigns the repeated-cookbook choice screen into two clear action cards.
+- Updates only recipes that are missing cookbook data instead of rewriting all matches.
+- Uses a small parallel worker pool and cached page renders for faster updates.
+- Adds a proper progress screen and completion summary.
+- Fixes View original PDF page by opening saved previews inside Recipe Vault instead of relying on a blocked popup.
+- Preserves Family Notes, ratings, collections, and personal edits.
