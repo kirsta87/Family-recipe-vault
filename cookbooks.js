@@ -1679,7 +1679,11 @@ function mapperSetActivePage(pageNo){
  document.querySelectorAll(".mapper-page-card").forEach(x=>x.classList.toggle("active",Number(x.dataset.page)===pageNo));mapperRefreshToolbar();
 }
 function mapperEnsureOverride(pageNo){const s=visualMapperState;if(!s.pageOverrides[pageNo])s.pageOverrides[pageNo]=mapperCloneGroups(s.templateGroups);return s.pageOverrides[pageNo];}
-function mapperTargetGroups(pageNo,forcePageOnly=false){return (forcePageOnly||visualMapperState.editPageOnly)?mapperEnsureOverride(pageNo):visualMapperState.templateGroups;}
+function mapperTargetGroups(pageNo,forcePageOnly=false){
+ const s=visualMapperState;
+ // Once a page has an override, every edit on that page stays inside it. Never leak edits back to the master template.
+ return (forcePageOnly||s.editPageOnly||Boolean(s.pageOverrides[pageNo]))?mapperEnsureOverride(pageNo):s.templateGroups;
+}
 function mapperRefreshToolbar(){
  const s=visualMapperState;if(!s)return;const groups=mapperActiveGroups();
  const groupSel=$("mapperGroupSelect");if(groupSel){groupSel.innerHTML=groups.map((g,i)=>`<option value="${g.id}">Recipe ${i+1}</option>`).join("");if(!groups.some(g=>g.id===s.activeGroupId))s.activeGroupId=groups[0]?.id||"";groupSel.value=s.activeGroupId;}
@@ -1751,10 +1755,10 @@ function mapperRenderAllOverlays(){document.querySelectorAll(".mapper-page-stage
 function mapperInstallDrawing(layer,pageNo){let start=null,ghost=null;layer.addEventListener("pointerdown",e=>{if(e.target.closest(".mapper-box"))return;mapperSetActivePage(pageNo);if(visualMapperState.groupMove){visualMapperState.groupMove=null;visualMapperState.selectedBox=null;mapperRefreshToolbar();return;}const r=layer.getBoundingClientRect();start={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};ghost=document.createElement("div");ghost.className="mapper-box mapper-ghost";ghost.style.borderColor=mapperBoxColor(visualMapperState.activeField);layer.appendChild(ghost);layer.setPointerCapture(e.pointerId);});layer.addEventListener("pointermove",e=>{if(!start||!ghost)return;const r=layer.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;const left=Math.max(0,Math.min(start.x,x)),top=Math.max(0,Math.min(start.y,y)),w=Math.min(1,Math.abs(x-start.x)),h=Math.min(1,Math.abs(y-start.y));ghost.style.cssText=`left:${left*100}%;top:${top*100}%;width:${w*100}%;height:${h*100}%;border-color:${mapperBoxColor(visualMapperState.activeField)}`;});layer.addEventListener("pointerup",e=>{if(!start)return;const r=layer.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;const b=mapperClampBox({x:Math.max(0,Math.min(start.x,x)),y:Math.max(0,Math.min(start.y,y)),w:Math.abs(x-start.x),h:Math.abs(y-start.y)});ghost?.remove();ghost=null;start=null;if(b.w<.015||b.h<.012)return;const groups=mapperTargetGroups(pageNo);let g=groups.find(z=>z.id===visualMapperState.activeGroupId);if(!g){const activeIndex=mapperGroupIndex(mapperPageGroups(pageNo),visualMapperState.activeGroupId);g=groups[activeIndex]||groups[0];visualMapperState.activeGroupId=g?.id||"";}if(g)g.boxes[visualMapperState.activeField]=b;mapperRefreshToolbar();});}
 async function launchVisualCookbookMapper(pdf,pages,tocMap){
  $("analyzePanel").hidden=true;$("reviewPanel").hidden=true;let panel=$("visualMapperPanel");if(!panel){panel=document.createElement("section");panel.id="visualMapperPanel";$("importView").appendChild(panel);}visualMapperState={pdf,pages,tocMap,templatePage:Math.min(2,pdf.numPages),templateGroups:[mapperDefaultGroup()],pageOverrides:{},activePage:Math.min(2,pdf.numPages),activeGroupId:"",activeField:"title",editPageOnly:false,skippedPages:new Set(),groupMove:null,selectedBox:null};visualMapperState.activeGroupId=visualMapperState.templateGroups[0].id;
- panel.innerHTML=`<div class="mapper-header"><div><p class="eyebrow">BUILD 207 · WORKING COOKBOOK IMPORT</p><h2>Map the cookbook layout</h2><p class="muted">Template edits affect every page. Page-only edits and cloned recipes stay isolated to the active page.</p></div><button id="mapperCancel" class="secondary">Cancel</button></div><div class="mapper-workspace"><aside class="mapper-sidebar"><div><strong>Editing</strong><div id="mapperModeBadge" class="mapper-side-badge"></div></div><label>Field<select id="mapperFieldSelect">${MAPPER_FIELDS.map(f=>`<option value="${f}">${MAPPER_LABELS[f]}</option>`).join("")}</select></label><label>Recipe<select id="mapperGroupSelect"></select></label><div id="mapperRecipeList" class="mapper-recipe-list"></div><button id="mapperAddGroup" class="secondary">+ Empty recipe</button><button id="mapperDuplicateGroup" class="secondary">Clone recipe</button><label class="mapper-toggle"><input id="mapperPageOnly" type="checkbox"> Edit this page only</label><button id="mapperResetPage" class="secondary">Reset this page</button><p id="mapperInstruction" class="muted"></p><button id="mapperBuildReview" class="primary">Build recipe review</button></aside><div class="mapper-main"><div id="mapperPages" class="mapper-pages"></div></div></div>`;
- const pagesHost=$("mapperPages");for(let n=1;n<=pdf.numPages;n++){const card=document.createElement("article");card.className="mapper-page-card";card.dataset.page=n;card.innerHTML=`<div class="mapper-page-label"><span>Page ${n}</span><label class="mapper-import-page"><input type="checkbox" checked> Import page</label><span class="mapper-page-state"></span></div><div class="mapper-page-stage" data-page="${n}"><canvas></canvas><div class="mapper-overlay"></div></div>`;pagesHost.appendChild(card);card.onclick=()=>mapperSetActivePage(n);const check=card.querySelector(".mapper-import-page input");check.onclick=e=>e.stopPropagation();check.onchange=e=>{if(e.target.checked)visualMapperState.skippedPages.delete(n);else visualMapperState.skippedPages.add(n);card.classList.toggle("skipped",!e.target.checked);};mapperInstallDrawing(card.querySelector(".mapper-overlay"),n);}
+ panel.innerHTML=`<div class="mapper-header"><div><p class="eyebrow">BUILD 208 · SMART COOKBOOK IMPORT</p><h2>Map the cookbook layout</h2><p class="muted">Template edits affect every page. Page-only edits and cloned recipes stay isolated to the active page.</p></div><button id="mapperCancel" class="secondary">Cancel</button></div><div class="mapper-workspace"><aside class="mapper-sidebar"><div><strong>Editing</strong><div id="mapperModeBadge" class="mapper-side-badge"></div></div><label>Field<select id="mapperFieldSelect">${MAPPER_FIELDS.map(f=>`<option value="${f}">${MAPPER_LABELS[f]}</option>`).join("")}</select></label><label>Recipe<select id="mapperGroupSelect"></select></label><div id="mapperRecipeList" class="mapper-recipe-list"></div><button id="mapperAddGroup" class="secondary">+ Add blank recipe</button><button id="mapperDuplicateGroup" class="secondary">Clone recipe</button><label class="mapper-toggle"><input id="mapperPageOnly" type="checkbox"> Edit this page only</label><button id="mapperResetPage" class="secondary">Reset this page</button><p id="mapperInstruction" class="muted"></p><button id="mapperBuildReview" class="primary">Build recipe review</button></aside><div class="mapper-main"><div id="mapperPages" class="mapper-pages"></div></div></div>`;
+ const pagesHost=$("mapperPages");for(let n=1;n<=pdf.numPages;n++){const pageData=pages[n-1]||{page:n},score=mapperPageRecipeScore(pageData),autoImport=score>=45;if(!autoImport)visualMapperState.skippedPages.add(n);const card=document.createElement("article");card.className=`mapper-page-card${autoImport?"":" skipped"}`;card.dataset.page=n;card.innerHTML=`<div class="mapper-page-label"><span>Page ${n}</span><label class="mapper-import-page"><input type="checkbox" ${autoImport?"checked":""}> Import page</label><span class="mapper-page-state">${score>=75?"Likely recipe":score>=45?"Review":"Auto-skipped"} · ${score}%</span></div><div class="mapper-page-stage" data-page="${n}"><canvas></canvas><div class="mapper-overlay"></div></div>`;pagesHost.appendChild(card);card.onclick=()=>mapperSetActivePage(n);const check=card.querySelector(".mapper-import-page input");check.onclick=e=>e.stopPropagation();check.onchange=e=>{if(e.target.checked)visualMapperState.skippedPages.delete(n);else visualMapperState.skippedPages.add(n);card.classList.toggle("skipped",!e.target.checked);};mapperInstallDrawing(card.querySelector(".mapper-overlay"),n);}
  const observer=new IntersectionObserver(entries=>entries.forEach(en=>{if(en.isIntersecting){const card=en.target,n=Number(card.dataset.page);mapperRenderPage(n,card.querySelector("canvas"));observer.unobserve(card);}}),{root:pagesHost,rootMargin:"800px"});document.querySelectorAll(".mapper-page-card").forEach(c=>observer.observe(c));
- $("mapperFieldSelect").onchange=e=>{visualMapperState.activeField=e.target.value;mapperRefreshToolbar();};$("mapperGroupSelect").onchange=e=>{visualMapperState.activeGroupId=e.target.value;visualMapperState.groupMove=null;mapperRefreshToolbar();};$("mapperPageOnly").onchange=e=>{const s=visualMapperState,oldGroups=mapperPageGroups(s.activePage),oldIndex=mapperGroupIndex(oldGroups,s.activeGroupId);s.editPageOnly=e.target.checked;if(e.target.checked){const groups=mapperEnsureOverride(s.activePage);s.activeGroupId=groups[oldIndex]?.id||groups[0]?.id||"";}else if(s.pageOverrides[s.activePage]){delete s.pageOverrides[s.activePage];s.activeGroupId=s.templateGroups[oldIndex]?.id||s.templateGroups[0]?.id||"";}s.groupMove=null;mapperRefreshToolbar();};
+ $("mapperFieldSelect").onchange=e=>{visualMapperState.activeField=e.target.value;mapperRefreshToolbar();};$("mapperGroupSelect").onchange=e=>{visualMapperState.activeGroupId=e.target.value;visualMapperState.groupMove=null;mapperRefreshToolbar();};$("mapperPageOnly").onchange=e=>{const s=visualMapperState,oldGroups=mapperPageGroups(s.activePage),oldIndex=mapperGroupIndex(oldGroups,s.activeGroupId);s.editPageOnly=e.target.checked;if(e.target.checked){const groups=mapperEnsureOverride(s.activePage);s.activeGroupId=groups[oldIndex]?.id||groups[0]?.id||"";}else if(s.pageOverrides[s.activePage]){e.target.checked=true;s.editPageOnly=true;alert("This page already has its own layout. Use Reset this page only when you intentionally want to discard it and return to the master template.");}s.groupMove=null;mapperRefreshToolbar();};
  $("mapperAddGroup").onclick=()=>{const groups=mapperEnsureOverride(visualMapperState.activePage),g=mapperDefaultGroup();groups.push(g);visualMapperState.editPageOnly=true;$("mapperPageOnly").checked=true;visualMapperState.activeGroupId=g.id;mapperRefreshToolbar();};
  $("mapperDuplicateGroup").onclick=()=>{
  const s=visualMapperState,pageNo=s.activePage,visible=mapperPageGroups(pageNo),srcIndex=Math.max(0,visible.findIndex(g=>g.id===s.activeGroupId));
@@ -1768,11 +1772,68 @@ async function launchVisualCookbookMapper(pdf,pages,tocMap){
  $("mapperResetPage").onclick=()=>{delete visualMapperState.pageOverrides[visualMapperState.activePage];visualMapperState.editPageOnly=false;$("mapperPageOnly").checked=false;visualMapperState.activeGroupId=visualMapperState.templateGroups[0]?.id||"";mapperRefreshToolbar();};$("mapperCancel").onclick=cancelImport;$("mapperBuildReview").onclick=buildReviewFromVisualMapper;
  mapperSetActivePage(visualMapperState.activePage);document.querySelector(`.mapper-page-card[data-page="${visualMapperState.activePage}"]`)?.scrollIntoView({block:"start"});
 }
-function mappedLines(page,b){if(!b)return[];const W=page.width||1,H=page.height||1,padX=.008,padY=.006;return (page.richLines||[]).filter(l=>{const left=(l.x||0)/W,right=((l.x||0)+(l.width||0))/W,top=1-((l.y||0)+(l.fontSize||0))/H,bottom=1-(l.y||0)/H;return right>=b.x-padX&&left<=b.x+b.w+padX&&bottom>=b.y-padY&&top<=b.y+b.h+padY;}).sort((a,b)=>b.y-a.y||a.x-b.x);}
-function mapperBoundaryText(text){return /^(directions?|instructions?|method|notes?|nutrition(?: facts)?|macros?|serves?|servings?|yield|ingredients?)\s*:?$/i.test(cleanLine(text));}
+function mapperLineGeometry(page,l){
+ const W=page.width||1,H=page.height||1;
+ const left=(l.x||0)/W,right=((l.x||0)+(l.width||0))/W;
+ const top=1-((l.y||0)+(l.fontSize||0))/H,bottom=1-(l.y||0)/H;
+ return {left,right,top,bottom,cx:(left+right)/2,cy:(top+bottom)/2};
+}
+function mapperBoxIntersectsLine(page,b,l,padX=.008,padY=.006){
+ const g=mapperLineGeometry(page,l);
+ return g.right>=b.x-padX&&g.left<=b.x+b.w+padX&&g.bottom>=b.y-padY&&g.top<=b.y+b.h+padY;
+}
+function mappedLines(page,b){
+ if(!b)return[];
+ return (page.richLines||[]).filter(l=>mapperBoxIntersectsLine(page,b,l)).sort((a,b)=>b.y-a.y||a.x-b.x);
+}
+function mapperBoundaryText(text){return /^(directions?|instructions?|method|notes?|nutrition(?: facts)?|macros?|serves?|servings?|yield|ingredients?|shopping list|table of contents|index)\s*:?$/i.test(cleanLine(text));}
 function looksIngredientLine(text){const value=cleanLine(text);return /^(?:[•▪◦*\-–—]|\d+[.)]|\d+\s|\d*\s*[¼½¾⅓⅔⅛⅜⅝⅞]|(?:one|two|three|four|five|six|seven|eight|nine|ten)\b|(?:pinch|dash|handful|salt|pepper)\b)/i.test(value)||/\b(?:cup|cups|tbsp|tablespoons?|tsp|teaspoons?|ounces?|oz|pounds?|lb|lbs|grams?|g|kg|ml|liters?|cloves?|cans?|packages?|sticks?|slices?)\b/i.test(value);}
-function mappedLinesSmart(page,b,mode,allBoxes=[]){const base=mappedLines(page,b);if(!b||!base.length||!["ingredients","instructions"].includes(mode))return base;const W=page.width||1,H=page.height||1;const existing=new Set(base);let currentBottom=b.y+b.h;const maxBottom=Math.min(1,currentBottom+.14);const candidates=(page.richLines||[]).filter(l=>{const left=(l.x||0)/W,right=((l.x||0)+(l.width||0))/W,top=1-((l.y||0)+(l.fontSize||0))/H;return !existing.has(l)&&right>=b.x-.008&&left<=b.x+b.w+.008&&top>=currentBottom-.006&&top<=maxBottom;}).sort((a,b)=>b.y-a.y||a.x-b.x);const out=[...base];for(const l of candidates){const text=cleanLine(l.text);if(mapperBoundaryText(text))break;const top=1-((l.y||0)+(l.fontSize||0))/H;if(allBoxes.some(x=>x!==b&&top>=x.y&&top<=x.y+x.h&&((l.x||0)/W)>=x.x&&((l.x||0)/W)<=x.x+x.w))break;if(mode==="ingredients"&&!looksIngredientLine(text)&&/[.!?]$/.test(text)&&text.split(/\s+/).length>12)break;out.push(l);currentBottom=top;}return out.sort((a,b)=>b.y-a.y||a.x-b.x);}
-function mappedText(page,b,mode="prose",allBoxes=[]){const lines=mappedLinesSmart(page,b,mode,allBoxes);if(mode==="ingredients")return mergeIngredientLines(lines);if(mode==="instructions")return mergeInstructionLines(lines,page.width||600);return lines.map(l=>cleanLine(l.text)).filter(Boolean).join(mode==="title"?" ":"\n").replace(/\s+\n/g,"\n").trim();}
+function mapperLineInsideOtherBox(page,l,current,allBoxes){
+ const g=mapperLineGeometry(page,l);
+ return allBoxes.some(x=>x&&x!==current&&g.cx>=x.x&&g.cx<=x.x+x.w&&g.cy>=x.y&&g.cy<=x.y+x.h);
+}
+function mappedLinesSmart(page,b,mode,allBoxes=[]){
+ const base=mappedLines(page,b);if(!b)return[];
+ const lines=(page.richLines||[]).slice().sort((a,b)=>b.y-a.y||a.x-b.x);
+ const chosen=new Set(base);
+ // Small forgiving halo catches clipped first/last words and lines that sit just outside a hand-drawn box.
+ const halo={x:Math.max(0,b.x-.018),y:Math.max(0,b.y-.012),w:Math.min(1,b.w+.036),h:Math.min(1,b.h+.024)};
+ lines.forEach(l=>{if(!chosen.has(l)&&mapperBoxIntersectsLine(page,halo,l,0,0)&&!mapperLineInsideOtherBox(page,l,b,allBoxes))chosen.add(l);});
+ if(["ingredients","instructions","description"].includes(mode)){
+   let bottom=Math.max(b.y+b.h,...[...chosen].map(l=>mapperLineGeometry(page,l).bottom));
+   const maxBottom=Math.min(1,b.y+b.h+(mode==="instructions"?.22:.16));
+   for(const l of lines){
+     if(chosen.has(l)||mapperLineInsideOtherBox(page,l,b,allBoxes))continue;
+     const g=mapperLineGeometry(page,l),text=cleanLine(l.text);
+     const aligned=g.right>=b.x-.018&&g.left<=b.x+b.w+.018;
+     if(!aligned||g.top<bottom-.012||g.top>maxBottom)continue;
+     if(mapperBoundaryText(text))break;
+     if(mode==="ingredients"&&!looksIngredientLine(text)&&/[.!?]$/.test(text)&&text.split(/\s+/).length>12)break;
+     chosen.add(l);bottom=Math.max(bottom,g.bottom);
+   }
+ }
+ return [...chosen].sort((a,b)=>b.y-a.y||a.x-b.x);
+}
+function mappedText(page,b,mode="prose",allBoxes=[]){
+ const lines=mappedLinesSmart(page,b,mode,allBoxes);
+ if(mode==="ingredients")return mergeIngredientLines(lines);
+ if(mode==="instructions")return mergeInstructionLines(lines,page.width||600);
+ return lines.map(l=>cleanLine(l.text)).filter(Boolean).join(mode==="title"?" ":"\n").replace(/\s+\n/g,"\n").trim();
+}
+function mapperPageRecipeScore(page){
+ const text=(page.text||(page.lines||[]).join("\n")||"").toLowerCase();
+ const lineCount=(page.richLines||[]).length;
+ let score=0;
+ if(/\bingredients?\b/.test(text))score+=38;
+ if(/\b(directions?|instructions?|method)\b/.test(text))score+=38;
+ if(/\b(calories?|protein|carbs?|fat|macros?|nutrition)\b/.test(text))score+=12;
+ if(/\b(serves?|servings?|yield|prep time|cook time)\b/.test(text))score+=8;
+ if(lineCount>12)score+=8;
+ if(/table of contents|copyright|all rights reserved|about the author|acknowledg|disclaimer/.test(text))score-=75;
+ if(/^\s*(index|contents)\s*$/im.test(text))score-=65;
+ if(lineCount<5)score-=35;
+ return Math.max(0,Math.min(100,score));
+}
 async function cropMappedImage(pdf,pageNo,b){if(!b)return"";const page=await pdf.getPage(pageNo),vp=page.getViewport({scale:1});const scale=Math.min(1.4,900/(vp.width*b.w||1));const rv=page.getViewport({scale});const canvas=document.createElement("canvas");canvas.width=Math.round(rv.width);canvas.height=Math.round(rv.height);await page.render({canvasContext:canvas.getContext("2d"),viewport:rv}).promise;const sx=Math.round(b.x*canvas.width),sy=Math.round(b.y*canvas.height),sw=Math.max(1,Math.round(b.w*canvas.width)),sh=Math.max(1,Math.round(b.h*canvas.height));const crop=document.createElement("canvas");crop.width=Math.min(800,sw);crop.height=Math.max(1,Math.round(sh*crop.width/sw));crop.getContext("2d").drawImage(canvas,sx,sy,sw,sh,0,0,crop.width,crop.height);return crop.toDataURL("image/jpeg",.72);}
 async function buildReviewFromVisualMapper(){
  const s=visualMapperState,btn=$("mapperBuildReview");
@@ -1790,13 +1851,16 @@ async function buildReviewFromVisualMapper(){
     const instructions=mappedText(page,g.boxes.instructions,"instructions",allBoxes);
     if(!title&&!ingredients.length&&!instructions.length)continue;
     const nutrition=mappedText(page,g.boxes.nutrition,"prose",allBoxes).replace(/\n+/g," | ");
-    const yieldText=mappedText(page,g.boxes.yieldText,"title",allBoxes);
-    const description=mappedText(page,g.boxes.description,"prose",allBoxes).replace(/\n+/g," ");
+    let yieldText=mappedText(page,g.boxes.yieldText,"title",allBoxes);
+    if(/^(?:macros?|nutrition|calories?|protein|fat|carbs?)\b/i.test(yieldText))yieldText="";
+    const description=mappedText(page,g.boxes.description,"description",allBoxes).replace(/\n+/g," ");
     const warnings=[];
     if(!title)warnings.push("Missing title");
     if(!ingredients.length)warnings.push("Missing ingredients");
     if(!instructions.length)warnings.push("Missing instructions");
-    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:"",imageKind:g.boxes.image?"mapped crop pending":"",useImage:Boolean(g.boxes.image),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v207",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
+    let mappedImage="";
+    if(g.boxes.image){btn.textContent=`Cropping photo for page ${page.page}…`;mappedImage=await cropMappedImage(s.pdf,page.page,g.boxes.image).catch(()=>"");}
+    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v208",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
     done++;btn.textContent=`Preparing ${done} recipes…`;
     if(done%12===0)await nextFrame();
    }

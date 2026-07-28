@@ -1,0 +1,8 @@
+BUILD 208 — SMART COOKBOOK IMPORT
+
+- Auto-skips likely non-recipe pages using recipe confidence scoring.
+- Preserves page-only layouts and prevents accidental override deletion.
+- Crops mapped recipe photos before review so they appear immediately.
+- Restores mapped instructions and adds forgiving overflow extraction around boxes.
+- Rejects macro text accidentally captured as yield.
+- Renames Empty recipe to Add blank recipe.
