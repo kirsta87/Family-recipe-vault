@@ -1,0 +1,6 @@
+Build 206 — Cookbook upload pipeline fix
+
+- Build Recipe Review now completes without rendering every recipe image first.
+- Clear progress and visible errors replace silent failures.
+- Recipe images are cropped only when the selected recipes are actually uploaded.
+- Mapper layout snapshot is preserved when entering review.
