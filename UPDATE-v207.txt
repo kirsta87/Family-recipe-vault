@@ -1,0 +1,7 @@
+BUILD 207
+
+- Fixes recipe review crash caused by missing looksIngredientLine.
+- Cloned recipes are page-only and do not modify the master template.
+- A cloned recipe stays grouped and all of its boxes move together until empty space is clicked.
+- Adds the mapper editing sidebar and recipe list.
+- Keeps mapper-driven review and import connected end to end.

@@ -1,1 +1,6 @@
-{"build":206,"label":"Cookbook Upload Pipeline Fix","engine":"Cookbook Engine 4.3 · Visual Cookbook Mapper v4"}
+{
+  "build": 207,
+  "version": "207",
+  "label": "Working cookbook mapper import",
+  "date": "2026-07-28"
+}
