@@ -1662,7 +1662,7 @@ $("closeEditCookbook").onclick=()=>$("editCookbookDialog").close();$("cancelEdit
 
 
 
-/* Build 210 — Never-blank mapped instructions */
+/* Build 211 — Preserve the entire mapped instruction region */
 const MAPPER_FIELDS=["title","ingredients","instructions","nutrition","yieldText","description","image"];
 const MAPPER_LABELS={title:"Title",ingredients:"Ingredients",instructions:"Instructions",nutrition:"Macros / nutrition",yieldText:"Yield / servings",description:"Description",image:"Recipe photo"};
 let visualMapperState=null;
@@ -1860,9 +1860,14 @@ function mappedText(page,b,mode="prose",allBoxes=[]){
  if(mode==="ingredients")return mergeIngredientLines(lines);
  if(mode==="instructions"){
   const merged=mergeInstructionLines(lines,page.width||600);
-  // Never return a blank instruction field when the mapped box visibly contains text.
-  // Some cookbook fonts/line wrapping do not satisfy the legacy instruction classifier.
-  return merged.length?merged:mappedInstructionFallback(lines);
+  const fallback=mappedInstructionFallback(lines);
+  // The legacy merger only keeps text that looks like a new instruction. On many
+  // cookbook PDFs that means it captures step 1 and silently drops every plain-text
+  // continuation below it. Prefer whichever interpretation preserves more of the
+  // text physically inside (or immediately overflowing) the mapped box.
+  const mergedWords=merged.join(" ").split(/\s+/).filter(Boolean).length;
+  const fallbackWords=fallback.join(" ").split(/\s+/).filter(Boolean).length;
+  return fallbackWords>mergedWords?fallback:merged;
  }
  return lines.map(l=>cleanLine(l.text)).filter(Boolean).join(mode==="title"?" ":"\n").replace(/\s+\n/g,"\n").trim();
 }
@@ -1917,7 +1922,7 @@ async function buildReviewFromVisualMapper(){
     if(!instructions.length)warnings.push("Missing instructions");
     let mappedImage="";
     if(g.boxes.image){btn.textContent=`Cropping photo for page ${page.page}…`;mappedImage=await cropMappedImage(s.pdf,page.page,g.boxes.image).catch(()=>"");}
-    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v210",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
+    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v211",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
     done++;btn.textContent=`Preparing ${done} recipes…`;
     if(done%12===0)await nextFrame();
    }

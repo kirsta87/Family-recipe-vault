@@ -1,0 +1,5 @@
+Build 211
+
+- Instructions now preserve all text inside the mapped instruction box.
+- Uses the full mapped-text fallback whenever the older step parser drops continuation paragraphs.
+- Keeps the existing overflow-following behavior for text immediately below the box.
