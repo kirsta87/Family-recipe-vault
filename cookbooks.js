@@ -1871,8 +1871,38 @@ function mapperCleanIngredients(items){
  }
  return result;
 }
+function mappedTitleText(page,b,allBoxes=[]){
+ const lines=mappedLinesSmart(page,b,"title",allBoxes).filter(l=>cleanLine(l.text));
+ if(!lines.length)return"";
+ const ordered=lines.slice().sort((a,b)=>b.y-a.y||a.x-b.x);
+ const maxFont=Math.max(...ordered.map(l=>Number(l.fontSize||0)),1);
+ const first=ordered[0];
+ const firstGeom=mapperLineGeometry(page,first);
+ const selected=[first];
+ let previous=first;
+ for(const line of ordered.slice(1)){
+  const text=cleanLine(line.text),font=Number(line.fontSize||0),prevGeom=mapperLineGeometry(page,previous),geom=mapperLineGeometry(page,line);
+  const fontRatio=font/maxFont;
+  const verticalGap=Math.max(0,geom.top-prevGeom.bottom);
+  const sentenceLike=/[.!?]$/.test(text)||text.split(/\s+/).length>=7||/^(?:a|an|the|great|perfect|easy|quick|healthy|delicious|high[- ]protein|low[- ]carb)\b/i.test(text);
+  const visuallySecondary=fontRatio<.74||verticalGap>.035;
+  // Cursive display titles are often followed by a much smaller sentence-style
+  // subtitle inside the same hand-drawn box. Keep true wrapped title lines, but
+  // stop before the subtitle instead of merging it into the recipe name.
+  if(visuallySecondary&&sentenceLike)break;
+  if(fontRatio<.58||verticalGap>.065)break;
+  selected.push(line);previous=line;
+  if(selected.length>=3)break;
+ }
+ let title=selected.map(l=>cleanLine(l.text)).join(" ").replace(/\s+/g," ").trim();
+ // Some PDFs split a decorative title into tiny word fragments. Preserve those,
+ // while trimming obvious subtitle punctuation accidentally attached at the end.
+ title=title.replace(/\s+[·•|–—-]\s+(?=(?:a|an|the|great|perfect|easy|quick|healthy|delicious)\b).*/i,"").trim();
+ return title;
+}
 function mappedText(page,b,mode="prose",allBoxes=[]){
  const lines=mappedLinesSmart(page,b,mode,allBoxes);
+ if(mode==="title")return mappedTitleText(page,b,allBoxes);
  if(mode==="ingredients")return mapperCleanIngredients(mergeIngredientLines(lines));
  if(mode==="instructions"){
   const merged=mergeInstructionLines(lines,page.width||600);
@@ -1885,7 +1915,7 @@ function mappedText(page,b,mode="prose",allBoxes=[]){
   const fallbackWords=fallback.join(" ").split(/\s+/).filter(Boolean).length;
   return fallbackWords>mergedWords?fallback:merged;
  }
- return lines.map(l=>cleanLine(l.text)).filter(Boolean).join(mode==="title"?" ":"\n").replace(/\s+\n/g,"\n").trim();
+ return lines.map(l=>cleanLine(l.text)).filter(Boolean).join("\n").replace(/\s+\n/g,"\n").trim();
 }
 function mapperPageRecipeScore(page){
  const text=(page.text||(page.lines||[]).join("\n")||"").toLowerCase();
@@ -1938,7 +1968,7 @@ async function buildReviewFromVisualMapper(){
     if(!instructions.length)warnings.push("Missing instructions");
     let mappedImage="";
     if(g.boxes.image){btn.textContent=`Cropping photo for page ${page.page}…`;mappedImage=await cropMappedImage(s.pdf,page.page,g.boxes.image).catch(()=>"");}
-    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v212",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
+    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v213",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
     done++;btn.textContent=`Preparing ${done} recipes…`;
     if(done%12===0)await nextFrame();
    }

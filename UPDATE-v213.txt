@@ -1,0 +1,5 @@
+Build 213 — Cursive title hierarchy
+
+- Keeps the dominant display-title line from visual mapper title boxes.
+- Stops smaller sentence-style subtitles from being merged into recipe titles.
+- Still supports genuine two- and three-line wrapped titles when the typography matches.
