@@ -1662,7 +1662,7 @@ $("closeEditCookbook").onclick=()=>$("editCookbookDialog").close();$("cancelEdit
 
 
 
-/* Build 211 — Preserve the entire mapped instruction region */
+/* Build 212 — Stable deployment + strict mapped field boundaries */
 const MAPPER_FIELDS=["title","ingredients","instructions","nutrition","yieldText","description","image"];
 const MAPPER_LABELS={title:"Title",ingredients:"Ingredients",instructions:"Instructions",nutrition:"Macros / nutrition",yieldText:"Yield / servings",description:"Description",image:"Recipe photo"};
 let visualMapperState=null;
@@ -1855,9 +1855,25 @@ function mappedInstructionFallback(lines){
  }
  return out.map((t,i)=>/^\d+[.)]\s+/.test(t)?t:`${i+1}. ${t}`);
 }
+function mapperCleanIngredients(items){
+ const result=[];
+ const hardBoundary=/^(?:macros?|nutrition(?: facts)?|calories?|yield\s*\/?\s*servings?|yield|serves?|servings?)\s*:?/i;
+ for(const raw of (items||[])){
+  let text=cleanLine(raw);
+  if(!text||/^ingredients?\s*:?$/i.test(text))continue;
+  // A line may contain the final ingredient followed by a neighboring section
+  // label when PDF text runs are joined. Keep the ingredient portion only.
+  const marker=text.search(/\s+(?=(?:macros?|nutrition(?: facts)?|calories?|yield\s*\/?\s*servings?|yield|serves?|servings?)\s*:)/i);
+  if(marker>0)text=text.slice(0,marker).trim();
+  if(!text||hardBoundary.test(text))break;
+  if(/^(?:fat|protein|carbs?|fiber|sugar|sodium)\s*:\s*\d/i.test(text))break;
+  result.push(text);
+ }
+ return result;
+}
 function mappedText(page,b,mode="prose",allBoxes=[]){
  const lines=mappedLinesSmart(page,b,mode,allBoxes);
- if(mode==="ingredients")return mergeIngredientLines(lines);
+ if(mode==="ingredients")return mapperCleanIngredients(mergeIngredientLines(lines));
  if(mode==="instructions"){
   const merged=mergeInstructionLines(lines,page.width||600);
   const fallback=mappedInstructionFallback(lines);
@@ -1900,7 +1916,7 @@ async function buildReviewFromVisualMapper(){
     // another recipe on the same page must never erase or clip its text.
     const ownBoxes=Object.values(g.boxes||{}).filter(Boolean);
     const title=mappedText(page,g.boxes.title,"title",ownBoxes).replace(/\s+/g," ").trim();
-    let ingredients=mappedText(page,g.boxes.ingredients,"ingredients",ownBoxes);
+    let ingredients=mapperCleanIngredients(mappedText(page,g.boxes.ingredients,"ingredients",ownBoxes));
     let instructions=mappedText(page,g.boxes.instructions,"instructions",ownBoxes);
     // A single-recipe page gets a conservative parser fallback when a hand-drawn
     // box catches no text. Multi-recipe pages stay mapper-only to avoid mixing recipes.
@@ -1922,7 +1938,7 @@ async function buildReviewFromVisualMapper(){
     if(!instructions.length)warnings.push("Missing instructions");
     let mappedImage="";
     if(g.boxes.image){btn.textContent=`Cropping photo for page ${page.page}…`;mappedImage=await cropMappedImage(s.pdf,page.page,g.boxes.image).catch(()=>"");}
-    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v211",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
+    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v212",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
     done++;btn.textContent=`Preparing ${done} recipes…`;
     if(done%12===0)await nextFrame();
    }

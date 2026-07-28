@@ -1,0 +1,5 @@
+Build 212
+- Cookbook page now loads the deployed build number instead of remaining stuck on Build 209.
+- Service worker activates the latest deployment immediately and removes stale Recipe Vault caches.
+- Ingredients stop at Macros, Nutrition, Calories, Yield, or Servings boundaries.
+- Embedded neighboring section labels are trimmed instead of being saved as ingredients.
