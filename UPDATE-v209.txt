@@ -1,0 +1,7 @@
+BUILD 209 — STABLE CLONES + RESILIENT EXTRACTION
+
+- Fully detaches page-only recipe groups from the master template.
+- Gives cloned recipes unique identities so moving or deleting a clone cannot alter Recipe 1.
+- Prevents boxes from other recipes on the page from clipping ingredients or instructions.
+- Extends ingredient and instruction reading farther beyond the drawn box when text continues naturally.
+- Adds a conservative parser fallback for empty fields on single-recipe pages.
