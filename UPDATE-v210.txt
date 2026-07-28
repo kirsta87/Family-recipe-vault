@@ -1,0 +1,5 @@
+BUILD 210 — MAPPED INSTRUCTIONS FIX
+
+- Stops the importer from returning blank instructions when text is visibly inside the mapped instructions box.
+- Uses a resilient line-preserving fallback when cookbook typography does not match the legacy instruction classifier.
+- Preserves wrapped instruction lines and numbers the recovered steps for review.

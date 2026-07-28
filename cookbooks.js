@@ -1662,7 +1662,7 @@ $("closeEditCookbook").onclick=()=>$("editCookbookDialog").close();$("cancelEdit
 
 
 
-/* Build 209 — Stable recipe cloning and resilient mapped extraction */
+/* Build 210 — Never-blank mapped instructions */
 const MAPPER_FIELDS=["title","ingredients","instructions","nutrition","yieldText","description","image"];
 const MAPPER_LABELS={title:"Title",ingredients:"Ingredients",instructions:"Instructions",nutrition:"Macros / nutrition",yieldText:"Yield / servings",description:"Description",image:"Recipe photo"};
 let visualMapperState=null;
@@ -1844,10 +1844,26 @@ function mappedLinesSmart(page,b,mode,allBoxes=[]){
  }
  return [...chosen].sort((a,b)=>b.y-a.y||a.x-b.x);
 }
+function mappedInstructionFallback(lines){
+ const cleaned=lines.map(l=>cleanLine(l.text)).filter(Boolean).filter(t=>!/^(?:directions?|instructions?|method)\s*:?$/i.test(t));
+ if(!cleaned.length)return[];
+ const out=[];
+ for(const text of cleaned){
+  const startsStep=/^(?:\d+[.)]\s*|step\s+\d+\b|preheat\b|heat\b|stir\b|mix\b|add\b|place\b|cook\b|bake\b|roast\b|grill\b|season\b|combine\b|whisk\b|serve\b|pour\b|transfer\b|cover\b|bring\b|slice\b|flatten\b|set\b|let\b|remove\b|fold\b|flip\b|spread\b|spray\b|dip\b|melt\b|top\b|store\b|refrigerate\b|freeze\b|microwave\b)/i.test(text);
+  if(!out.length||startsStep)out.push(text);
+  else out[out.length-1]=`${out[out.length-1]} ${text}`.replace(/\s+/g," ").trim();
+ }
+ return out.map((t,i)=>/^\d+[.)]\s+/.test(t)?t:`${i+1}. ${t}`);
+}
 function mappedText(page,b,mode="prose",allBoxes=[]){
  const lines=mappedLinesSmart(page,b,mode,allBoxes);
  if(mode==="ingredients")return mergeIngredientLines(lines);
- if(mode==="instructions")return mergeInstructionLines(lines,page.width||600);
+ if(mode==="instructions"){
+  const merged=mergeInstructionLines(lines,page.width||600);
+  // Never return a blank instruction field when the mapped box visibly contains text.
+  // Some cookbook fonts/line wrapping do not satisfy the legacy instruction classifier.
+  return merged.length?merged:mappedInstructionFallback(lines);
+ }
  return lines.map(l=>cleanLine(l.text)).filter(Boolean).join(mode==="title"?" ":"\n").replace(/\s+\n/g,"\n").trim();
 }
 function mapperPageRecipeScore(page){
@@ -1901,7 +1917,7 @@ async function buildReviewFromVisualMapper(){
     if(!instructions.length)warnings.push("Missing instructions");
     let mappedImage="";
     if(g.boxes.image){btn.textContent=`Cropping photo for page ${page.page}…`;mappedImage=await cropMappedImage(s.pdf,page.page,g.boxes.image).catch(()=>"");}
-    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v209",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
+    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v210",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
     done++;btn.textContent=`Preparing ${done} recipes…`;
     if(done%12===0)await nextFrame();
    }
