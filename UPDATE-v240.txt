@@ -1,0 +1,7 @@
+Build 240 — Separate Combined Shopping Ingredients
+
+- Adds a Separate button to shopping-list items combined from multiple recipe lines.
+- Opens the original ingredient lines for quick editing, one item per line.
+- Replaces the combined row with separate editable shopping-list rows.
+- Preserves the checked state when separating a checked item.
+- Includes all Build 239 fixes.

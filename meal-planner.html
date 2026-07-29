@@ -13,6 +13,7 @@
   <div><p class="eyebrow">THE GLAISTER FAMILY</p><h1>Meal Planner</h1><p>Find a recipe once, then assign it to any day.</p></div>
   <div class="planner-page-top-actions">
     <button id="openShoppingList" class="primary shopping-list-header-button" type="button">Generate shopping list</button>
+    <button id="sharePlanner" class="secondary" type="button">Share family planner</button>
     <a class="secondary linkbtn" href="pantry.html">Pantry</a>
     <a class="secondary linkbtn" href="index.html">Back to Recipe Vault</a>
   </div>
@@ -105,13 +106,13 @@
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=193"></script><script src="meal-planner.js?v=237"></script>
+<script src="config.js?v=193"></script><script src="meal-planner.js?v=241"></script>
 
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=237", {updateViaCache:"none"});
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=241", {updateViaCache:"none"});
       await registration.update();
     } catch (error) {
       console.warn("Service worker update failed:", error);
@@ -119,5 +120,5 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
-  <script src="build-status.js?v=237"></script>
+  <script src="build-status.js?v=241"></script>
 </body></html>

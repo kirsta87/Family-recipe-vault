@@ -1,0 +1,5 @@
+Build 242: Family key safety
+- Connecting a family key can no longer replace the local meal plan.
+- Local and shared meals are merged by day and synced as one plan.
+- Local planner data is backed up before every overwrite.
+- Includes all Build 241 features.

@@ -1,0 +1,1 @@
+Build 241: adds a Share family planner button. The generated link securely carries the existing Apps Script URL and family key in the URL fragment so another browser can connect to the same shared meal plan without manually re-entering settings.

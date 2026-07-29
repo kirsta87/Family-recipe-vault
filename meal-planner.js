@@ -2,7 +2,34 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
+
+function importSharedPlannerSettingsFromLink(){
+  try{
+    const hash = String(window.location.hash || "");
+    const match = hash.match(/(?:^#|&)rvshare=([^&]+)/);
+    if(!match) return false;
+    const encoded = decodeURIComponent(match[1]).replace(/-/g, "+").replace(/_/g, "/");
+    const padded = encoded + "=".repeat((4 - encoded.length % 4) % 4);
+    const payload = JSON.parse(decodeURIComponent(escape(atob(padded))));
+    if(!payload || !payload.appsScriptUrl || !payload.sharedKey) return false;
+    const existing = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      ...existing,
+      appsScriptUrl:String(payload.appsScriptUrl).trim(),
+      sharedKey:String(payload.sharedKey).trim(),
+      ...(payload.sheetCsvUrl ? {sheetCsvUrl:String(payload.sheetCsvUrl).trim()} : {})
+    }));
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    return true;
+  }catch(error){
+    console.warn("Could not import shared planner settings:", error);
+    return false;
+  }
+}
+
+importSharedPlannerSettingsFromLink();
 const WEEKLY_PLANS_KEY = "recipeVaultWeeklyPlansV104";
+const WEEKLY_PLANS_BACKUP_KEY = "recipeVaultWeeklyPlansBackupV242";
 const PLANNER_RECIPE_CACHE_KEY = "recipeVaultPlannerRecipeCacheV118";
 const PANTRY_KEY = "recipeVaultPantryV130";
 const PANTRY_CHECKIN_KEY = "recipeVaultPantryCheckinV130";
@@ -173,7 +200,35 @@ function readPlans(){
   }
 }
 
-function savePlans(){ localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans)); }
+function backupPlans(value){
+  try{
+    const current = value || readPlans();
+    if(current && Object.keys(current).length){
+      localStorage.setItem(WEEKLY_PLANS_BACKUP_KEY, JSON.stringify({savedAt:new Date().toISOString(), plans:current}));
+    }
+  }catch(error){ console.warn("Planner backup could not be saved:", error); }
+}
+function savePlans(){
+  try{ backupPlans(JSON.parse(localStorage.getItem(WEEKLY_PLANS_KEY) || "{}")); }catch(error){}
+  localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans));
+}
+function recipeIdList(value){ return (Array.isArray(value) ? value : (value ? [value] : [])).filter(Boolean).map(String); }
+function mergePlanContent(localPlan, remotePlan, key){
+  const local = normalizePlanShape(localPlan || {}, key);
+  const remote = normalizePlanShape(remotePlan || {}, key);
+  const merged = normalizePlanShape(planTimestamp(local) >= planTimestamp(remote) ? local : remote, key);
+  merged.days = {...remote.days};
+  for(const day of days){
+    const combined = [...recipeIdList(remote.days?.[day]), ...recipeIdList(local.days?.[day])];
+    merged.days[day] = [...new Set(combined)];
+  }
+  merged.pool = [...new Set([...(remote.pool || []).map(String), ...(local.pool || []).map(String)])];
+  merged.recipeSnapshots = {...(remote.recipeSnapshots || {}), ...(local.recipeSnapshots || {})};
+  merged.made = {...(remote.made || {}), ...(local.made || {})};
+  merged.updatedAt = new Date(Math.max(planTimestamp(local), planTimestamp(remote), Date.now())).toISOString();
+  merged.pendingSync = true;
+  return merged;
+}
 function planTimestamp(plan){
   const value = Date.parse(plan?.updatedAt || "");
   return Number.isFinite(value) ? value : 0;
@@ -184,6 +239,36 @@ function setPlannerSyncStatus(state, message, detail){
   status.dataset.state = state || "";
   status.textContent = state === "error" ? "Offline — changes saved on this device" : (state === "checking" ? "Syncing…" : "");
   status.title = detail || message || "";
+}
+
+function plannerShareUrl(){
+  if(!config.appsScriptUrl || !config.sharedKey) return "";
+  const payload = {
+    appsScriptUrl:config.appsScriptUrl,
+    sharedKey:config.sharedKey,
+    ...(config.sheetCsvUrl ? {sheetCsvUrl:config.sheetCsvUrl} : {})
+  };
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return new URL(`meal-planner.html#rvshare=${encodeURIComponent(encoded)}`, window.location.href).href;
+}
+
+async function sharePlanner(){
+  const status = $("weekStatus");
+  const url = plannerShareUrl();
+  if(!url){
+    if(status){
+      status.textContent = "Open Recipe Vault settings first";
+      status.title = "The Apps Script URL and family key must be saved before creating a family planner link.";
+    }
+    return;
+  }
+  try{
+    await navigator.clipboard.writeText(url);
+    if(status){ status.textContent = "Family planner link copied"; status.title = "Send this link. It connects the other browser to your shared meal plan."; }
+  }catch(error){
+    window.prompt("Copy this family planner link:", url);
+  }
 }
 
 async function plannerPost(payload){
@@ -250,24 +335,24 @@ async function loadSharedPlans(force = false){
   const local = Object.fromEntries(Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)]));
   const merged = {...remote};
   const plansToUpload = [];
+  const allKeys = new Set([...Object.keys(remote), ...Object.keys(local)]);
 
-  Object.entries(local).forEach(([key, localPlan]) => {
+  for(const key of allKeys){
+    const localPlan = local[key];
     const remotePlan = remote[key];
-    const localTime = planTimestamp(localPlan);
-    const remoteTime = planTimestamp(remotePlan);
-
-    // A browser change always wins until the server confirms that exact version.
-    if(localPlan.pendingSync || localTime > remoteTime){
+    if(localPlan && remotePlan && (planHasContent(localPlan) || planHasContent(remotePlan))){
+      // Never let connecting a family key replace meals on this device.
+      // Combine both copies, then upload the safe union to shared storage.
+      const safePlan = mergePlanContent(localPlan, remotePlan, key);
+      merged[key] = safePlan;
+      plansToUpload.push([key, safePlan]);
+    }else if(localPlan && planHasContent(localPlan)){
       merged[key] = localPlan;
       plansToUpload.push([key, localPlan]);
-      return;
+    }else if(remotePlan){
+      merged[key] = remotePlan;
     }
-
-    if(!remotePlan && planHasContent(localPlan)){
-      merged[key] = localPlan;
-      plansToUpload.push([key, localPlan]);
-    }
-  });
+  }
 
   plans = merged;
   savePlans();
@@ -654,6 +739,8 @@ $("plannerClearFilters").addEventListener("click", () => {
   $("plannerQuickOnly").checked = false;
   renderResults();
 });
+$("sharePlanner")?.addEventListener("click", sharePlanner);
+
 $("clearRecipePool").addEventListener("click", async () => {
   const plan = planFor();
   if(!plan.pool.length) return;
@@ -907,7 +994,7 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
           const checked=state.checkedKeys.has(item.itemKey) ? "checked" : "";
           return `<div class="shopping-item-row">
             <label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" ${checked}><span class="shopping-item-label">${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label>
-            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}"><button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
+            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}">${item.parts?.length > 1 ? `<button class="shopping-split-item" type="button" data-shopping-split="${escapeHTML(item.itemKey)}" aria-label="Separate combined ingredient ${escapeHTML(item.display)}">Separate</button>` : ""}<button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
             <input class="shopping-brand-input" type="text" data-shopping-brand="${escapeHTML(item.itemKey)}" value="${escapeHTML(rememberedBrand)}" placeholder="Brand (optional)" aria-label="Brand for ${escapeHTML(item.display)}">
             <select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select>
           </div>`;
@@ -960,6 +1047,40 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
     });
   });
 
+  document.querySelectorAll("[data-shopping-split]").forEach(button => button.addEventListener("click", () => {
+    const item = latestShoppingItems.find(entry => entry.itemKey === button.dataset.shoppingSplit);
+    if(!item) return;
+    const uiState = captureShoppingUiState();
+    const wasChecked = uiState.checkedKeys.has(item.itemKey);
+    const startingLines = (item.parts?.length ? item.parts : [item.original]).join("\n");
+    const response = window.prompt("Separate this combined item. Put each ingredient on its own line:", startingLines);
+    if(response === null) return;
+    const lines = response.split(/\n+/).map(line => line.trim()).filter(Boolean);
+    if(lines.length < 2){
+      $("shoppingListStatus").textContent = "Add at least two separate lines.";
+      $("shoppingListStatus").className = "import-status error";
+      return;
+    }
+    const index = latestShoppingItems.findIndex(entry => entry.itemKey === item.itemKey);
+    const replacements = lines.map((line, offset) => {
+      const parsed = parseIngredientLine(line);
+      return {
+        ...parsed,
+        parts:[line],
+        itemKey:`${item.itemKey}-split-${Date.now()}-${offset}`,
+        display:shoppingItemDisplay(parsed),
+        category:categoryForIngredient(parsed.name)
+      };
+    });
+    latestShoppingItems.splice(index, 1, ...replacements);
+    uiState.checkedKeys.delete(item.itemKey);
+    delete uiState.brands[item.itemKey];
+    if(wasChecked) replacements.forEach(entry => uiState.checkedKeys.add(entry.itemKey));
+    renderShoppingOutput(selectedRecipes, uiState);
+    $("shoppingListStatus").textContent = `Separated into ${replacements.length} shopping-list items.`;
+    $("shoppingListStatus").className = "import-status success";
+  }));
+
   document.querySelectorAll("[data-shopping-delete]").forEach(button => button.addEventListener("click", () => {
     const uiState = captureShoppingUiState();
     const removed = latestShoppingItems.find(entry => entry.itemKey === button.dataset.shoppingDelete);
@@ -1005,9 +1126,11 @@ function buildShoppingList(){
     [...new Set((recipe.ingredients || []).map(item => String(item).trim()).filter(Boolean))].forEach(line => {
       const parsed = parseIngredientLine(line);
       if(parsed.amount !== null && merged.has(parsed.key)){
-        merged.get(parsed.key).amount += parsed.amount;
+        const existing = merged.get(parsed.key);
+        existing.amount += parsed.amount;
+        existing.parts.push(line);
       }else if(!merged.has(parsed.key)){
-        merged.set(parsed.key, {...parsed});
+        merged.set(parsed.key, {...parsed, parts:[line]});
       }
     });
   });

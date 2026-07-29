@@ -1023,3 +1023,8 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
   .shopping-item-row{grid-template-columns:1fr;grid-template-areas:"item" "edit" "brand" "category";gap:7px}
 }
 @media print{.shopping-edit-wrap,.shopping-delete-item,.shopping-item-edit{display:none!important}}
+
+/* Build 240: separate combined shopping-list ingredients */
+.shopping-split-item{border:1px solid currentColor;border-radius:999px;background:transparent;padding:.38rem .65rem;font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.shopping-split-item:hover{background:rgba(0,0,0,.05)}
+@media print{.shopping-split-item{display:none!important}}
