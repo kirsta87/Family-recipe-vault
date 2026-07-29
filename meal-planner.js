@@ -884,7 +884,15 @@ function buildShoppingText(){
   return {grouped, activeGroups};
 }
 
-function renderShoppingOutput(selectedRecipes){
+function captureShoppingUiState(){
+  return {
+    checkedKeys:new Set([...document.querySelectorAll('[data-shopping-purchased]:checked')].map(input => input.dataset.shoppingPurchased)),
+    brands:Object.fromEntries([...document.querySelectorAll('[data-shopping-brand]')].map(input => [input.dataset.shoppingBrand, input.value]))
+  };
+}
+
+function renderShoppingOutput(selectedRecipes, preservedState = null){
+  const state = preservedState || {checkedKeys:new Set(), brands:{}};
   const {grouped, activeGroups} = buildShoppingText();
   const categoryOptions = SHOPPING_CATEGORIES.map(category => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`).join("");
   $("shoppingListOutput").innerHTML = `
@@ -893,7 +901,17 @@ function renderShoppingOutput(selectedRecipes){
       const groupItems=latestShoppingItems.filter(item => item.category === group).sort((a,b)=>a.display.localeCompare(b.display));
       return `<section class="shopping-category" data-shopping-category="${escapeHTML(group)}">
         <div class="shopping-category-heading"><h3>${escapeHTML(group)}</h3><label class="shopping-select-all"><input type="checkbox" data-shopping-select-all="${escapeHTML(group)}"> Select all</label></div>
-        ${groupItems.map(item => { const memoryKey=ingredientMemoryKey(item.name); const rememberedBrand=shoppingBrandMemory[memoryKey]||""; return `<div class="shopping-item-row"><label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}"><span>${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label><input class="shopping-brand-input" type="text" data-shopping-brand="${escapeHTML(item.itemKey)}" value="${escapeHTML(rememberedBrand)}" placeholder="Brand (optional)" aria-label="Brand for ${escapeHTML(item.display)}"><select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select></div>`; }).join("")}
+        ${groupItems.map(item => {
+          const memoryKey=ingredientMemoryKey(item.name);
+          const rememberedBrand=state.brands[item.itemKey] ?? shoppingBrandMemory[memoryKey] ?? "";
+          const checked=state.checkedKeys.has(item.itemKey) ? "checked" : "";
+          return `<div class="shopping-item-row">
+            <label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" ${checked}><span class="shopping-item-label">${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label>
+            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}"><button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
+            <input class="shopping-brand-input" type="text" data-shopping-brand="${escapeHTML(item.itemKey)}" value="${escapeHTML(rememberedBrand)}" placeholder="Brand (optional)" aria-label="Brand for ${escapeHTML(item.display)}">
+            <select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select>
+          </div>`;
+        }).join("")}
       </section>`;
     }).join("")}
     <section class="shopping-list-recipes"><h3>Generated from</h3><p>${selectedRecipes.map(recipe => escapeHTML(recipe.name || "Untitled recipe")).join(" • ")}</p></section>`;
@@ -904,27 +922,66 @@ function renderShoppingOutput(selectedRecipes){
     select.addEventListener("change", () => {
       const changed = latestShoppingItems.find(entry => entry.itemKey === select.dataset.shoppingItemKey);
       if(!changed) return;
+      const uiState = captureShoppingUiState();
       changed.category = select.value;
       const memoryKey = ingredientMemoryKey(changed.name);
       if(memoryKey){
         shoppingCategoryMemory[memoryKey] = select.value;
         saveShoppingCategoryMemory();
       }
-      renderShoppingOutput(selectedRecipes);
-      $("shoppingListStatus").textContent = `${changed.name} will go to ${select.value} on future lists.`;
+      renderShoppingOutput(selectedRecipes, uiState);
+      $("shoppingListStatus").textContent = `${changed.name} moved to ${select.value}. Checked items stayed checked.`;
       $("shoppingListStatus").className = "import-status success";
     });
   });
 
+  document.querySelectorAll("[data-shopping-edit]").forEach(input => {
+    const applyEdit = () => {
+      const item = latestShoppingItems.find(entry => entry.itemKey === input.dataset.shoppingEdit);
+      const edited = input.value.trim();
+      if(!item || !edited || edited === item.display) return;
+      const uiState = captureShoppingUiState();
+      const parsed = parseIngredientLine(edited);
+      item.original = edited;
+      item.amount = parsed.amount;
+      item.unit = parsed.unit;
+      item.name = parsed.name || edited;
+      item.display = edited;
+      renderShoppingOutput(selectedRecipes, uiState);
+      $("shoppingListStatus").textContent = "Ingredient updated for this shopping list.";
+      $("shoppingListStatus").className = "import-status success";
+    };
+    input.addEventListener("change", applyEdit);
+    input.addEventListener("keydown", event => {
+      if(event.key === "Enter"){
+        event.preventDefault();
+        input.blur();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-shopping-delete]").forEach(button => button.addEventListener("click", () => {
+    const uiState = captureShoppingUiState();
+    const removed = latestShoppingItems.find(entry => entry.itemKey === button.dataset.shoppingDelete);
+    latestShoppingItems = latestShoppingItems.filter(entry => entry.itemKey !== button.dataset.shoppingDelete);
+    uiState.checkedKeys.delete(button.dataset.shoppingDelete);
+    delete uiState.brands[button.dataset.shoppingDelete];
+    renderShoppingOutput(selectedRecipes, uiState);
+    $("shoppingListStatus").textContent = `${removed?.display || "Ingredient"} removed from this shopping list.`;
+    $("shoppingListStatus").className = "import-status success";
+  }));
+
   document.querySelectorAll("[data-shopping-select-all]").forEach(selectAll => {
     const category=selectAll.dataset.shoppingSelectAll;
     const boxes=[...document.querySelectorAll(`[data-shopping-category="${CSS.escape(category)}"] [data-shopping-purchased]`)];
-    selectAll.addEventListener("change",()=>boxes.forEach(box=>box.checked=selectAll.checked));
-    boxes.forEach(box=>box.addEventListener("change",()=>{
+    const updateSelectAll=()=>{
       const checked=boxes.filter(item=>item.checked).length;
       selectAll.checked=checked===boxes.length&&boxes.length>0;
       selectAll.indeterminate=checked>0&&checked<boxes.length;
-    }));
+    };
+    selectAll.addEventListener("change",()=>{ boxes.forEach(box=>box.checked=selectAll.checked); updateSelectAll(); });
+    boxes.forEach(box=>box.addEventListener("change", updateSelectAll));
+    updateSelectAll();
   });
   document.querySelectorAll("[data-shopping-brand]").forEach(input=>input.addEventListener("change",()=>{
     const item=latestShoppingItems.find(entry=>entry.itemKey===input.dataset.shoppingBrand);

@@ -1,0 +1,5 @@
+Build 239
+- Shopping-list ingredients can be edited directly.
+- Individual shopping-list items can be removed.
+- Checked/purchased state is preserved when an item is moved, edited, or the list rerenders.
+- Includes all fixes through Build 238.

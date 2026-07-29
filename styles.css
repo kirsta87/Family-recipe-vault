@@ -1009,3 +1009,17 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 /* Build 215: duplicate decision controls */
 .duplicate-decision-row{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:.65rem;align-items:center;padding-top:.85rem;border-top:1px solid var(--line,#ddd4c5)}
 .duplicate-decision-row .is-selected{outline:3px solid color-mix(in srgb,var(--olive,#687957) 30%,transparent);outline-offset:2px}
+
+/* Build 239: editable shopping list + stable checked state */
+.shopping-item-row{
+  grid-template-columns:minmax(0,1.35fr) minmax(180px,.85fr);
+  grid-template-areas:"item edit" "brand category";
+}
+.shopping-edit-wrap{grid-area:edit;display:flex;align-items:center;gap:6px;min-width:0}
+.shopping-item-edit{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font:inherit;font-size:.9rem}
+.shopping-delete-item{flex:0 0 auto;width:36px;height:36px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--muted);font-size:1.35rem;line-height:1;cursor:pointer}
+.shopping-delete-item:hover{color:#8b2f2f;border-color:#c9a5a5}
+@media(max-width:760px){
+  .shopping-item-row{grid-template-columns:1fr;grid-template-areas:"item" "edit" "brand" "category";gap:7px}
+}
+@media print{.shopping-edit-wrap,.shopping-delete-item,.shopping-item-edit{display:none!important}}
