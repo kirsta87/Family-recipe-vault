@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-window.RECIPE_VAULT_BUILD = 221;
+window.RECIPE_VAULT_BUILD = 223;
 const $ = id => document.getElementById(id);
 
 function on(id, eventName, handler){
@@ -40,7 +40,11 @@ let recipeIntelligenceRunning = false;
 let recipeIntelligencePromptShown = false;
 let recipeDNAStore = readLegacyRecipeDNAStore();
 let recipeDNAWriteTimer = null;
-const recipeDNAReady = loadRecipeDNAStore();
+const recipeDNAReady = loadRecipeDNAStore().catch(error => {
+  console.warn("Recipe DNA storage startup failed; using the recoverable local copy:", error);
+  recipeDNAStore = readLegacyRecipeDNAStore();
+  return recipeDNAStore;
+});
 
 function openRecipeCacheDB(){
   return new Promise((resolve, reject) => {
@@ -2830,13 +2834,13 @@ on("recheckRecipeIntelligence", "click", event => {
   event.currentTarget.disabled = true;
   const status=$("recipeIntelligenceStatus");
   if(status) status.textContent="Starting full Recipe DNA analysis…";
-  Promise.resolve(recipeDNAReady).then(()=>startRecipeIntelligenceAnalysis({force:true})).finally(()=>{ event.currentTarget.disabled=false; });
+  Promise.resolve(recipeDNAReady).then(()=>startRecipeIntelligenceAnalysis({force:true})).catch(showRecipeIntelligenceError).finally(()=>{ event.currentTarget.disabled=false; });
 });
 on("startRecipeIntelligence", "click", event => {
   event.currentTarget.disabled = true;
   const status=$("recipeIntelligenceStatus");
   if(status) status.textContent="Starting Recipe DNA analysis…";
-  Promise.resolve(recipeDNAReady).then(()=>startRecipeIntelligenceAnalysis()).finally(()=>{ event.currentTarget.disabled=false; });
+  Promise.resolve(recipeDNAReady).then(()=>startRecipeIntelligenceAnalysis()).catch(showRecipeIntelligenceError).finally(()=>{ event.currentTarget.disabled=false; });
 });
 on("laterRecipeIntelligence", "click", () => {
   $("recipeIntelligenceDialog")?.close();

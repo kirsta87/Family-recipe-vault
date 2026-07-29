@@ -1,0 +1,10 @@
+Recipe Vault Build 223
+
+- Stops fuzzy cookbook title matching that mixed recipes across books.
+- Adds an in-place Repair cookbook links tool.
+- Uses older cookbook references to restore contaminated assignments.
+- Searches locally saved cookbook PDFs for the correct source page.
+- Removes uncertain page links instead of opening a random page.
+- Rebuilds cookbook counts and recipe references from strict cookbook IDs.
+- Makes Recipe Intelligence recover from IndexedDB startup failure and surfaces click errors.
+- Does not delete recipes, ratings, notes, images, or history.

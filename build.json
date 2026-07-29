@@ -1,8 +1,8 @@
 {
-  "build": 221,
-  "version": "221",
-  "label": "Merged field cleanup and update recovery fix",
+  "build": 223,
+  "version": "223",
+  "label": "Cookbook assignment repair and Recipe DNA startup fix",
   "date": "2026-07-29",
-  "cookbookEngine": "4.4",
+  "cookbookEngine": "4.5",
   "parser": "Visual Cookbook Mapper v5"
 }

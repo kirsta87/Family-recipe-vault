@@ -1,4 +1,4 @@
-window.RECIPE_VAULT_BUILD = 221;
+window.RECIPE_VAULT_BUILD = 223;
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
@@ -125,48 +125,171 @@ function cookbookIdentityValues(cookbook){
 }
 function cookbookRecipeMatches(recipe, cookbook){
   if(!recipe||!cookbook)return false;
-  if(String(recipe.cookbook_id||"")===String(cookbook.id||""))return true;
+  const recipeBookId=String(recipe.cookbook_id||"").trim();
+  const cookbookId=String(cookbook.id||"").trim();
+  if(recipeBookId)return recipeBookId===cookbookId;
+
+  // Legacy records without an ID may still be recovered through an exact title
+  // or a reference that belongs to only one cookbook. Never use fuzzy token
+  // overlap here: words such as "meal" and "prep" caused cross-book mixing.
+  const identities=cookbookIdentityValues(cookbook).map(normalize).filter(Boolean);
+  const recipeLabel=normalize(recipeCookbookLabel(recipe)||recipe.cookbook_title||"");
+  if(recipeLabel&&identities.includes(recipeLabel))return true;
+
   const ref=recipeStableRef(recipe);
-  if(Array.isArray(cookbook.recipeRefs)&&cookbook.recipeRefs.includes(ref))return true;
-
-  const identities=cookbookIdentityValues(cookbook);
-  const recipeLabel=recipeCookbookLabel(recipe);
-  const recipeValues=[recipeLabel,recipe.cookbook_title,recipe.collections];
-  for(const identity of identities){
-    const normalizedIdentity=normalize(identity);
-    if(!normalizedIdentity)continue;
-    if(recipeValues.some(value=>normalize(value)===normalizedIdentity))return true;
-  }
-
-  // Legacy imports sometimes lost cookbook_id and only retained the original
-  // upload title in Source/Tags. Compare distinctive title tokens so renaming a
-  // cookbook never makes its already-imported recipes disappear.
-  const recipeTokens=new Set(meaningfulTokens([recipeLabel,recipe.cookbook_title,recipe.source,recipe.tags].join(" ")));
-  if(!recipeTokens.size)return false;
-  return identities.some(identity=>{
-    const tokens=meaningfulTokens(identity);
-    if(!tokens.length)return false;
-    const overlap=tokens.filter(token=>recipeTokens.has(token));
-    if(!overlap.length)return false;
-    if(tokens.length===1)return overlap.length===1;
-    return overlap.length/tokens.length>=0.5;
-  });
+  const owners=library.filter(book=>Array.isArray(book.recipeRefs)&&book.recipeRefs.includes(ref));
+  return owners.length===1&&String(owners[0].id||"")===cookbookId;
 }
 function cookbookRecipes(cookbook,{remember=true}={}){
   const matches=recipes.filter(recipe=>cookbookRecipeMatches(recipe,cookbook));
-  if(remember&&matches.length){
-    const refs=new Set(Array.isArray(cookbook.recipeRefs)?cookbook.recipeRefs:[]);
-    matches.forEach(recipe=>refs.add(recipeStableRef(recipe)));
-    cookbook.recipeRefs=[...refs];
-    const labels=matches.map(recipeCookbookLabel).filter(Boolean);
-    cookbook.aliases=[...new Set([...(Array.isArray(cookbook.aliases)?cookbook.aliases:[]),cookbook.originalTitle,...labels].filter(Boolean))];
+  if(remember){
+    // Rebuild references from strict ownership instead of retaining stale fuzzy
+    // matches. This prevents a contaminated reference from returning later.
+    cookbook.recipeRefs=matches.map(recipeStableRef);
+    cookbook.importedCount=matches.length;
     saveLibrary();
   }
   return matches;
 }
+
+const cookbookRepairPdfTextCache=new Map();
+function cookbookAddedTime(book){
+  const parsed=Date.parse(book?.addedAt||"");
+  return Number.isFinite(parsed)?parsed:Number.MAX_SAFE_INTEGER;
+}
+function historicalCookbookOwners(recipe){
+  const ref=recipeStableRef(recipe);
+  return library
+    .filter(book=>Array.isArray(book.recipeRefs)&&book.recipeRefs.includes(ref))
+    .sort((a,b)=>cookbookAddedTime(a)-cookbookAddedTime(b));
+}
+function cookbookRepairCandidates(){
+  return recipes.map(recipe=>{
+    const owners=historicalCookbookOwners(recipe);
+    if(owners.length<2)return null;
+    const current=library.find(book=>String(book.id||"")===String(recipe.cookbook_id||""));
+    const target=owners[0];
+    if(!current||!target||String(current.id)===String(target.id))return null;
+    if(cookbookAddedTime(current)<=cookbookAddedTime(target))return null;
+    return {recipe,current,target,owners};
+  }).filter(Boolean);
+}
+async function cookbookPdfPageTexts(book){
+  const cacheKey=String(book.id||book.title||"");
+  if(cookbookRepairPdfTextCache.has(cacheKey))return cookbookRepairPdfTextCache.get(cacheKey);
+  const promise=(async()=>{
+    const blob=await loadCookbookPdf([book.id,book.fileName,book.title,...(book.aliases||[])]);
+    if(!blob)return [];
+    const pdfjs=await getPdfJs();
+    const pdf=await pdfjs.getDocument({data:await blob.arrayBuffer()}).promise;
+    const pages=[];
+    for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
+      const page=await pdf.getPage(pageNo);
+      const content=await page.getTextContent();
+      pages.push({page:pageNo,text:normalize(content.items.map(item=>item.str||"").join(" "))});
+    }
+    return pages;
+  })().catch(error=>{console.warn("Cookbook repair PDF scan failed:",error);return [];});
+  cookbookRepairPdfTextCache.set(cacheKey,promise);
+  return promise;
+}
+function repairTitleTokens(value){
+  const stop=new Set(["recipe","easy","best","homemade","the","and","with","for"]);
+  return normalize(value).split(" ").filter(token=>token.length>2&&!stop.has(token)&&!/^\d+$/.test(token));
+}
+async function findRecipePageForRepair(recipe,book){
+  const pages=await cookbookPdfPageTexts(book);
+  if(!pages.length)return 0;
+  const title=normalize(String(recipe.name||"").replace(/\s*[.·-]\s*\d+\s*$/,""));
+  const tokens=repairTitleTokens(title);
+  let best={page:0,score:0};
+  for(const page of pages){
+    let score=title&&page.text.includes(title)?100:0;
+    if(tokens.length){
+      const hits=tokens.filter(token=>page.text.includes(token)).length;
+      score=Math.max(score,Math.round(hits/tokens.length*80));
+    }
+    if(score>best.score)best={page:page.page,score};
+  }
+  return best.score>=60?best.page:0;
+}
+function ensureCookbookRepairControl(){
+  const host=$("libraryView");
+  if(!host||$("repairCookbookAssignments"))return;
+  const panel=document.createElement("section");
+  panel.id="cookbookRepairPanel";
+  panel.className="panel cookbook-repair-panel";
+  panel.innerHTML=`<div><p class="eyebrow">COOKBOOK MAINTENANCE</p><h2>Repair cookbook links</h2><p class="muted">Fix recipes that were accidentally attached to a newer cookbook. Recipe content, ratings, notes, and images are not deleted.</p></div><div class="actions"><button id="repairCookbookAssignments" class="secondary" type="button">Check cookbook assignments</button></div><p id="cookbookRepairStatus" class="import-status" aria-live="polite"></p>`;
+  host.appendChild(panel);
+  $("repairCookbookAssignments").addEventListener("click",repairCookbookAssignments);
+}
+async function repairCookbookAssignments(){
+  const button=$("repairCookbookAssignments"),status=$("cookbookRepairStatus");
+  const candidates=cookbookRepairCandidates();
+  if(!candidates.length){
+    status.textContent="No cross-cookbook assignments were found.";
+    status.className="import-status success";
+    return;
+  }
+  const byTarget=new Map();
+  candidates.forEach(item=>byTarget.set(item.target.title,(byTarget.get(item.target.title)||0)+1));
+  const summary=[...byTarget].map(([title,count])=>`${count} → ${title}`).join("\n");
+  if(!confirm(`Recipe Vault found ${candidates.length} recipe${candidates.length===1?"":"s"} attached to both an older and a newer cookbook.\n\n${summary}\n\nRepair these assignments now? No recipes will be deleted.`))return;
+
+  button.disabled=true;
+  let completed=0,repaired=0,failed=0,pagesFound=0,pagesCleared=0;
+  const queue=[...candidates];
+  const worker=async()=>{
+    while(queue.length){
+      const item=queue.shift();
+      const {recipe,target}=item;
+      status.textContent=`Repairing ${completed+1} of ${candidates.length}: ${recipe.name||"Untitled recipe"}`;
+      try{
+        const page=await findRecipePageForRepair(recipe,target);
+        const updates={
+          cookbook_id:target.id,
+          cookbook_title:target.title,
+          cookbook_author:target.author||"",
+          cookbook_page:page||"",
+          source:`Cookbook: ${target.title}${page?` · p. ${page}`:""}`,
+          tags:`Cookbook|${target.title}${page?`|Page ${page}`:""}`
+        };
+        // A blank page is safer than sending the user to a random page in the
+        // wrong PDF. Existing embedded source previews are preserved.
+        await postVault({action:"update",id:recipe.id,url:recipe.url,updates});
+        Object.assign(recipe,updates);
+        library.forEach(book=>{
+          const refs=new Set(Array.isArray(book.recipeRefs)?book.recipeRefs:[]);
+          refs.delete(recipeStableRef(recipe));
+          book.recipeRefs=[...refs];
+        });
+        target.recipeRefs=[...new Set([...(target.recipeRefs||[]),recipeStableRef(recipe)])];
+        if(page)pagesFound++;else pagesCleared++;
+        repaired++;
+      }catch(error){
+        console.error("Cookbook assignment repair failed:",recipe?.name,error);
+        failed++;
+      }finally{
+        completed++;
+      }
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(3,candidates.length)},worker));
+  library.forEach(book=>{
+    book.recipeRefs=recipes.filter(recipe=>String(recipe.cookbook_id||"")===String(book.id||"")).map(recipeStableRef);
+    book.importedCount=book.recipeRefs.length;
+  });
+  saveLibrary();
+  renderShelf();
+  button.disabled=false;
+  status.textContent=`Repair complete: ${repaired} cookbook assignment${repaired===1?"":"s"} fixed · ${pagesFound} page link${pagesFound===1?"":"s"} restored${pagesCleared?` · ${pagesCleared} uncertain page link${pagesCleared===1?"":"s"} safely removed`:""}${failed?` · ${failed} failed`:""}.`;
+  status.className=`import-status ${failed?"":"success"}`.trim();
+}
+
 function coverMarkup(cb){ return cb.cover ? `<img src="${cb.cover}" alt="">` : `<div class="cover-placeholder">📖</div>`; }
 function recipePhotoMarkup(recipe){ return recipe.image ? `<img class="cookbook-recipe-photo" src="${recipe.image}" alt="${escapeHTML(recipe.name||"Cookbook recipe")}">` : `<div class="cookbook-recipe-photo cookbook-photo-placeholder">🍽️</div>`; }
 function renderShelf(){
+  ensureCookbookRepairControl();
   const q=normalize($("cookbookSearch")?.value); const visible=library.filter(cb=>!q||normalize(`${cb.title} ${cb.author}`).includes(q));
   $("cookbookEmpty").hidden=library.length>0;
   $("cookbookGrid").innerHTML=visible.map(cb=>{const count=cookbookRecipes(cb).length || cb.importedCount||0;return `<article class="cookbook-card" data-open-cookbook="${cb.id}"><div class="cookbook-cover">${coverMarkup(cb)}</div><div class="cookbook-card-body"><p class="eyebrow">${count} RECIPE${count===1?"":"S"}</p><h3>${escapeHTML(cb.title)}</h3><p>${escapeHTML(cb.author||"Cookbook PDF")}</p><div class="cookbook-card-actions"><button class="icon-button danger-text" data-delete-cookbook="${cb.id}" title="Remove cookbook">×</button></div></div></article>`}).join("");
