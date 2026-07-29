@@ -1,0 +1,6 @@
+Build 232 — Recipe DNA Metadata Recovery
+
+- Restores the Recipe Intelligence prompt for recipes missing Protein or Meal Type.
+- Analyzer now fills blank Protein and Meal Type fields and saves them to the vault.
+- Existing user-entered categories are never overwritten.
+- Bumps the Recipe DNA engine so the library is rechecked once after deployment.

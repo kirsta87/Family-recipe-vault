@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-window.RECIPE_VAULT_BUILD = 229;
+window.RECIPE_VAULT_BUILD = 232;
 const $ = id => document.getElementById(id);
 
 function on(id, eventName, handler){
@@ -35,7 +35,7 @@ const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
 const RECIPE_DNA_DB = "recipeVaultRecipeDNAV220";
 const RECIPE_DNA_STORE = "dna";
 const RECIPE_DNA_RECORD = "current";
-const RECIPE_DNA_ENGINE_VERSION = 3;
+const RECIPE_DNA_ENGINE_VERSION = 4;
 let recipeIntelligenceRunning = false;
 let recipeIntelligencePromptShown = false;
 let recipeDNAStore = readLegacyRecipeDNAStore();
@@ -859,12 +859,59 @@ function analyzeRecipeDNA(recipe){
   return {fingerprint:recipeDNAFingerprint(recipe), analyzedAt:Date.now(), scores, traits};
 }
 
+function inferVisibleRecipeMetadata(recipe, dna){
+  const text = normalizeSearchText([
+    recipe.name, recipe.cuisine, ...(recipe.tags || []), ...(recipe.collections || []),
+    ...(recipe.ingredients || []), ...(recipe.instructions || [])
+  ].filter(Boolean).join(" "));
+  const title = normalizeSearchText(recipe.name || "");
+  const hasAny = terms => terms.some(term => text.includes(normalizeSearchText(term)));
+  const titleHas = terms => terms.some(term => title.includes(normalizeSearchText(term)));
+
+  let protein = String(recipe.protein || "").trim();
+  if(!protein){
+    if(hasAny(["chicken","rotisserie chicken"])) protein = "Chicken";
+    else if(hasAny(["ground turkey","turkey breast","turkey sausage","turkey meatball"])) protein = "Turkey";
+    else if(hasAny(["ground beef","beef","steak","sirloin","brisket","chuck roast","pot roast"])) protein = "Beef";
+    else if(hasAny(["pork","bacon","ham","prosciutto","sausage","pulled pork"])) protein = "Pork";
+    else if(hasAny(["shrimp","salmon","tuna","cod","tilapia","fish","crab","lobster","scallop"])) protein = "Seafood";
+    else if(hasAny(["tofu","tempeh","lentil","chickpea","black bean","white bean","kidney bean"]) || !hasAny(["chicken","turkey","beef","steak","pork","bacon","ham","sausage","shrimp","salmon","tuna","fish"])) protein = "Vegetarian";
+    else protein = "Other";
+  }
+
+  let type = String(recipe.type || "").trim();
+  if(!type){
+    if(titleHas(["breakfast","pancake","waffle","french toast","omelet","oatmeal","egg bake","breakfast burrito"])) type = "Breakfast";
+    else if(titleHas(["burger","cheeseburger","hamburger"])) type = "Burgers";
+    else if(titleHas(["bowl","rice bowl","grain bowl","power bowl"])) type = "Bowls";
+    else if(titleHas(["casserole","bake"])) type = "Casserole";
+    else if(titleHas(["cake","cookie","brownie","pie","cheesecake","pudding","dessert","cobbler","crisp"])) type = "Dessert";
+    else if(titleHas(["flatbread"])) type = "Flatbread";
+    else if(titleHas(["pasta","spaghetti","penne","rigatoni","fettuccine","linguine","lasagna","ravioli","tortellini","gnocchi","mac and cheese","macaroni"])) type = "Pasta";
+    else if(titleHas(["pizza"])) type = "Pizza";
+    else if(titleHas(["salad","slaw"])) type = "Salad";
+    else if(titleHas(["sandwich","slider","wrap","panini","sub","gyro","pita"])) type = "Sandwiches";
+    else if(titleHas(["soup","stew","chili","bisque","chowder"])) type = "Soup";
+    else if(titleHas(["taco","burrito","quesadilla","enchilada","fajita","nacho"])) type = "Tacos";
+    else if(dna?.traits?.dish?.includes("pasta")) type = "Pasta";
+    else if(dna?.traits?.dish?.includes("breakfast")) type = "Breakfast";
+    else if(dna?.traits?.dish?.includes("handheld")) type = "Sandwiches";
+    else if(dna?.traits?.dish?.includes("bowl or salad")) type = titleHas(["salad","slaw"]) ? "Salad" : "Bowls";
+    else type = "Other";
+  }
+  return {protein, type};
+}
+
+function recipeNeedsVisibleMetadata(recipe){
+  return !String(recipe.protein || "").trim() || !String(recipe.type || "").trim();
+}
+
 function recipeIntelligenceCandidates({force=false}={}){
   const engineChanged = recipeDNAStore.engineVersion !== RECIPE_DNA_ENGINE_VERSION;
   return recipes.filter(recipe => {
     const id = String(recipe.id || recipe.name || "");
     const current = recipeDNAStore.recipes[id];
-    return force || engineChanged || !current || current.fingerprint !== recipeDNAFingerprint(recipe);
+    return force || engineChanged || recipeNeedsVisibleMetadata(recipe) || !current || current.fingerprint !== recipeDNAFingerprint(recipe);
   });
 }
 
@@ -890,7 +937,7 @@ function showRecipeIntelligencePrompt(count, engineChanged){
   if(heading) heading.textContent = engineChanged ? "Recipe Intelligence has improved" : "Analyze your recipe library";
   if(message) message.textContent = engineChanged
     ? `A newer intelligence engine can recheck ${count} recipe${count===1?"":"s"} and improve their Recipe DNA.`
-    : `Recipe Vault found ${count} recipe${count===1?"":"s"} that need Recipe DNA. This organizes them automatically—no manual categories required.`;
+    : `Recipe Vault found ${count} recipe${count===1?"":"s"} that need Recipe DNA. This will build hidden Recipe DNA and fill missing Protein and Meal Type fields automatically.`;
   setIntelligenceDialogMode("prompt");
   dialog.showModal();
   recipeIntelligencePromptShown = true;
@@ -942,6 +989,7 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
 
   let index = 0;
   let traitCount = 0;
+  const metadataUpdates = [];
   const startedAt = Date.now();
 
   const step = () => {
@@ -952,6 +1000,11 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
       const id = String(recipe.id || recipe.name || "");
       const dna = analyzeRecipeDNA(recipe);
       recipeDNAStore.recipes[id] = dna;
+      const inferred = inferVisibleRecipeMetadata(recipe, dna);
+      const updates = {};
+      if(!String(recipe.protein || "").trim() && inferred.protein) updates.protein = inferred.protein;
+      if(!String(recipe.type || "").trim() && inferred.type) updates.type = inferred.type;
+      if(Object.keys(updates).length) metadataUpdates.push({recipe, updates});
       traitCount += Object.values(dna.traits || {}).reduce((sum, values) => sum + (Array.isArray(values) ? values.length : 0), 0);
       if(currentText) currentText.textContent = recipe.name || "Untitled recipe";
       if(traitText){
@@ -971,14 +1024,29 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
     cleanRecipeDNAStore();
     recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
     recipeDNAStore.lastFullCheck = Date.now();
-    if(status) status.textContent = "Saving Recipe DNA…";
-    writeRecipeDNAStore().then(()=>{
+    if(status) status.textContent = metadataUpdates.length ? `Saving Recipe DNA and categorizing ${metadataUpdates.length} recipes…` : "Saving Recipe DNA…";
+    const saveVisibleMetadata = async () => {
+      let saved = 0;
+      for(let start=0; start<metadataUpdates.length; start+=4){
+        const batch = metadataUpdates.slice(start,start+4);
+        await Promise.all(batch.map(async ({recipe,updates}) => {
+          await postVault({action:"update", id:recipe.id, url:recipe.url, updates});
+          Object.assign(recipe, updates);
+          saved++;
+          if(countText) countText.textContent = `Categorizing recipe ${saved} of ${metadataUpdates.length}…`;
+        }));
+      }
+      return saved;
+    };
+    Promise.all([writeRecipeDNAStore(), saveVisibleMetadata()]).then(async ([,saved])=>{
       recipeIntelligenceRunning = false;
       const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-    const doneText = $("recipeIntelligenceDoneText");
-    if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed with engine v${RECIPE_DNA_ENGINE_VERSION}. ${traitCount.toLocaleString()} traits identified in ${elapsed} second${elapsed===1?"":"s"}.`;
-    setIntelligenceDialogMode("complete");
-    if(status) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
+      const doneText = $("recipeIntelligenceDoneText");
+      if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed. ${saved} missing Protein/Meal Type field${saved===1?"":"s"} filled. ${traitCount.toLocaleString()} hidden traits identified in ${elapsed} second${elapsed===1?"":"s"}.`;
+      setIntelligenceDialogMode("complete");
+      if(status) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
+      renderFilters();
+      refreshEntryCategoryMenus();
       render();
     }).catch(showRecipeIntelligenceError);
     }catch(error){

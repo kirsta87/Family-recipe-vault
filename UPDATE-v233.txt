@@ -1,0 +1,7 @@
+Build 233 — Verified Cookbook Ownership Moves
+
+- Move Here now changes cookbook ownership only; it no longer overwrites the saved recipe.
+- Preserves ratings, notes, photos, edits, ingredients, instructions, and meal history.
+- Supports alternate saved recipe ID/URL field names.
+- Removes stale references from the old cookbook and adds the target reference.
+- Reloads and verifies ownership after saving instead of falsely reporting success.
