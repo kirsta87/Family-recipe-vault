@@ -1,0 +1,4 @@
+Build 238
+- Shopping list printing no longer uses a popup window.
+- Uses a temporary same-page print frame, preventing blank popup windows and false popup-blocked messages.
+- Keeps the compact two-column printer-friendly shopping list.

@@ -1187,13 +1187,25 @@ function printCompactShoppingList(){
     }).join("")}</section>`;
   }).join("");
   const recipes = [...new Set(latestShoppingItems.flatMap(item => item.recipeNames || []))];
-  const popup = window.open("", "_blank", "noopener,noreferrer");
-  if(!popup){
-    $("shoppingListStatus").textContent = "Your browser blocked the print window. Allow pop-ups, then try again.";
+  // Print from a temporary same-page iframe so browsers do not need to allow pop-ups.
+  const printFrame = document.createElement("iframe");
+  printFrame.setAttribute("aria-hidden", "true");
+  printFrame.style.position = "fixed";
+  printFrame.style.width = "1px";
+  printFrame.style.height = "1px";
+  printFrame.style.right = "0";
+  printFrame.style.bottom = "0";
+  printFrame.style.border = "0";
+  printFrame.style.opacity = "0";
+  document.body.appendChild(printFrame);
+  const printDocument = printFrame.contentDocument || printFrame.contentWindow?.document;
+  if(!printDocument){
+    printFrame.remove();
+    $("shoppingListStatus").textContent = "Could not prepare the shopping list for printing. Try again.";
     return;
   }
-  popup.document.open();
-  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Shopping List</title><style>
+  printDocument.open();
+  printDocument.write(`<!doctype html><html><head><meta charset="utf-8"><title>Shopping List</title><style>
     @page{size:auto;margin:.45in}
     *{box-sizing:border-box}
     body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11pt;line-height:1.2}
@@ -1209,8 +1221,24 @@ function printCompactShoppingList(){
     footer{border-top:1px solid #aaa;margin-top:12px;padding-top:5px;font-size:8pt;color:#666}
     @media(max-width:650px){main{column-count:1}}
     @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
-  </style></head><body><header><h1>Shopping List</h1><div class="meta">${escapeHTML(weekLabel(activeWeek))} · ${latestShoppingItems.length} items</div></header><main>${rows}</main>${recipes.length?`<footer>Generated from: ${recipes.map(escapeHTML).join(" • ")}</footer>`:""}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),100));<\/script></body></html>`);
-  popup.document.close();
+  </style></head><body><header><h1>Shopping List</h1><div class="meta">${escapeHTML(weekLabel(activeWeek))} · ${latestShoppingItems.length} items</div></header><main>${rows}</main>${recipes.length?`<footer>Generated from: ${recipes.map(escapeHTML).join(" • ")}</footer>`:""}</body></html>`);
+  printDocument.close();
+  const cleanup = () => setTimeout(() => printFrame.remove(), 1000);
+  printFrame.onload = () => {
+    try{
+      printFrame.contentWindow.focus();
+      printFrame.contentWindow.print();
+      $("shoppingListStatus").textContent = "Print dialog opened.";
+    }catch(error){
+      $("shoppingListStatus").textContent = "Could not open the print dialog. Try your browser’s Print command.";
+    }finally{
+      cleanup();
+    }
+  };
+  // The iframe document may already be complete before onload is assigned.
+  if(printDocument.readyState === "complete"){
+    setTimeout(() => printFrame.onload(), 50);
+  }
 }
 
 $("printShoppingList").addEventListener("click", printCompactShoppingList);
