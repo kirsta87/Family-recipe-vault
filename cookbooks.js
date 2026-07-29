@@ -1,7 +1,13 @@
-window.RECIPE_VAULT_BUILD = 227;
+window.RECIPE_VAULT_BUILD = 234;
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
+const COOKBOOK_OWNER_KEY = "recipeVaultCookbookOwnershipV234";
+function readCookbookOwners(){try{return JSON.parse(localStorage.getItem(COOKBOOK_OWNER_KEY)||"{}")||{};}catch{return {};}}
+let cookbookOwners=readCookbookOwners();
+function saveCookbookOwners(){localStorage.setItem(COOKBOOK_OWNER_KEY,JSON.stringify(cookbookOwners));}
+function setCookbookOwner(recipe,cookbookId){const ref=recipeStableRef(recipe);if(!ref)return;cookbookOwners[ref]=String(cookbookId||"");saveCookbookOwners();}
+function effectiveCookbookId(recipe){return String(cookbookOwners[recipeStableRef(recipe)]||recipe?.cookbook_id||"").trim();}
 const BUILD_193 = true;
 const COOKBOOK_ENGINE_VERSION = "3.4.0";
 window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.6", parser:"Visual Cookbook Mapper v5"};
@@ -125,7 +131,7 @@ function cookbookIdentityValues(cookbook){
 }
 function cookbookRecipeMatches(recipe, cookbook){
   if(!recipe||!cookbook)return false;
-  const recipeBookId=String(recipe.cookbook_id||"").trim();
+  const recipeBookId=effectiveCookbookId(recipe);
   const cookbookId=String(cookbook.id||"").trim();
   if(recipeBookId)return recipeBookId===cookbookId;
 
@@ -1871,6 +1877,7 @@ async function importSelected(){
   const existingBook=importState.matchedCookbook||null;
   const title=$("cookbookTitle").value.trim()||importState.title,author=$("cookbookAuthor").value.trim(),collection=$("cookbookCollection").value.trim()||title,id=existingBook?.id||makeId();
   let imported=0,replaced=0,skipped=0,failed=0,previewsAttached=0,completed=0;
+  const movedRefs=[];
   if(!selected.length&&!existingBook)return alert("Select at least one recipe.");
   const btn=$("importCookbookRecipes");btn.disabled=true;
 
@@ -1896,13 +1903,44 @@ async function importSelected(){
       const recipe=await buildRecipe(r);
       if(r.importStatus==="possible-duplicate"&&r.duplicateAction==="replace"&&r.duplicateMatch){
         const existing=r.duplicateMatch;
-        const updates={name:recipe.name,source:recipe.source,image:recipe.image,protein:recipe.protein,type:recipe.type,cuisine:recipe.cuisine,tags:recipe.tags,collections:recipe.collections,ingredients:recipe.ingredients,instructions:recipe.instructions,nutrition:recipe.nutrition,description:recipe.description,yield:recipe.yield,video_url:recipe.video_url,recipe_links:recipe.recipe_links,cookbook_id:recipe.cookbook_id,cookbook_title:recipe.cookbook_title,cookbook_author:recipe.cookbook_author,cookbook_page:recipe.cookbook_page};
-        await postVault({action:"update",id:existing.id,url:existing.url,updates});
-        Object.assign(existing,updates);replaced++;
+        // A move changes ownership only. Preserve the saved recipe itself, including
+        // ratings, notes, photos, edits, meal history, ingredients, and instructions.
+        const updates={
+          source:recipe.source,
+          cookbook_id:recipe.cookbook_id,
+          cookbook_title:recipe.cookbook_title,
+          cookbook_author:recipe.cookbook_author,
+          cookbook_page:recipe.cookbook_page
+        };
+        const existingId=existing.id||existing.recipe_id||existing.recipeId||existing.ID||"";
+        const existingUrl=existing.url||existing.recipe_url||existing.recipeUrl||existing.URL||"";
+        if(!existingId&&!existingUrl)throw new Error(`Could not identify saved recipe: ${existing.name||r.title}`);
+        await postVault({action:"update",id:existingId,url:existingUrl,updates});
+        Object.assign(existing,updates);
+        // Shelf ownership is also persisted locally because older Apps Script
+        // deployments may silently ignore newer cookbook columns. The cookbook
+        // shelf is local-first, so this makes Move Here deterministic immediately.
+        setCookbookOwner(existing,id);
+
+        // Remove stale shelf references immediately so the recipe cannot remain in
+        // the old cookbook locally after a successful ownership transfer.
+        const movedRef=recipeStableRef(existing);
+        library.forEach(book=>{
+          if(!Array.isArray(book.recipeRefs))book.recipeRefs=[];
+          book.recipeRefs=book.recipeRefs.filter(ref=>ref!==movedRef);
+        });
+        const targetBook=library.find(book=>String(book.id)===String(id));
+        if(targetBook&&!targetBook.recipeRefs.includes(movedRef))targetBook.recipeRefs.push(movedRef);
+        movedRefs.push(movedRef);
+        replaced++;
       }else{
-        const duplicateAction=r.importStatus==="possible-duplicate"&&r.duplicateAction==="keep"?"keep":"skip";
+        // A recipe classified as New by the review screen must be allowed through
+        // the backend duplicate guard. Otherwise the bridge can reject it as a
+        // duplicate after the user explicitly selected Import.
+        const duplicateAction=(r.importStatus==="new"||r.duplicateAction==="keep")?"keep":"skip";
         const res=await postVault({action:"addManual",recipe,duplicateAction});
-        if(res.action==="duplicate")skipped++;else imported++;
+        if(res.action==="duplicate"&&duplicateAction!=="keep")skipped++;
+        else imported++;
       }
     }catch(e){failed++;r.warnings.push(e.message);}
     finally{updateProgress();}
@@ -1917,8 +1955,24 @@ async function importSelected(){
 
   if(existingBook){existingBook.title=title;existingBook.author=author;existingBook.collection=collection;existingBook.cover=existingBook.cover||importState.cover;existingBook.pageCount=importState.pageCount;existingBook.importedCount=(cookbookRecipes(existingBook,{remember:false}).length||existingBook.importedCount||0)+imported;existingBook.fileName=importState.fileName;existingBook.aliases=[...new Set([...(existingBook.aliases||[]),title,importState.title].filter(Boolean))];}
   else library.unshift({id,title,originalTitle:title,aliases:[title],author,collection,cover:importState.cover,pageCount:importState.pageCount,importedCount:imported,recipeRefs:[],addedAt:new Date().toISOString(),fileName:importState.fileName});
-  saveLibrary();btn.disabled=false;btn.textContent="Import selected";
-  $("reviewPanel").hidden=true;$("importResults").hidden=false;$("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">✓</div><h2>${escapeHTML(title)} is on your shelf</h2><p>${imported} recipes imported${replaced?`, ${replaced} misplaced recipes moved here`:""}${skipped?`, ${skipped} duplicates skipped`:""}${previewsAttached?`, ${previewsAttached} original PDF pages attached`:""}${failed?`, ${failed} failed`:""}.</p><div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;$("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(id));};
+  saveLibrary();
+
+  // Reload the sheet before declaring moves successful, then verify each moved
+  // recipe now belongs to this cookbook. This catches silent backend no-op updates.
+  let verifiedMoves=replaced,unverifiedMoves=0;
+  if(replaced){
+    await loadRecipes();
+    const target=library.find(book=>String(book.id)===String(id));
+    if(target)cookbookRecipes(target,{remember:true});
+    verifiedMoves=movedRefs.filter(ref=>{
+      const item=recipes.find(recipe=>recipeStableRef(recipe)===ref);
+      return item&&effectiveCookbookId(item)===String(id);
+    }).length;
+    if(verifiedMoves<replaced)unverifiedMoves=replaced-verifiedMoves;
+  }
+
+  btn.disabled=false;btn.textContent="Import selected";
+  $("reviewPanel").hidden=true;$("importResults").hidden=false;$("importResults").innerHTML=`<div class="success-panel"><div class="success-icon">${unverifiedMoves?"!":"✓"}</div><h2>${escapeHTML(title)} is on your shelf</h2><p>${imported} recipes imported${replaced?`, ${replaced-unverifiedMoves} misplaced recipes moved here`:""}${unverifiedMoves?`, ${unverifiedMoves} move${unverifiedMoves===1?"":"s"} did not save`:""}${skipped?`, ${skipped} duplicates skipped`:""}${previewsAttached?`, ${previewsAttached} original PDF pages attached`:""}${failed?`, ${failed} failed`:""}.</p>${unverifiedMoves?`<p class="parser-warning">The vault did not confirm every ownership change. Those recipes were not reported as moved; reopen the duplicate review and try them again.</p>`:""}<div class="actions"><button id="browseImported" class="primary">Browse cookbook</button><a class="secondary linkbtn" href="index.html">Return to Recipe Vault</a></div></div>`;$("browseImported").onclick=()=>{loadRecipes().then(()=>openCookbook(id));};
 }
 function beginEditCookbook(id){const cb=library.find(x=>x.id===id);if(!cb)return;$("editCookbookTitle").value=cb.title||"";$("editCookbookAuthor").value=cb.author||"";$("editCookbookCollection").value=cb.collection||cb.title||"";$("editCookbookDialog").dataset.id=id;$("editCookbookDialog").showModal();}
 async function saveCookbookMetadata(){

@@ -1,0 +1,5 @@
+Build 235
+- Recipe DNA local analysis now runs in larger fast chunks.
+- Metadata saves are checkpointed and resumable instead of timing out the entire run.
+- Failed or slow saves remain queued and retry automatically.
+- The analyzer applies inferred fields immediately in the current session and never overwrites existing values.

@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-window.RECIPE_VAULT_BUILD = 232;
+window.RECIPE_VAULT_BUILD = 236;
 const $ = id => document.getElementById(id);
 
 function on(id, eventName, handler){
@@ -22,6 +22,7 @@ let active = null;
 let planner = JSON.parse(localStorage.getItem(PLANNER_KEY) || "{}");
 let mealPlanRecipe = null;
 let plannerSyncLoaded = false;
+let plannerSaveChain = Promise.resolve();
 let selectedVibes = new Set();
 let surpriseRecipeId = null;
 
@@ -35,7 +36,8 @@ const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
 const RECIPE_DNA_DB = "recipeVaultRecipeDNAV220";
 const RECIPE_DNA_STORE = "dna";
 const RECIPE_DNA_RECORD = "current";
-const RECIPE_DNA_ENGINE_VERSION = 4;
+const RECIPE_DNA_ENGINE_VERSION = 5;
+const RECIPE_METADATA_QUEUE_KEY = "recipeVaultMetadataQueueV235";
 let recipeIntelligenceRunning = false;
 let recipeIntelligencePromptShown = false;
 let recipeDNAStore = readLegacyRecipeDNAStore();
@@ -907,17 +909,94 @@ function recipeNeedsVisibleMetadata(recipe){
 }
 
 function recipeIntelligenceCandidates({force=false}={}){
-  const engineChanged = recipeDNAStore.engineVersion !== RECIPE_DNA_ENGINE_VERSION;
+  // Normal runs focus on recipes that actually need visible metadata.
+  // A manual full recheck can still rebuild hidden DNA for everything.
   return recipes.filter(recipe => {
+    if(force) return true;
     const id = String(recipe.id || recipe.name || "");
     const current = recipeDNAStore.recipes[id];
-    return force || engineChanged || recipeNeedsVisibleMetadata(recipe) || !current || current.fingerprint !== recipeDNAFingerprint(recipe);
+    return recipeNeedsVisibleMetadata(recipe) || !current || current.fingerprint !== recipeDNAFingerprint(recipe);
   });
 }
 
 function cleanRecipeDNAStore(){
   const liveIds = new Set(recipes.map(recipe => String(recipe.id || recipe.name || "")));
   Object.keys(recipeDNAStore.recipes).forEach(id => { if(!liveIds.has(id)) delete recipeDNAStore.recipes[id]; });
+}
+
+function readMetadataQueue(){
+  try{
+    const value = JSON.parse(localStorage.getItem(RECIPE_METADATA_QUEUE_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  }catch(error){ return []; }
+}
+
+function writeMetadataQueue(queue){
+  try{ localStorage.setItem(RECIPE_METADATA_QUEUE_KEY, JSON.stringify(queue)); }catch(error){
+    console.warn("Could not checkpoint Recipe DNA metadata queue:", error);
+  }
+}
+
+async function postVaultWithTimeout(payload, timeoutMs=20000){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try{
+    if(!requireWriteConnection()) return null;
+    const form = new URLSearchParams();
+    form.set("payload", JSON.stringify({...payload, key: config.sharedKey}));
+    const response = await fetch(config.appsScriptUrl, {
+      method:"POST", body:form, redirect:"follow", signal:controller.signal
+    });
+    const result = await response.json();
+    if(!result.success) throw new Error(result.error || "Request failed");
+    return result;
+  }finally{ clearTimeout(timer); }
+}
+
+async function drainRecipeMetadataQueue({onProgress}={}){
+  let queue = readMetadataQueue();
+  if(!queue.length) return {saved:0, remaining:0};
+  let saved = 0;
+  const concurrency = 5;
+
+  while(queue.length){
+    const batch = queue.slice(0, concurrency);
+    const results = await Promise.allSettled(batch.map(async item => {
+      let lastError;
+      for(let attempt=0; attempt<2; attempt++){
+        try{
+          await postVaultWithTimeout({action:"update", id:item.id, url:item.url, updates:item.updates});
+          return item;
+        }catch(error){
+          lastError = error;
+          await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+        }
+      }
+      throw lastError;
+    }));
+
+    const failed = [];
+    results.forEach((result,index) => {
+      const item = batch[index];
+      if(result.status === "fulfilled"){
+        saved++;
+        const recipe = recipes.find(r => String(r.id || "") === String(item.id || "")) || recipes.find(r => r.url && r.url === item.url);
+        if(recipe) Object.assign(recipe, item.updates);
+      }else{
+        failed.push(item);
+        console.warn("Recipe metadata save will retry later:", item, result.reason);
+      }
+    });
+
+    queue = queue.slice(batch.length).concat(failed);
+    writeMetadataQueue(queue);
+    if(onProgress) onProgress(saved, queue.length);
+
+    // If every item in this batch failed, stop instead of looping forever.
+    if(failed.length === batch.length) break;
+    await new Promise(resolve => setTimeout(resolve, 120));
+  }
+  return {saved, remaining:queue.length};
 }
 
 function setIntelligenceDialogMode(mode){
@@ -934,10 +1013,8 @@ function showRecipeIntelligencePrompt(count, engineChanged){
   if(!dialog || dialog.open || recipeIntelligenceRunning) return;
   const heading = $("recipeIntelligenceHeading");
   const message = $("recipeIntelligenceMessage");
-  if(heading) heading.textContent = engineChanged ? "Recipe Intelligence has improved" : "Analyze your recipe library";
-  if(message) message.textContent = engineChanged
-    ? `A newer intelligence engine can recheck ${count} recipe${count===1?"":"s"} and improve their Recipe DNA.`
-    : `Recipe Vault found ${count} recipe${count===1?"":"s"} that need Recipe DNA. This will build hidden Recipe DNA and fill missing Protein and Meal Type fields automatically.`;
+  if(heading) heading.textContent = "Analyze missing recipe details";
+  if(message) message.textContent = `Recipe Vault found ${count} recipe${count===1?"":"s"} that need Recipe DNA or updated details. Missing Protein and Meal Type fields will be filled without overwriting anything you entered.`;
   setIntelligenceDialogMode("prompt");
   dialog.showModal();
   recipeIntelligencePromptShown = true;
@@ -946,31 +1023,27 @@ function showRecipeIntelligencePrompt(count, engineChanged){
 function showRecipeIntelligenceError(error){
   recipeIntelligenceRunning = false;
   const dialog = $("recipeIntelligenceDialog");
-  const message = error?.message || String(error || "Recipe analysis failed.");
+  const message = error?.name === "AbortError" ? "The server took too long to answer. Unsaved recipes were checkpointed and will resume automatically." : (error?.message || String(error || "Recipe analysis failed."));
   const status = $("recipeIntelligenceStatus");
   const current = $("recipeIntelligenceCurrent");
   const traits = $("recipeIntelligenceTraits");
-  if(status) status.textContent = `Recipe analysis failed: ${message}`;
-  if(current) current.textContent = "Analysis stopped";
+  if(status) status.textContent = `Recipe analysis paused: ${message}`;
+  if(current) current.textContent = "Saving paused safely";
   if(traits) traits.textContent = message;
-  if(dialog && !dialog.open){
-    try{ dialog.showModal(); }catch(showError){ console.error(showError); }
-  }
+  if(dialog && !dialog.open){ try{ dialog.showModal(); }catch(showError){ console.error(showError); } }
   setIntelligenceDialogMode("progress");
-  console.error("Recipe Intelligence failed:", error);
+  console.error("Recipe Intelligence paused:", error);
 }
 
 function startRecipeIntelligenceAnalysis({force=false}={}){
   if(recipeIntelligenceRunning) return;
   let candidates;
-  try{
-    candidates = recipeIntelligenceCandidates({force});
-  }catch(error){
-    showRecipeIntelligenceError(error);
-    return;
-  }
+  try{ candidates = recipeIntelligenceCandidates({force}); }
+  catch(error){ showRecipeIntelligenceError(error); return; }
+
   const dialog = $("recipeIntelligenceDialog");
-  if(!candidates.length){
+  const existingQueue = readMetadataQueue();
+  if(!candidates.length && !existingQueue.length){
     const status = $("recipeIntelligenceStatus");
     if(status) status.textContent = `Recipe Intelligence engine v${RECIPE_DNA_ENGINE_VERSION} is current.`;
     if(dialog?.open) dialog.close();
@@ -985,75 +1058,84 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
   const currentText = $("recipeIntelligenceCurrent");
   const traitText = $("recipeIntelligenceTraits");
   const status = $("recipeIntelligenceStatus");
-  if(status) status.textContent = `Analyzing ${candidates.length} recipe${candidates.length===1?"":"s"}…`;
+  if(status) status.textContent = `Analyzing ${candidates.length} recipe${candidates.length===1?"":"s"} locally…`;
 
   let index = 0;
   let traitCount = 0;
-  const metadataUpdates = [];
+  const queuedByKey = new Map(existingQueue.map(item => [String(item.id || item.url || ""), item]));
   const startedAt = Date.now();
 
-  const step = () => {
-    try{
-      const chunkEnd = Math.min(index + 4, candidates.length);
-    for(; index < chunkEnd; index++){
-      const recipe = candidates[index];
-      const id = String(recipe.id || recipe.name || "");
-      const dna = analyzeRecipeDNA(recipe);
-      recipeDNAStore.recipes[id] = dna;
-      const inferred = inferVisibleRecipeMetadata(recipe, dna);
-      const updates = {};
-      if(!String(recipe.protein || "").trim() && inferred.protein) updates.protein = inferred.protein;
-      if(!String(recipe.type || "").trim() && inferred.type) updates.type = inferred.type;
-      if(Object.keys(updates).length) metadataUpdates.push({recipe, updates});
-      traitCount += Object.values(dna.traits || {}).reduce((sum, values) => sum + (Array.isArray(values) ? values.length : 0), 0);
-      if(currentText) currentText.textContent = recipe.name || "Untitled recipe";
-      if(traitText){
-        const traits = Object.values(dna.traits || {}).flat();
-        traitText.textContent = traits.length ? `Detected: ${traits.slice(0,6).join(" · ")}` : "Analyzing cooking method, temperature, effort, and style…";
-      }
-    }
-    const percent = Math.round(index / candidates.length * 100);
-    if(bar){ bar.value = percent; bar.textContent = `${percent}%`; }
-    if(countText) countText.textContent = `Analyzing recipe ${index} of ${candidates.length} · ${percent}%`;
-
-    if(index < candidates.length){
-      setTimeout(step, 18);
-      return;
-    }
-
+  const finishAnalysis = async () => {
     cleanRecipeDNAStore();
     recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
     recipeDNAStore.lastFullCheck = Date.now();
-    if(status) status.textContent = metadataUpdates.length ? `Saving Recipe DNA and categorizing ${metadataUpdates.length} recipes…` : "Saving Recipe DNA…";
-    const saveVisibleMetadata = async () => {
-      let saved = 0;
-      for(let start=0; start<metadataUpdates.length; start+=4){
-        const batch = metadataUpdates.slice(start,start+4);
-        await Promise.all(batch.map(async ({recipe,updates}) => {
-          await postVault({action:"update", id:recipe.id, url:recipe.url, updates});
-          Object.assign(recipe, updates);
-          saved++;
-          if(countText) countText.textContent = `Categorizing recipe ${saved} of ${metadataUpdates.length}…`;
-        }));
-      }
-      return saved;
-    };
-    Promise.all([writeRecipeDNAStore(), saveVisibleMetadata()]).then(async ([,saved])=>{
+    const queue = Array.from(queuedByKey.values());
+    writeMetadataQueue(queue);
+    await writeRecipeDNAStore();
+
+    if(!queue.length){
       recipeIntelligenceRunning = false;
-      const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       const doneText = $("recipeIntelligenceDoneText");
-      if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed. ${saved} missing Protein/Meal Type field${saved===1?"":"s"} filled. ${traitCount.toLocaleString()} hidden traits identified in ${elapsed} second${elapsed===1?"":"s"}.`;
+      if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed. No blank Protein or Meal Type fields needed saving.`;
       setIntelligenceDialogMode("complete");
-      if(status) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
-      renderFilters();
-      refreshEntryCategoryMenus();
-      render();
-    }).catch(showRecipeIntelligenceError);
-    }catch(error){
-      showRecipeIntelligenceError(error);
+      return;
     }
+
+    if(countText) countText.textContent = `Saving 0 of ${queue.length} recipes…`;
+    if(currentText) currentText.textContent = "Saving categories safely";
+    if(traitText) traitText.textContent = "Progress is checkpointed. Closing this window will not lose completed work.";
+    if(status) status.textContent = `Saving ${queue.length} recipe categorization${queue.length===1?"":"s"}…`;
+
+    const result = await drainRecipeMetadataQueue({onProgress:(saved,remaining)=>{
+      const total = saved + remaining;
+      if(countText) countText.textContent = `Saving recipe ${saved} of ${total} · ${remaining} remaining`;
+      if(bar){ const pct = total ? Math.round(saved/total*100) : 100; bar.value=pct; bar.textContent=`${pct}%`; }
+    }});
+
+    recipeIntelligenceRunning = false;
+    const elapsed = Math.max(1, Math.round((Date.now() - startedAt)/1000));
+    const doneText = $("recipeIntelligenceDoneText");
+    if(result.remaining){
+      if(doneText) doneText.textContent = `${result.saved} recipes saved. ${result.remaining} are safely queued and will retry the next time Recipe Vault opens. You do not need to restart the full analysis.`;
+    }else{
+      if(doneText) doneText.textContent = `${candidates.length} recipes analyzed. ${result.saved} missing Protein/Meal Type fields filled. ${traitCount.toLocaleString()} hidden traits identified in ${elapsed} seconds.`;
+    }
+    setIntelligenceDialogMode("complete");
+    if(status) status.textContent = result.remaining ? `${result.remaining} Recipe DNA updates queued for retry` : `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
+    renderFilters(); refreshEntryCategoryMenus(); render();
   };
-  setTimeout(step, 30);
+
+  const step = () => {
+    try{
+      const chunkEnd = Math.min(index + 30, candidates.length);
+      for(; index < chunkEnd; index++){
+        const recipe = candidates[index];
+        const id = String(recipe.id || recipe.name || "");
+        const dna = analyzeRecipeDNA(recipe);
+        recipeDNAStore.recipes[id] = dna;
+        const inferred = inferVisibleRecipeMetadata(recipe, dna);
+        const updates = {};
+        if(!String(recipe.protein || "").trim() && inferred.protein) updates.protein = inferred.protein;
+        if(!String(recipe.type || "").trim() && inferred.type) updates.type = inferred.type;
+        if(Object.keys(updates).length){
+          Object.assign(recipe, updates); // instant in-session result
+          queuedByKey.set(String(recipe.id || recipe.url || recipe.name || ""), {id:recipe.id, url:recipe.url, updates});
+        }
+        traitCount += Object.values(dna.traits || {}).reduce((sum, values) => sum + (Array.isArray(values) ? values.length : 0), 0);
+        if(currentText) currentText.textContent = recipe.name || "Untitled recipe";
+        if(traitText){
+          const traits = Object.values(dna.traits || {}).flat();
+          traitText.textContent = traits.length ? `Detected: ${traits.slice(0,6).join(" · ")}` : "Analyzing cooking method, temperature, effort, and style…";
+        }
+      }
+      const percent = candidates.length ? Math.round(index/candidates.length*100) : 100;
+      if(bar){ bar.value=percent; bar.textContent=`${percent}%`; }
+      if(countText) countText.textContent = `Analyzing recipe ${index} of ${candidates.length} · ${percent}%`;
+      if(index < candidates.length){ setTimeout(step, 0); return; }
+      finishAnalysis().catch(showRecipeIntelligenceError);
+    }catch(error){ showRecipeIntelligenceError(error); }
+  };
+  setTimeout(step, 0);
 }
 
 function refreshRecipeIntelligence({force=false,automatic=false}={}){
@@ -1466,17 +1548,27 @@ async function loadSharedPlanner(){
     const result = await plannerPost({action:"getMealPlans"});
     const remote = result?.plans || {};
     const local = plannerRead();
-    const merged = {...remote};
-    const localOnly = [];
-    Object.entries(local).forEach(([key, plan]) => {
-      if(!remote[key] && (Object.keys(plan?.days || {}).length || (plan?.pool || []).length)){
-        merged[key] = plan;
-        localOnly.push([key, plan]);
+    const merged = {};
+    const uploadQueue = [];
+    const keys = new Set([...Object.keys(remote), ...Object.keys(local)]);
+    for(const key of keys){
+      const remotePlan = remote[key];
+      const localPlan = local[key];
+      if(!remotePlan){
+        merged[key] = localPlan;
+        if(localPlan) uploadQueue.push([key, localPlan]);
+      }else if(!localPlan){
+        merged[key] = remotePlan;
+      }else if(plannerTimestamp(localPlan) >= plannerTimestamp(remotePlan)){
+        merged[key] = localPlan;
+        if(plannerTimestamp(localPlan) > plannerTimestamp(remotePlan)) uploadQueue.push([key, localPlan]);
+      }else{
+        merged[key] = remotePlan;
       }
-    });
+    }
     planner = merged;
     localStorage.setItem(PLANNER_KEY, JSON.stringify(merged));
-    for(const [key, plan] of localOnly){
+    for(const [key, plan] of uploadQueue){
       await plannerPost({action:"saveMealPlan", weekKey:key, plan});
     }
   }catch(error){
@@ -1486,13 +1578,19 @@ async function loadSharedPlanner(){
 
 async function saveSharedPlannerWeek(key, plan){
   localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
-  try{
-    await plannerPost({action:"saveMealPlan", weekKey:key, plan});
-    return true;
-  }catch(error){
-    console.warn("Meal plan saved locally but could not sync:", error);
-    return false;
-  }
+  const snapshot = JSON.parse(JSON.stringify(plan));
+  const task = async () => {
+    try{
+      await plannerPost({action:"saveMealPlan", weekKey:key, plan:snapshot});
+      return true;
+    }catch(error){
+      console.warn("Meal plan saved locally but could not sync:", error);
+      return false;
+    }
+  };
+  const resultPromise = plannerSaveChain.then(task, task);
+  plannerSaveChain = resultPromise.then(() => undefined, () => undefined);
+  return resultPromise;
 }
 
 function plannerMonday(date){

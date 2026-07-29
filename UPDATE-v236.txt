@@ -1,0 +1,7 @@
+Build 236 — Meal Plan Save Reliability
+
+- Serializes meal-plan sync requests so rapid saves cannot finish out of order and erase newer meals.
+- On refresh, compares local and shared copies by updatedAt and keeps the newest version.
+- Pushes a newer local copy back to shared storage instead of replacing it with stale remote data.
+- Keeps immediate local saves as the source of truth while sync completes.
+- Repairs the service-worker cache version so the current build loads cleanly.

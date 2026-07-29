@@ -1,0 +1,5 @@
+Build 234
+- Fixes selected New recipes being rejected as duplicates.
+- Move Here now persists cookbook ownership in the local cookbook shelf even when an older Apps Script deployment ignores cookbook columns.
+- Removes recipes from the old shelf and adds them to the chosen cookbook immediately.
+- Verifies the exact moved recipes instead of comparing cookbook totals.
