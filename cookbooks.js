@@ -3,7 +3,7 @@ const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
 const BUILD_193 = true;
 const COOKBOOK_ENGINE_VERSION = "3.4.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.2", parser:"Visual Cookbook Mapper v3"};
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.3", parser:"Visual Cookbook Mapper v4"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -624,8 +624,23 @@ function showParserDiagnosticsBanner(){
   panel.prepend(banner);
 }
 
+function cookbookFileKind(file){
+ const name=String(file?.name||"").toLowerCase();
+ const type=String(file?.type||"").toLowerCase();
+ if(name.endsWith(".epub")||type.includes("epub"))return "epub";
+ if(name.endsWith(".pdf")||type==="application/pdf"||type.includes("pdf"))return "pdf";
+ return "unknown";
+}
+function showUnsupportedCookbookFile(file,kind){
+ const label=kind==="epub"?"EPUB":"unsupported";
+ $("choosePdfPanel").hidden=true;$("analyzePanel").hidden=false;$("importHeading").textContent="Choose a cookbook PDF";
+ $("analyzePanel").innerHTML=`<div class="cookbook-analyze-card"><h3>${label} files are not PDF files</h3><p>${kind==="epub"?"This cookbook is an EPUB, so Recipe Vault will not send it through the PDF parser.":"Recipe Vault could not identify this file as a PDF."}</p><p class="muted">Please choose a PDF copy of the cookbook. EPUB importing is not available in this build.</p><div class="button-row"><button type="button" class="secondary" id="chooseDifferentCookbook">Choose another file</button></div></div>`;
+ $("chooseDifferentCookbook")?.addEventListener("click",()=>{showImport();$("cookbookFile").value="";$("cookbookFile").click();});
+}
 async function analyzePdf(file){
   currentAnalyzingFileName=file?.name||""; parserDiagnostics=[];
+  const fileKind=cookbookFileKind(file);
+  if(fileKind!=="pdf"){showUnsupportedCookbookFile(file,fileKind);return;}
   $("choosePdfPanel").hidden=true;$("analyzePanel").hidden=false;$("importHeading").textContent="Analyzing cookbook";
   try{
     const pdfjs=await getPdfJs(); const buffer=await file.arrayBuffer(); const pdfBlob=new Blob([buffer],{type:"application/pdf"});
@@ -1714,33 +1729,41 @@ let visualMapperState=null;
 function mapperId(){return `g-${Date.now()}-${Math.random().toString(16).slice(2)}`;}
 function mapperDefaultGroup(){return {id:mapperId(),boxes:{}};}
 function mapperCloneGroups(groups){return JSON.parse(JSON.stringify(groups||[]));}
-function mapperPageGroups(pageNo){const s=visualMapperState;return s.pageOverrides[pageNo]||s.templateGroups;}
+function mapperPageKey(pageNo){return String(Math.max(1,Number(pageNo)||1));}
+function mapperPageGroups(pageNo){const s=visualMapperState;return s.pageOverrides[mapperPageKey(pageNo)]||s.templateGroups;}
 function mapperActiveGroups(){return mapperPageGroups(visualMapperState.activePage);}
 function mapperGetGroup(){return mapperActiveGroups().find(g=>g.id===visualMapperState.activeGroupId)||mapperActiveGroups()[0];}
-function mapperGroupIndex(groups,id){const n=groups.findIndex(g=>g.id===id);return n<0?0:n;}
+function mapperGroupIndex(groups,id){const n=(groups||[]).findIndex(g=>g.id===id);return n<0?0:n;}
+function mapperFreshGroups(groups){return mapperCloneGroups(groups).map(g=>({...g,id:mapperId(),boxes:mapperCloneGroups([g.boxes||{}])[0]}));}
+function mapperEnsureOverride(pageNo){
+ const s=visualMapperState,key=mapperPageKey(pageNo);
+ if(!s.pageOverrides[key])s.pageOverrides[key]=mapperFreshGroups(s.templateGroups);
+ return s.pageOverrides[key];
+}
 function mapperSetActivePage(pageNo){
  const s=visualMapperState,oldGroups=mapperPageGroups(s.activePage),oldIndex=mapperGroupIndex(oldGroups,s.activeGroupId);
- s.activePage=pageNo;const groups=mapperPageGroups(pageNo);s.activeGroupId=groups[Math.min(oldIndex,Math.max(0,groups.length-1))]?.id||groups[0]?.id||"";
- document.querySelectorAll(".mapper-page-card").forEach(x=>x.classList.toggle("active",Number(x.dataset.page)===pageNo));mapperRefreshToolbar();
-}
-function mapperEnsureOverride(pageNo){
- const s=visualMapperState;
- if(!s.pageOverrides[pageNo]){
-  // Page overrides are a true detached snapshot. Give every copied recipe a fresh
-  // identity so later clone/move operations can never resolve back to the master template.
-  s.pageOverrides[pageNo]=mapperCloneGroups(s.templateGroups).map(g=>({...g,id:mapperId(),boxes:{...(g.boxes||{})}}));
- }
- return s.pageOverrides[pageNo];
+ s.activePage=Math.max(1,Number(pageNo)||1);
+ // When page-only mode is armed, entering another page immediately detaches it.
+ // This prevents the first drag on the new page from mutating the master template.
+ const groups=s.editPageOnly?mapperEnsureOverride(s.activePage):mapperPageGroups(s.activePage);
+ s.activeGroupId=groups[Math.min(oldIndex,Math.max(0,groups.length-1))]?.id||groups[0]?.id||"";
+ const toggle=$("mapperPageOnly");if(toggle)toggle.checked=s.editPageOnly;
+ document.querySelectorAll(".mapper-page-card").forEach(x=>x.classList.toggle("active",Number(x.dataset.page)===s.activePage));
+ mapperRefreshToolbar();
 }
 function mapperTargetGroups(pageNo,forcePageOnly=false){
- const s=visualMapperState;
- // Once a page has an override, every edit on that page stays inside it. Never leak edits back to the master template.
- return (forcePageOnly||s.editPageOnly||Boolean(s.pageOverrides[pageNo]))?mapperEnsureOverride(pageNo):s.templateGroups;
+ const s=visualMapperState,key=mapperPageKey(pageNo);
+ return (forcePageOnly||s.editPageOnly||Boolean(s.pageOverrides[key]))?mapperEnsureOverride(pageNo):s.templateGroups;
+}
+function mapperResolveTargetGroup(pageNo,groupId,forcePageOnly=false){
+ const visible=mapperPageGroups(pageNo),index=mapperGroupIndex(visible,groupId);
+ const groups=mapperTargetGroups(pageNo,forcePageOnly);
+ return {groups,target:groups.find(g=>g.id===groupId)||groups[index]||groups[0],index};
 }
 function mapperRefreshToolbar(){
  const s=visualMapperState;if(!s)return;const groups=mapperActiveGroups();
  const groupSel=$("mapperGroupSelect");if(groupSel){groupSel.innerHTML=groups.map((g,i)=>`<option value="${g.id}">Recipe ${i+1}</option>`).join("");if(!groups.some(g=>g.id===s.activeGroupId))s.activeGroupId=groups[0]?.id||"";groupSel.value=s.activeGroupId;}
- const badge=$("mapperModeBadge");if(badge)badge.textContent=s.pageOverrides[s.activePage]?`Page ${s.activePage} only`:`Template · all pages`;
+ const badge=$("mapperModeBadge");if(badge)badge.textContent=s.pageOverrides[mapperPageKey(s.activePage)]?`Editing Page ${s.activePage} only`:`Editing Template · affects all pages`;
  const list=$("mapperRecipeList");if(list)list.innerHTML=groups.map((g,i)=>`<button type="button" class="${g.id===s.activeGroupId?"active":""}" data-mapper-recipe="${g.id}">Recipe ${i+1}<span>${Object.keys(g.boxes||{}).length} fields</span></button>`).join("");
  list?.querySelectorAll("[data-mapper-recipe]").forEach(btn=>btn.onclick=()=>{s.activeGroupId=btn.dataset.mapperRecipe;s.groupMove=null;mapperRefreshToolbar();});
  const tip=$("mapperInstruction");if(tip)tip.textContent=s.groupMove?`Recipe ${groups.findIndex(g=>g.id===s.groupMove.groupId)+1} is grouped. Drag any of its boxes to move them together, then click empty space to release.`:`Draw ${MAPPER_LABELS[s.activeField]} for ${groupSel?.selectedOptions?.[0]?.textContent||"Recipe 1"}. Click a box to move or resize it.`;
@@ -1752,15 +1775,12 @@ async function mapperRenderPage(pageNo,canvas){
  if(canvas.dataset.rendered)return;const page=await visualMapperState.pdf.getPage(pageNo);const base=page.getViewport({scale:1});const max=760;const scale=Math.min(.9,max/base.width);const vp=page.getViewport({scale});canvas.width=Math.round(vp.width);canvas.height=Math.round(vp.height);canvas.style.width=`${canvas.width}px`;canvas.style.height=`${canvas.height}px`;await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;canvas.dataset.rendered="1";mapperRenderOverlayForPage(pageNo);
 }
 function mapperEditBox(pageNo,groupId,field,patch){
- const groups=mapperPageGroups(pageNo);
- const target=groups.find(g=>g.id===groupId);
- // Never fall back by array position: that could move or overwrite Recipe 1 when
- // the intended cloned recipe is not found.
+ const s=visualMapperState;
+ const {target}=mapperResolveTargetGroup(pageNo,groupId,s.editPageOnly);
  if(!target)return false;
  target.boxes=target.boxes||{};
  target.boxes[field]=mapperClampBox({...target.boxes[field],...patch});
- visualMapperState.activePage=pageNo;
- visualMapperState.activeGroupId=target.id;
+ s.activePage=Number(pageNo);s.activeGroupId=target.id;
  return true;
 }
 function mapperBindBoxInteraction(el,pageNo,g,field){
@@ -1805,7 +1825,7 @@ function mapperBindBoxInteraction(el,pageNo,g,field){
 function mapperRenderOverlayForPage(pageNo){
  const wrap=document.querySelector(`.mapper-page-stage[data-page="${pageNo}"]`);if(!wrap)return;const canvas=wrap.querySelector("canvas"),layer=wrap.querySelector(".mapper-overlay");if(!canvas?.dataset.rendered)return;layer.style.width=canvas.style.width;layer.style.height=canvas.style.height;layer.innerHTML="";
  const groups=mapperPageGroups(pageNo);groups.forEach((g,gi)=>Object.entries(g.boxes||{}).forEach(([field,b])=>{if(!b)return;const el=document.createElement("div");el.className=`mapper-box${visualMapperState.groupMove?.pageNo===pageNo&&visualMapperState.groupMove?.groupId===g.id?" grouped":""}`;el.dataset.page=pageNo;el.dataset.group=g.id;el.dataset.field=field;el.tabIndex=0;el.style.cssText=`left:${b.x*100}%;top:${b.y*100}%;width:${b.w*100}%;height:${b.h*100}%;border-color:${mapperBoxColor(field)};background:${mapperBoxColor(field)}22`;el.innerHTML=`<span style="background:${mapperBoxColor(field)}">R${gi+1} · ${MAPPER_LABELS[field]}</span><button type="button" title="Remove">×</button>${["n","ne","e","se","s","sw","w","nw"].map(h=>`<i class="mapper-handle h-${h}" data-handle="${h}"></i>`).join("")}`;
-  el.querySelector("button").onclick=e=>{e.stopPropagation();const tg=mapperPageGroups(pageNo).find(x=>x.id===g.id);if(tg?.boxes)delete tg.boxes[field];mapperRefreshToolbar();};
+  el.querySelector("button").onclick=e=>{e.stopPropagation();const {target:tg}=mapperResolveTargetGroup(pageNo,g.id,visualMapperState.editPageOnly);if(tg?.boxes)delete tg.boxes[field];mapperRefreshToolbar();};
   el.onkeydown=e=>{if(e.key==="Delete"||e.key==="Backspace"){e.preventDefault();el.querySelector("button")?.click();return;}if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;e.preventDefault();const d=(e.shiftKey?10:1)/(layer.getBoundingClientRect().width||700),dy=(e.shiftKey?10:1)/(layer.getBoundingClientRect().height||900);const live=mapperPageGroups(pageNo).find(x=>x.id===g.id)?.boxes[field]||b,patch={...live};if(e.key==="ArrowLeft")patch.x-=d;if(e.key==="ArrowRight")patch.x+=d;if(e.key==="ArrowUp")patch.y-=dy;if(e.key==="ArrowDown")patch.y+=dy;mapperEditBox(pageNo,g.id,field,patch);mapperRefreshToolbar();};
   mapperBindBoxInteraction(el,pageNo,g,field);layer.appendChild(el);
  }));
@@ -1814,33 +1834,32 @@ function mapperRenderAllOverlays(){document.querySelectorAll(".mapper-page-stage
 function mapperInstallDrawing(layer,pageNo){let start=null,ghost=null;layer.addEventListener("pointerdown",e=>{if(e.target.closest(".mapper-box"))return;mapperSetActivePage(pageNo);if(visualMapperState.groupMove){visualMapperState.groupMove=null;visualMapperState.selectedBox=null;mapperRefreshToolbar();return;}const r=layer.getBoundingClientRect();start={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};ghost=document.createElement("div");ghost.className="mapper-box mapper-ghost";ghost.style.borderColor=mapperBoxColor(visualMapperState.activeField);layer.appendChild(ghost);layer.setPointerCapture(e.pointerId);});layer.addEventListener("pointermove",e=>{if(!start||!ghost)return;const r=layer.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;const left=Math.max(0,Math.min(start.x,x)),top=Math.max(0,Math.min(start.y,y)),w=Math.min(1,Math.abs(x-start.x)),h=Math.min(1,Math.abs(y-start.y));ghost.style.cssText=`left:${left*100}%;top:${top*100}%;width:${w*100}%;height:${h*100}%;border-color:${mapperBoxColor(visualMapperState.activeField)}`;});layer.addEventListener("pointerup",e=>{if(!start)return;const r=layer.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;const b=mapperClampBox({x:Math.max(0,Math.min(start.x,x)),y:Math.max(0,Math.min(start.y,y)),w:Math.abs(x-start.x),h:Math.abs(y-start.y)});ghost?.remove();ghost=null;start=null;if(b.w<.015||b.h<.012)return;const groups=mapperTargetGroups(pageNo);let g=groups.find(z=>z.id===visualMapperState.activeGroupId);if(!g){const activeIndex=mapperGroupIndex(mapperPageGroups(pageNo),visualMapperState.activeGroupId);g=groups[activeIndex]||groups[0];visualMapperState.activeGroupId=g?.id||"";}if(g)g.boxes[visualMapperState.activeField]=b;mapperRefreshToolbar();});}
 async function launchVisualCookbookMapper(pdf,pages,tocMap){
  $("analyzePanel").hidden=true;$("reviewPanel").hidden=true;let panel=$("visualMapperPanel");if(!panel){panel=document.createElement("section");panel.id="visualMapperPanel";$("importView").appendChild(panel);}visualMapperState={pdf,pages,tocMap,templatePage:Math.min(2,pdf.numPages),templateGroups:[mapperDefaultGroup()],pageOverrides:{},activePage:Math.min(2,pdf.numPages),activeGroupId:"",activeField:"title",editPageOnly:false,skippedPages:new Set(),groupMove:null,selectedBox:null};visualMapperState.activeGroupId=visualMapperState.templateGroups[0].id;
- panel.innerHTML=`<div class="mapper-header"><div><p class="eyebrow">BUILD 209 · STABLE COOKBOOK IMPORT</p><h2>Map the cookbook layout</h2><p class="muted">Template edits affect every page. Page-only edits and cloned recipes stay isolated to the active page.</p></div><button id="mapperCancel" class="secondary">Cancel</button></div><div class="mapper-workspace"><aside class="mapper-sidebar"><div><strong>Editing</strong><div id="mapperModeBadge" class="mapper-side-badge"></div></div><label>Field<select id="mapperFieldSelect">${MAPPER_FIELDS.map(f=>`<option value="${f}">${MAPPER_LABELS[f]}</option>`).join("")}</select></label><label>Recipe<select id="mapperGroupSelect"></select></label><div id="mapperRecipeList" class="mapper-recipe-list"></div><button id="mapperAddGroup" class="secondary">+ Add blank recipe</button><button id="mapperDuplicateGroup" class="secondary">Clone recipe</button><label class="mapper-toggle"><input id="mapperPageOnly" type="checkbox"> Edit this page only</label><button id="mapperResetPage" class="secondary">Reset this page</button><p id="mapperInstruction" class="muted"></p><button id="mapperBuildReview" class="primary">Build recipe review</button></aside><div class="mapper-main"><div id="mapperPages" class="mapper-pages"></div></div></div>`;
+ panel.innerHTML=`<div class="mapper-header"><div><p class="eyebrow">BUILD 217 · ISOLATED PAGE OVERRIDES</p><h2>Map the cookbook layout</h2><p class="muted">Clone or add a recipe while template mode is active to apply that multi-recipe layout to every page. Turn on page-only mode for one-off pages.</p></div><button id="mapperCancel" class="secondary">Cancel</button></div><div class="mapper-workspace"><aside class="mapper-sidebar"><div><strong>Editing</strong><div id="mapperModeBadge" class="mapper-side-badge"></div></div><label>Field<select id="mapperFieldSelect">${MAPPER_FIELDS.map(f=>`<option value="${f}">${MAPPER_LABELS[f]}</option>`).join("")}</select></label><label>Recipe<select id="mapperGroupSelect"></select></label><div id="mapperRecipeList" class="mapper-recipe-list"></div><button id="mapperAddGroup" class="secondary">+ Add blank recipe</button><button id="mapperDuplicateGroup" class="secondary">Clone recipe</button><label class="mapper-toggle"><input id="mapperPageOnly" type="checkbox"> Edit this page only</label><button id="mapperResetPage" class="secondary">Reset this page to template</button><button id="mapperApplyTemplate" class="secondary">Use this layout as template</button><p id="mapperInstruction" class="muted"></p><button id="mapperBuildReview" class="primary">Build recipe review</button></aside><div class="mapper-main"><div id="mapperPages" class="mapper-pages"></div></div></div>`;
  const pagesHost=$("mapperPages");for(let n=1;n<=pdf.numPages;n++){const pageData=pages[n-1]||{page:n},score=mapperPageRecipeScore(pageData),autoImport=score>=45;if(!autoImport)visualMapperState.skippedPages.add(n);const card=document.createElement("article");card.className=`mapper-page-card${autoImport?"":" skipped"}`;card.dataset.page=n;card.innerHTML=`<div class="mapper-page-label"><span>Page ${n}</span><label class="mapper-import-page"><input type="checkbox" ${autoImport?"checked":""}> Import page</label><span class="mapper-page-state">${score>=75?"Likely recipe":score>=45?"Review":"Auto-skipped"} · ${score}%</span></div><div class="mapper-page-stage" data-page="${n}"><canvas></canvas><div class="mapper-overlay"></div></div>`;pagesHost.appendChild(card);card.onclick=()=>mapperSetActivePage(n);const check=card.querySelector(".mapper-import-page input");check.onclick=e=>e.stopPropagation();check.onchange=e=>{if(e.target.checked)visualMapperState.skippedPages.delete(n);else visualMapperState.skippedPages.add(n);card.classList.toggle("skipped",!e.target.checked);};mapperInstallDrawing(card.querySelector(".mapper-overlay"),n);}
  const observer=new IntersectionObserver(entries=>entries.forEach(en=>{if(en.isIntersecting){const card=en.target,n=Number(card.dataset.page);mapperRenderPage(n,card.querySelector("canvas"));observer.unobserve(card);}}),{root:pagesHost,rootMargin:"800px"});document.querySelectorAll(".mapper-page-card").forEach(c=>observer.observe(c));
- $("mapperFieldSelect").onchange=e=>{visualMapperState.activeField=e.target.value;mapperRefreshToolbar();};$("mapperGroupSelect").onchange=e=>{visualMapperState.activeGroupId=e.target.value;visualMapperState.groupMove=null;mapperRefreshToolbar();};$("mapperPageOnly").onchange=e=>{const s=visualMapperState,oldGroups=mapperPageGroups(s.activePage),oldIndex=mapperGroupIndex(oldGroups,s.activeGroupId);s.editPageOnly=e.target.checked;if(e.target.checked){const groups=mapperEnsureOverride(s.activePage);s.activeGroupId=groups[oldIndex]?.id||groups[0]?.id||"";}else if(s.pageOverrides[s.activePage]){e.target.checked=true;s.editPageOnly=true;alert("This page already has its own layout. Use Reset this page only when you intentionally want to discard it and return to the master template.");}s.groupMove=null;mapperRefreshToolbar();};
- $("mapperAddGroup").onclick=()=>{const groups=mapperEnsureOverride(visualMapperState.activePage),g=mapperDefaultGroup();groups.push(g);visualMapperState.editPageOnly=true;$("mapperPageOnly").checked=true;visualMapperState.activeGroupId=g.id;mapperRefreshToolbar();};
+ $("mapperFieldSelect").onchange=e=>{visualMapperState.activeField=e.target.value;mapperRefreshToolbar();};$("mapperGroupSelect").onchange=e=>{visualMapperState.activeGroupId=e.target.value;visualMapperState.groupMove=null;mapperRefreshToolbar();};$("mapperPageOnly").onchange=e=>{const s=visualMapperState,oldGroups=mapperPageGroups(s.activePage),oldIndex=mapperGroupIndex(oldGroups,s.activeGroupId);if(e.target.checked){s.editPageOnly=true;const groups=mapperEnsureOverride(s.activePage);s.activeGroupId=groups[oldIndex]?.id||groups[0]?.id||"";}else if(s.pageOverrides[mapperPageKey(s.activePage)]){e.target.checked=true;s.editPageOnly=true;alert("This page already has its own layout. Reset this page to template before turning page-only editing off.");}else{s.editPageOnly=false;}s.groupMove=null;mapperRefreshToolbar();};
+ $("mapperAddGroup").onclick=()=>{const s=visualMapperState,pageNo=s.activePage;const groups=mapperTargetGroups(pageNo,s.editPageOnly);const g=mapperDefaultGroup();groups.push(g);s.activeGroupId=g.id;s.groupMove=null;mapperRefreshToolbar();};
  $("mapperDuplicateGroup").onclick=()=>{
  const s=visualMapperState,pageNo=s.activePage;
  const visible=mapperPageGroups(pageNo);
  const srcIndex=Math.max(0,visible.findIndex(g=>g.id===s.activeGroupId));
  const sourceSnapshot=mapperCloneGroups([visible[srcIndex]||visible[0]])[0];
  if(!sourceSnapshot)return;
- const groups=mapperEnsureOverride(pageNo);
- // Re-resolve Recipe 1 after the page was detached, then clone only its frozen snapshot.
- // This prevents the new group from sharing boxes or identity with the original.
- const original=groups[srcIndex]||groups[0];
- if(!original)return;
+ // Template mode clones into the master layout, so a normal two-recipe page
+ // becomes the default for every page. Page-only mode clones only this page.
+ const groups=mapperTargetGroups(pageNo,s.editPageOnly);
  const clone={id:mapperId(),boxes:{}};
  Object.entries(sourceSnapshot.boxes||{}).forEach(([field,b])=>{
   clone.boxes[field]=mapperClampBox({...b,x:b.x+.04,y:b.y+.04});
  });
  groups.push(clone);
- s.editPageOnly=true;$("mapperPageOnly").checked=true;
  s.activeGroupId=clone.id;s.selectedBox=null;s.groupMove={pageNo,groupId:clone.id};
  mapperRefreshToolbar();
  const sel=$("mapperGroupSelect");if(sel)sel.value=clone.id;
 };
- $("mapperResetPage").onclick=()=>{delete visualMapperState.pageOverrides[visualMapperState.activePage];visualMapperState.editPageOnly=false;$("mapperPageOnly").checked=false;visualMapperState.activeGroupId=visualMapperState.templateGroups[0]?.id||"";mapperRefreshToolbar();};$("mapperCancel").onclick=cancelImport;$("mapperBuildReview").onclick=buildReviewFromVisualMapper;
+ $("mapperResetPage").onclick=()=>{const s=visualMapperState;delete s.pageOverrides[mapperPageKey(s.activePage)];s.editPageOnly=false;$("mapperPageOnly").checked=false;s.activeGroupId=s.templateGroups[0]?.id||"";s.groupMove=null;mapperRefreshToolbar();};
+ $("mapperApplyTemplate").onclick=()=>{const s=visualMapperState,current=mapperPageGroups(s.activePage);s.templateGroups=mapperFreshGroups(current);delete s.pageOverrides[mapperPageKey(s.activePage)];s.editPageOnly=false;$("mapperPageOnly").checked=false;s.activeGroupId=s.templateGroups[0]?.id||"";s.groupMove=null;mapperRefreshToolbar();};
+ $("mapperCancel").onclick=cancelImport;$("mapperBuildReview").onclick=buildReviewFromVisualMapper;
  mapperSetActivePage(visualMapperState.activePage);document.querySelector(`.mapper-page-card[data-page="${visualMapperState.activePage}"]`)?.scrollIntoView({block:"start"});
 }
 function mapperLineGeometry(page,l){
@@ -1963,17 +1982,35 @@ function mappedText(page,b,mode="prose",allBoxes=[]){
  return lines.map(l=>cleanLine(l.text)).filter(Boolean).join("\n").replace(/\s+\n/g,"\n").trim();
 }
 function mapperPageRecipeScore(page){
- const text=(page.text||(page.lines||[]).join("\n")||"").toLowerCase();
- const lineCount=(page.richLines||[]).length;
+ const raw=page.text||(page.lines||[]).join("\n")||"";
+ const text=raw.toLowerCase();
+ const compact=text.replace(/[^a-z0-9]+/g," ");
+ const lines=(page.lines||[]).map(x=>cleanLine(x)).filter(Boolean);
+ const lineCount=(page.richLines||[]).length||lines.length;
  let score=0;
- if(/\bingredients?\b/.test(text))score+=38;
- if(/\b(directions?|instructions?|method)\b/.test(text))score+=38;
- if(/\b(calories?|protein|carbs?|fat|macros?|nutrition)\b/.test(text))score+=12;
- if(/\b(serves?|servings?|yield|prep time|cook time)\b/.test(text))score+=8;
- if(lineCount>12)score+=8;
+ const hasIngredients=/\bingredients?\b/.test(compact)||/i\s*n\s*g\s*r\s*e\s*d\s*i\s*e\s*n\s*t\s*s/i.test(raw);
+ const hasInstructions=/\b(directions?|instructions?|method|preparation)\b/.test(compact)||/i\s*n\s*s\s*t\s*r\s*u\s*c\s*t\s*i\s*o\s*n\s*s/i.test(raw);
+ const hasNutrition=/\b(calories?|protein|carbs?|fat|macros?|nutrition)\b/.test(compact);
+ const hasYield=/\b(serves?|servings?|yield|makes|prep time|cook time)\b/.test(compact);
+ const unitPattern=/(?:^|\s)(?:\d+(?:[.,]\d+)?|[¼½¾⅓⅔⅛⅜⅝⅞])\s*(?:g|kg|mg|ml|l|oz|lb|lbs|tsp|tsps|tbsp|tbsps|tablespoons?|teaspoons?|cups?|cloves?|cans?|eggs?|pinch(?:es)?|slices?|pieces?)\b/i;
+ const quantityLines=lines.filter(line=>unitPattern.test(line)).length;
+ const numberedSteps=lines.filter(line=>/^(?:\d+[.)]|step\s+\d+|preheat|heat|mix|add|stir|cook|bake|place|combine|whisk|serve)\b/i.test(line)).length;
+ const uppercaseHeadings=lines.filter(line=>line.length<42&&line===line.toUpperCase()&&/[A-Z]{4}/.test(line)).length;
+ if(hasIngredients)score+=34;
+ if(hasInstructions)score+=34;
+ if(hasNutrition)score+=12;
+ if(hasYield)score+=7;
+ if(quantityLines>=3)score+=18; else if(quantityLines>=1)score+=7;
+ if(numberedSteps>=2)score+=14; else if(numberedSteps===1)score+=6;
+ if(uppercaseHeadings>=2)score+=7;
+ if(lineCount>12)score+=7;
+ // Visual-layout fallback: image-heavy/fragmented PDFs may expose weak headings,
+ // but a dense page with many quantity lines plus step-like prose is still a recipe.
+ if(!hasIngredients&&!hasInstructions&&quantityLines>=5&&numberedSteps>=1)score=Math.max(score,58);
+ if(!hasIngredients&&quantityLines>=6&&hasNutrition)score=Math.max(score,52);
  if(/table of contents|copyright|all rights reserved|about the author|acknowledg|disclaimer/.test(text))score-=75;
- if(/^\s*(index|contents)\s*$/im.test(text))score-=65;
- if(lineCount<5)score-=35;
+ if(/^\s*(index|contents)\s*$/im.test(raw))score-=65;
+ if(lineCount<5&&quantityLines<2)score-=35;
  return Math.max(0,Math.min(100,score));
 }
 async function cropMappedImage(pdf,pageNo,b){if(!b)return"";const page=await pdf.getPage(pageNo),vp=page.getViewport({scale:1});const scale=Math.min(1.4,900/(vp.width*b.w||1));const rv=page.getViewport({scale});const canvas=document.createElement("canvas");canvas.width=Math.round(rv.width);canvas.height=Math.round(rv.height);await page.render({canvasContext:canvas.getContext("2d"),viewport:rv}).promise;const sx=Math.round(b.x*canvas.width),sy=Math.round(b.y*canvas.height),sw=Math.max(1,Math.round(b.w*canvas.width)),sh=Math.max(1,Math.round(b.h*canvas.height));const crop=document.createElement("canvas");crop.width=Math.min(800,sw);crop.height=Math.max(1,Math.round(sh*crop.width/sw));crop.getContext("2d").drawImage(canvas,sx,sy,sw,sh,0,0,crop.width,crop.height);return crop.toDataURL("image/jpeg",.72);}
@@ -2013,7 +2050,7 @@ async function buildReviewFromVisualMapper(){
     if(!instructions.length)warnings.push("Missing instructions");
     let mappedImage="";
     if(g.boxes.image){btn.textContent=`Cropping photo for page ${page.page}…`;mappedImage=await cropMappedImage(s.pdf,page.page,g.boxes.image).catch(()=>"");}
-    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v214",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
+    candidates.push({page:page.page,endPage:page.page,title:title||`Page ${page.page} recipe ${gi+1}`,titleSource:"visual mapper",titleConfidence:title?100:25,ingredients,instructions,nutrition,yieldText,description,image:mappedImage,imageKind:mappedImage?"photo-crop":"",useImage:Boolean(mappedImage),mappedImageBox:g.boxes.image?{...g.boxes.image}:null,links:page.links||[],warnings,include:true,protein:"",type:"",cuisine:"",importStatus:"new",pageWidth:page.width,pageHeight:page.height,debugReport:{source:"Visual Cookbook Mapper v216",page:page.page,group:gi+1,boxes:JSON.parse(JSON.stringify(g.boxes||{}))}});
     done++;btn.textContent=`Preparing ${done} recipes…`;
     if(done%12===0)await nextFrame();
    }

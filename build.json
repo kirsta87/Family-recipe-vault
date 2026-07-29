@@ -1,6 +1,6 @@
 {
-  "build": 215,
-  "version": "215",
-  "label": "Faster cookbook imports and duplicate replacement",
-  "date": "2026-07-28"
+  "build": 217,
+  "version": "217",
+  "label": "Isolated page overrides, multi-recipe templates, visual detection, and file guard",
+  "date": "2026-07-29"
 }

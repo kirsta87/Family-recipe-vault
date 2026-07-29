@@ -1,0 +1,8 @@
+Recipe Vault Build 217
+
+- Fixes page-only edits leaking into random pages after navigating between pages.
+- Normalizes page override keys and creates a fully detached layout before the first edit.
+- Keeps page-only mode armed while moving between pages, safely creating an override for each page entered.
+- Adds clear Template vs Page-only editing status.
+- Adds Reset this page to template and Use this layout as template actions.
+- Includes Build 216: multi-recipe template cloning, visual recipe-page fallback detection, and EPUB/PDF file-type guard.
