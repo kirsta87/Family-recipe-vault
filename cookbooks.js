@@ -1,10 +1,10 @@
-window.RECIPE_VAULT_BUILD = 223;
+window.RECIPE_VAULT_BUILD = 224;
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
 const BUILD_193 = true;
 const COOKBOOK_ENGINE_VERSION = "3.4.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.4", parser:"Visual Cookbook Mapper v5"};
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.6", parser:"Visual Cookbook Mapper v5"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -163,55 +163,16 @@ function historicalCookbookOwners(recipe){
     .filter(book=>Array.isArray(book.recipeRefs)&&book.recipeRefs.includes(ref))
     .sort((a,b)=>cookbookAddedTime(a)-cookbookAddedTime(b));
 }
-function cookbookRepairCandidates(){
-  return recipes.map(recipe=>{
-    const owners=historicalCookbookOwners(recipe);
-    if(owners.length<2)return null;
-    const current=library.find(book=>String(book.id||"")===String(recipe.cookbook_id||""));
-    const target=owners[0];
-    if(!current||!target||String(current.id)===String(target.id))return null;
-    if(cookbookAddedTime(current)<=cookbookAddedTime(target))return null;
-    return {recipe,current,target,owners};
-  }).filter(Boolean);
-}
-async function cookbookPdfPageTexts(book){
-  const cacheKey=String(book.id||book.title||"");
-  if(cookbookRepairPdfTextCache.has(cacheKey))return cookbookRepairPdfTextCache.get(cacheKey);
-  const promise=(async()=>{
-    const blob=await loadCookbookPdf([book.id,book.fileName,book.title,...(book.aliases||[])]);
-    if(!blob)return [];
-    const pdfjs=await getPdfJs();
-    const pdf=await pdfjs.getDocument({data:await blob.arrayBuffer()}).promise;
-    const pages=[];
-    for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
-      const page=await pdf.getPage(pageNo);
-      const content=await page.getTextContent();
-      pages.push({page:pageNo,text:normalize(content.items.map(item=>item.str||"").join(" "))});
-    }
-    return pages;
-  })().catch(error=>{console.warn("Cookbook repair PDF scan failed:",error);return [];});
-  cookbookRepairPdfTextCache.set(cacheKey,promise);
-  return promise;
-}
-function repairTitleTokens(value){
-  const stop=new Set(["recipe","easy","best","homemade","the","and","with","for"]);
-  return normalize(value).split(" ").filter(token=>token.length>2&&!stop.has(token)&&!/^\d+$/.test(token));
-}
-async function findRecipePageForRepair(recipe,book){
-  const pages=await cookbookPdfPageTexts(book);
-  if(!pages.length)return 0;
-  const title=normalize(String(recipe.name||"").replace(/\s*[.·-]\s*\d+\s*$/,""));
-  const tokens=repairTitleTokens(title);
-  let best={page:0,score:0};
-  for(const page of pages){
-    let score=title&&page.text.includes(title)?100:0;
-    if(tokens.length){
-      const hits=tokens.filter(token=>page.text.includes(token)).length;
-      score=Math.max(score,Math.round(hits/tokens.length*80));
-    }
-    if(score>best.score)best={page:page.page,score};
-  }
-  return best.score>=60?best.page:0;
+function cookbookRepairDiagnostics(recipe,currentBook,ranked){
+  return {
+    recipe:recipe?.name||"Untitled recipe",
+    recipeId:recipe?.id||"",
+    currentCookbook:currentBook?.title||recipe?.cookbook_title||"",
+    currentCookbookId:recipe?.cookbook_id||"",
+    savedPage:recipe?.cookbook_page||"",
+    source:recipe?.source||"",
+    ranked:ranked.map(item=>({cookbook:item.book.title,cookbookId:item.book.id,page:item.page,score:item.score,exact:item.exact}))
+  };
 }
 function ensureCookbookRepairControl(){
   const host=$("libraryView");
@@ -219,70 +180,52 @@ function ensureCookbookRepairControl(){
   const panel=document.createElement("section");
   panel.id="cookbookRepairPanel";
   panel.className="panel cookbook-repair-panel";
-  panel.innerHTML=`<div><p class="eyebrow">COOKBOOK MAINTENANCE</p><h2>Repair cookbook links</h2><p class="muted">Fix recipes that were accidentally attached to a newer cookbook. Recipe content, ratings, notes, and images are not deleted.</p></div><div class="actions"><button id="repairCookbookAssignments" class="secondary" type="button">Check cookbook assignments</button></div><p id="cookbookRepairStatus" class="import-status" aria-live="polite"></p>`;
+  panel.innerHTML=`<div><p class="eyebrow">COOKBOOK MAINTENANCE</p><h2>Repair cookbook links</h2><p class="muted">Scan every locally saved cookbook PDF, verify each recipe title against its real pages, and repair only strong mismatches. Recipe content, ratings, notes, and images are not deleted.</p></div><div class="actions"><button id="repairCookbookAssignments" class="secondary" type="button">Scan cookbook PDFs</button></div><p id="cookbookRepairStatus" class="import-status" aria-live="polite"></p>`;
   host.appendChild(panel);
   $("repairCookbookAssignments").addEventListener("click",repairCookbookAssignments);
 }
 async function repairCookbookAssignments(){
   const button=$("repairCookbookAssignments"),status=$("cookbookRepairStatus");
-  const candidates=cookbookRepairCandidates();
-  if(!candidates.length){
-    status.textContent="No cross-cookbook assignments were found.";
-    status.className="import-status success";
-    return;
-  }
-  const byTarget=new Map();
-  candidates.forEach(item=>byTarget.set(item.target.title,(byTarget.get(item.target.title)||0)+1));
-  const summary=[...byTarget].map(([title,count])=>`${count} → ${title}`).join("\n");
-  if(!confirm(`Recipe Vault found ${candidates.length} recipe${candidates.length===1?"":"s"} attached to both an older and a newer cookbook.\n\n${summary}\n\nRepair these assignments now? No recipes will be deleted.`))return;
-
   button.disabled=true;
-  let completed=0,repaired=0,failed=0,pagesFound=0,pagesCleared=0;
-  const queue=[...candidates];
-  const worker=async()=>{
-    while(queue.length){
-      const item=queue.shift();
-      const {recipe,target}=item;
-      status.textContent=`Repairing ${completed+1} of ${candidates.length}: ${recipe.name||"Untitled recipe"}`;
-      try{
-        const page=await findRecipePageForRepair(recipe,target);
-        const updates={
-          cookbook_id:target.id,
-          cookbook_title:target.title,
-          cookbook_author:target.author||"",
-          cookbook_page:page||"",
-          source:`Cookbook: ${target.title}${page?` · p. ${page}`:""}`,
-          tags:`Cookbook|${target.title}${page?`|Page ${page}`:""}`
-        };
-        // A blank page is safer than sending the user to a random page in the
-        // wrong PDF. Existing embedded source previews are preserved.
-        await postVault({action:"update",id:recipe.id,url:recipe.url,updates});
-        Object.assign(recipe,updates);
-        library.forEach(book=>{
-          const refs=new Set(Array.isArray(book.recipeRefs)?book.recipeRefs:[]);
-          refs.delete(recipeStableRef(recipe));
-          book.recipeRefs=[...refs];
-        });
-        target.recipeRefs=[...new Set([...(target.recipeRefs||[]),recipeStableRef(recipe)])];
-        if(page)pagesFound++;else pagesCleared++;
-        repaired++;
-      }catch(error){
-        console.error("Cookbook assignment repair failed:",recipe?.name,error);
-        failed++;
-      }finally{
-        completed++;
-      }
-    }
-  };
-  await Promise.all(Array.from({length:Math.min(3,candidates.length)},worker));
+  status.textContent="Reading locally saved cookbook PDFs and checking recipe titles…";
+  status.className="import-status";
+  let scan;
+  try{scan=await scanCookbookAssignments();}
+  catch(error){
+    console.error("Cookbook assignment scan failed",error);
+    status.textContent=`Scan failed: ${error?.message||error}`;
+    button.disabled=false;return;
+  }
+  const {candidates,diagnostics,availableBooks}=scan;
+  window.recipeVaultCookbookDiagnostics={build:224,createdAt:new Date().toISOString(),availableBooks,diagnostics};
+  localStorage.setItem("recipeVaultCookbookDiagnosticsV224",JSON.stringify(window.recipeVaultCookbookDiagnostics));
+  if(!candidates.length){
+    status.textContent=`No strong mismatches found after scanning ${availableBooks.length} saved PDF${availableBooks.length===1?"":"s"}. Diagnostic details were saved in this browser.`;
+    status.className="import-status success";button.disabled=false;return;
+  }
+  const lines=candidates.slice(0,15).map(item=>`• ${item.recipe.name}: ${item.current?.title||"Unassigned"} → ${item.target.title} (page ${item.page})`);
+  const extra=candidates.length>15?`\n…and ${candidates.length-15} more`:"";
+  if(!confirm(`Recipe Vault verified ${candidates.length} strong cookbook mismatch${candidates.length===1?"":"es"} by scanning the saved PDFs.\n\n${lines.join("\n")}${extra}\n\nRepair these assignments and page links now? No recipes will be deleted.`)){button.disabled=false;status.textContent=`${candidates.length} verified mismatch${candidates.length===1?"":"es"} found; no changes made.`;return;}
+  let repaired=0,failed=0;
+  for(let index=0;index<candidates.length;index++){
+    const item=candidates[index],recipe=item.recipe,target=item.target;
+    status.textContent=`Repairing ${index+1} of ${candidates.length}: ${recipe.name||"Untitled recipe"}`;
+    try{
+      const updates={
+        cookbook_id:target.id,cookbook_title:target.title,cookbook_author:target.author||"",
+        cookbook_page:item.page||"",source:`Cookbook: ${target.title} · p. ${item.page}`,
+        tags:`Cookbook|${target.title}|Page ${item.page}`
+      };
+      await postVault({action:"update",id:recipe.id,url:recipe.url,updates});
+      Object.assign(recipe,updates);repaired++;
+    }catch(error){console.error("Cookbook repair failed",recipe?.name,error);failed++;}
+  }
   library.forEach(book=>{
     book.recipeRefs=recipes.filter(recipe=>String(recipe.cookbook_id||"")===String(book.id||"")).map(recipeStableRef);
     book.importedCount=book.recipeRefs.length;
   });
-  saveLibrary();
-  renderShelf();
-  button.disabled=false;
-  status.textContent=`Repair complete: ${repaired} cookbook assignment${repaired===1?"":"s"} fixed · ${pagesFound} page link${pagesFound===1?"":"s"} restored${pagesCleared?` · ${pagesCleared} uncertain page link${pagesCleared===1?"":"s"} safely removed`:""}${failed?` · ${failed} failed`:""}.`;
+  saveLibrary();activePdfDocument=null;renderShelf();button.disabled=false;
+  status.textContent=`Repair complete: ${repaired} assignment${repaired===1?"":"s"} and original-page link${repaired===1?"":"s"} corrected${failed?` · ${failed} failed`:""}.`;
   status.className=`import-status ${failed?"":"success"}`.trim();
 }
 

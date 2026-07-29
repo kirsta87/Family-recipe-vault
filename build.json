@@ -1,8 +1,8 @@
 {
-  "build": 223,
-  "version": "223",
-  "label": "Cookbook assignment repair and Recipe DNA startup fix",
+  "build": 224,
+  "version": "224",
+  "label": "PDF-verified cookbook assignment repair",
   "date": "2026-07-29",
-  "cookbookEngine": "4.5",
+  "cookbookEngine": "4.6",
   "parser": "Visual Cookbook Mapper v5"
 }

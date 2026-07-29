@@ -1,0 +1,10 @@
+Recipe Vault Build 224
+
+- Replaces the failed cross-reference detector with PDF-verified assignment scanning.
+- Reads every cookbook PDF already saved in this browser.
+- Matches each recipe title against the actual PDF pages.
+- Repairs only decisive cookbook mismatches.
+- Corrects the cookbook badge, strict cookbook ID, source label, and original-page number together.
+- Rebuilds cookbook recipe references and counts after repair.
+- Saves diagnostic results in the browser when no mismatch is found.
+- Does not delete or re-import recipes.
