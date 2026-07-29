@@ -1,0 +1,7 @@
+RECIPE VAULT BUILD 226
+
+FIXED
+- Restores cookbookPdfPageTexts, which Build 225 accidentally omitted.
+- Packages the PDF reader and cookbook assignment scanner together.
+- Reports the specific cookbook PDF that fails if a saved PDF cannot be read.
+- No recipe data is changed until the scan completes and you approve the preview.

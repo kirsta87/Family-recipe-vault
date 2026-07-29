@@ -1,6 +1,6 @@
 {
-  "build": 225,
-  "version": "225",
-  "generatedAt": "2026-07-29T15:41:00Z",
-  "notes": "Restores the missing PDF cookbook assignment scan function from Build 224."
+  "build": 226,
+  "version": "226",
+  "updated": "2026-07-29",
+  "notes": "Restores the complete PDF scan helper and keeps the cookbook repair scan self-contained."
 }

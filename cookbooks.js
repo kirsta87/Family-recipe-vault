@@ -163,6 +163,31 @@ function historicalCookbookOwners(recipe){
     .filter(book=>Array.isArray(book.recipeRefs)&&book.recipeRefs.includes(ref))
     .sort((a,b)=>cookbookAddedTime(a)-cookbookAddedTime(b));
 }
+async function cookbookPdfPageTexts(book){
+  const cacheKey=String(book?.id||book?.fileName||book?.title||"");
+  if(cookbookRepairPdfTextCache.has(cacheKey))return cookbookRepairPdfTextCache.get(cacheKey);
+  const promise=(async()=>{
+    const lookup=[book?.id,book?.fileName,book?.title,...(Array.isArray(book?.aliases)?book.aliases:[])].filter(Boolean);
+    const blob=await loadCookbookPdf(lookup);
+    if(!blob)return [];
+    const pdfjs=await getPdfJs();
+    const pdf=await pdfjs.getDocument({data:await blob.arrayBuffer()}).promise;
+    const pages=[];
+    for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
+      const page=await pdf.getPage(pageNo);
+      const content=await page.getTextContent();
+      pages.push({page:pageNo,text:normalize(content.items.map(item=>item?.str||"").join(" "))});
+    }
+    return pages;
+  })().catch(error=>{
+    cookbookRepairPdfTextCache.delete(cacheKey);
+    console.warn("Cookbook PDF text scan failed",book?.title||book?.fileName||book?.id,error);
+    throw error;
+  });
+  cookbookRepairPdfTextCache.set(cacheKey,promise);
+  return promise;
+}
+
 function cookbookRepairDiagnostics(recipe,currentBook,ranked){
   return {
     recipe:recipe?.name||"Untitled recipe",
@@ -239,8 +264,8 @@ async function repairCookbookAssignments(){
     button.disabled=false;return;
   }
   const {candidates,diagnostics,availableBooks}=scan;
-  window.recipeVaultCookbookDiagnostics={build:225,createdAt:new Date().toISOString(),availableBooks,diagnostics};
-  localStorage.setItem("recipeVaultCookbookDiagnosticsV225",JSON.stringify(window.recipeVaultCookbookDiagnostics));
+  window.recipeVaultCookbookDiagnostics={build:226,createdAt:new Date().toISOString(),availableBooks,diagnostics};
+  localStorage.setItem("recipeVaultCookbookDiagnosticsV226",JSON.stringify(window.recipeVaultCookbookDiagnostics));
   if(!candidates.length){
     status.textContent=`No strong mismatches found after scanning ${availableBooks.length} saved PDF${availableBooks.length===1?"":"s"}. Diagnostic details were saved in this browser.`;
     status.className="import-status success";button.disabled=false;return;
