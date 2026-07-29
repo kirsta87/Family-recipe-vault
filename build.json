@@ -1,6 +1,6 @@
 {
-  "build": 217,
-  "version": "217",
-  "label": "Isolated page overrides, multi-recipe templates, visual detection, and file guard",
+  "build": 218,
+  "version": "218",
+  "label": "Analyzer cache migration and visible failure diagnostics",
   "date": "2026-07-29"
 }

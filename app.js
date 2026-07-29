@@ -26,31 +26,76 @@ let surpriseRecipeId = null;
 
 const COLLECTION_OVERRIDE_KEY = "recipeVaultCollectionOverridesV098";
 const COLLECTION_OVERRIDE_TTL_MS = 15 * 60 * 1000;
-const RECIPE_CACHE_KEY = "recipeVaultRecipeCacheV118";
+const LEGACY_RECIPE_CACHE_KEY = "recipeVaultRecipeCacheV118";
+const RECIPE_CACHE_DB = "recipeVaultCacheV218";
+const RECIPE_CACHE_STORE = "recipeCache";
+const RECIPE_CACHE_RECORD = "current";
 const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
 const RECIPE_DNA_ENGINE_VERSION = 3;
 let recipeIntelligenceRunning = false;
 let recipeIntelligencePromptShown = false;
 let recipeDNAStore = readRecipeDNAStore();
 
-function readRecipeCache(){
+function openRecipeCacheDB(){
+  return new Promise((resolve, reject) => {
+    if(!window.indexedDB){ reject(new Error("IndexedDB is unavailable.")); return; }
+    const request = indexedDB.open(RECIPE_CACHE_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if(!db.objectStoreNames.contains(RECIPE_CACHE_STORE)) db.createObjectStore(RECIPE_CACHE_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open recipe cache."));
+  });
+}
+
+async function readRecipeCache(){
   try{
-    const cached = JSON.parse(localStorage.getItem(RECIPE_CACHE_KEY) || "null");
+    const db = await openRecipeCacheDB();
+    const cached = await new Promise((resolve, reject) => {
+      const transaction = db.transaction(RECIPE_CACHE_STORE, "readonly");
+      const request = transaction.objectStore(RECIPE_CACHE_STORE).get(RECIPE_CACHE_RECORD);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error("Could not read recipe cache."));
+    });
+    db.close();
     const source = config.sheetCsvUrl || "recipes.json";
-    if(!cached || cached.source !== source || !Array.isArray(cached.rows)) return null;
-    return cached;
-  }catch(error){
+    if(cached && cached.source === source && Array.isArray(cached.rows)) return cached;
+    try{
+      const legacy = JSON.parse(localStorage.getItem(LEGACY_RECIPE_CACHE_KEY) || "null");
+      if(legacy && legacy.source === source && Array.isArray(legacy.rows)) return legacy;
+    }catch(error){
+      console.warn("Legacy recipe cache could not be read:", error);
+    }
     return null;
+  }catch(error){
+    console.warn("Recipe cache could not be read:", error);
+    try{
+      const source = config.sheetCsvUrl || "recipes.json";
+      const legacy = JSON.parse(localStorage.getItem(LEGACY_RECIPE_CACHE_KEY) || "null");
+      return legacy && legacy.source === source && Array.isArray(legacy.rows) ? legacy : null;
+    }catch(legacyError){
+      return null;
+    }
   }
 }
 
-function writeRecipeCache(rows){
+async function writeRecipeCache(rows){
   try{
-    localStorage.setItem(RECIPE_CACHE_KEY, JSON.stringify({
-      source: config.sheetCsvUrl || "recipes.json",
-      savedAt: Date.now(),
-      rows
-    }));
+    const db = await openRecipeCacheDB();
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(RECIPE_CACHE_STORE, "readwrite");
+      transaction.objectStore(RECIPE_CACHE_STORE).put({
+        source: config.sheetCsvUrl || "recipes.json",
+        savedAt: Date.now(),
+        rows
+      }, RECIPE_CACHE_RECORD);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Could not save recipe cache."));
+      transaction.onabort = () => reject(transaction.error || new Error("Recipe cache save was aborted."));
+    });
+    db.close();
+    try{ localStorage.removeItem(LEGACY_RECIPE_CACHE_KEY); }catch(error){ /* storage may already be full or unavailable */ }
   }catch(error){
     console.warn("Recipe cache could not be saved:", error);
   }
@@ -393,7 +438,7 @@ function refreshEntryCategoryMenus(){
 }
 
 async function loadRecipes(){
-  const cached = readRecipeCache();
+  const cached = await readRecipeCache();
   let showedCache = false;
 
   if(cached?.rows?.length){
@@ -415,7 +460,7 @@ async function loadRecipes(){
       ? parseCSV(await response.text())
       : await response.json();
 
-    writeRecipeCache(rows);
+    await writeRecipeCache(rows);
     applyRecipeRows(
       rows,
       config.sheetCsvUrl ? "• synced from family sheet" : "• starter mode"
@@ -787,9 +832,32 @@ function showRecipeIntelligencePrompt(count, engineChanged){
   recipeIntelligencePromptShown = true;
 }
 
+function showRecipeIntelligenceError(error){
+  recipeIntelligenceRunning = false;
+  const dialog = $("recipeIntelligenceDialog");
+  const message = error?.message || String(error || "Recipe analysis failed.");
+  const status = $("recipeIntelligenceStatus");
+  const current = $("recipeIntelligenceCurrent");
+  const traits = $("recipeIntelligenceTraits");
+  if(status) status.textContent = `Recipe analysis failed: ${message}`;
+  if(current) current.textContent = "Analysis stopped";
+  if(traits) traits.textContent = message;
+  if(dialog && !dialog.open){
+    try{ dialog.showModal(); }catch(showError){ console.error(showError); }
+  }
+  setIntelligenceDialogMode("progress");
+  console.error("Recipe Intelligence failed:", error);
+}
+
 function startRecipeIntelligenceAnalysis({force=false}={}){
   if(recipeIntelligenceRunning) return;
-  const candidates = recipeIntelligenceCandidates({force});
+  let candidates;
+  try{
+    candidates = recipeIntelligenceCandidates({force});
+  }catch(error){
+    showRecipeIntelligenceError(error);
+    return;
+  }
   const dialog = $("recipeIntelligenceDialog");
   if(!candidates.length){
     const status = $("recipeIntelligenceStatus");
@@ -813,7 +881,8 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
   const startedAt = Date.now();
 
   const step = () => {
-    const chunkEnd = Math.min(index + 4, candidates.length);
+    try{
+      const chunkEnd = Math.min(index + 4, candidates.length);
     for(; index < chunkEnd; index++){
       const recipe = candidates[index];
       const id = String(recipe.id || recipe.name || "");
@@ -845,7 +914,10 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
     if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed with engine v${RECIPE_DNA_ENGINE_VERSION}. ${traitCount.toLocaleString()} traits identified in ${elapsed} second${elapsed===1?"":"s"}.`;
     setIntelligenceDialogMode("complete");
     if(status) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
-    render();
+      render();
+    }catch(error){
+      showRecipeIntelligenceError(error);
+    }
   };
   setTimeout(step, 30);
 }

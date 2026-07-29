@@ -1,0 +1,7 @@
+Recipe Vault Build 218
+
+- Moves the full recipe cache out of localStorage and into IndexedDB.
+- Removes the oversized legacy recipeVaultRecipeCacheV118 entry after a successful cache save.
+- Prevents recipe-cache quota failures from interfering with Recipe Intelligence.
+- Makes analyzer failures visible in the dialog and status area instead of silently doing nothing.
+- Logs the exact analyzer exception for diagnostics.
