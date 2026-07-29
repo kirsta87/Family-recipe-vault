@@ -1,0 +1,8 @@
+Build 247 — verified shared planner revision sync
+
+Root cause fixed:
+- Build 246 removed the revision/conflict protocol already required by the Apps Script backend.
+- A server conflict could return success=true while refusing the write; the browser incorrectly displayed Saved and cleared pendingSync.
+- The share link itself was importing correctly. Its long URL fragment disappearing is intentional after the settings are saved.
+
+This build restores revision-aware saves in both planner entry points, handles conflicts explicitly, and only displays “Saved and verified” after the shared server accepts the revision. Shared-link browsers remain view-only mirrors and refresh automatically.

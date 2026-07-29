@@ -198,6 +198,8 @@ function normalizePlanShape(plan, key){
   cleanPlan.pool = (Array.isArray(cleanPlan.pool) ? cleanPlan.pool : [])
     .map(value => normalizePlanReference(value, cleanPlan))
     .filter(Boolean);
+  cleanPlan.revision = Math.max(0, Number(cleanPlan.revision) || 0);
+  cleanPlan.baseRevision = Math.max(0, Number(cleanPlan.baseRevision) || cleanPlan.revision);
   return cleanPlan;
 }
 function planHasContent(plan){
@@ -349,27 +351,32 @@ async function loadSharedPlans(force = false){
   const remote = Object.fromEntries(Object.entries(rawRemote).map(([key, plan]) => {
     const normalized = normalizePlanShape(plan, key);
     normalized.pendingSync = false;
+    normalized.baseRevision = normalized.revision;
     return [key, normalized];
   }));
 
-  const local = Object.fromEntries(Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)]));
+  const local = Object.fromEntries(
+    Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)])
+  );
 
   if(isPlannerViewer){
-    // Phones and shared-link devices are read-only mirrors of the server copy.
+    // Shared-link devices mirror the server. The URL fragment is intentionally
+    // removed after its settings are imported, but those settings remain saved.
     plans = remote;
     savePlans();
   }else{
-    // The primary computer is the editor. Its local copy is never replaced by
-    // an older server response. Remote weeks only fill gaps that do not exist here.
-    const editorPlans = {...remote, ...local};
-    plans = editorPlans;
+    // The server is authoritative for completed saves. Only explicitly pending
+    // local edits are allowed to sit on top of it and retry.
+    plans = {...remote};
+    const pendingUploads = [];
+    Object.entries(local).forEach(([key, localPlan]) => {
+      if(!localPlan.pendingSync) return;
+      plans[key] = localPlan;
+      pendingUploads.push([key, localPlan, localPlan.updatedAt || new Date().toISOString()]);
+    });
     savePlans();
 
-    // Retry only plans that were explicitly marked unsynced. Never upload a plan
-    // merely because its browser timestamp happens to be newer.
-    for(const [key, plan] of Object.entries(local)){
-      if(!plan?.pendingSync) continue;
-      const versionBeingSaved = plan.updatedAt || new Date().toISOString();
+    for(const [key, plan, versionBeingSaved] of pendingUploads){
       await queueSharedPlanSave(key, plan, versionBeingSaved);
     }
     savePlans();
@@ -384,16 +391,68 @@ async function loadSharedPlans(force = false){
   return true;
 }
 
+function renderPlannerAfterSync(key){
+  if(key !== weekKey(activeWeek)) return;
+  renderPlanner();
+  renderResults();
+}
+
 function queueSharedPlanSave(key, plan, versionBeingSaved){
   const queuedPlan = JSON.parse(JSON.stringify(normalizePlanShape(plan, key)));
+
   sharedSaveQueue = sharedSaveQueue.catch(() => undefined).then(async () => {
-    const sharedPlan = {...queuedPlan, pendingSync:false};
-    const result = await plannerPost({action:"saveMealPlan", weekKey:key, plan:sharedPlan});
+    const currentBeforeSave = plans[key];
+    const latestKnownRevision = Math.max(
+      0,
+      Number(currentBeforeSave?.revision) || 0,
+      Number(queuedPlan.revision) || 0
+    );
+
+    const sharedPlan = {
+      ...queuedPlan,
+      revision:latestKnownRevision,
+      baseRevision:latestKnownRevision,
+      pendingSync:false
+    };
+
+    const result = await plannerPost({
+      action:"saveMealPlan",
+      weekKey:key,
+      plan:sharedPlan,
+      baseRevision:sharedPlan.baseRevision
+    });
+
+    if(result.conflict){
+      const serverPlan = normalizePlanShape(result.currentPlan || {}, key);
+      serverPlan.pendingSync = false;
+      serverPlan.baseRevision = serverPlan.revision;
+      plans[key] = serverPlan;
+      savePlans();
+      renderPlannerAfterSync(key);
+      throw new Error("The shared planner changed before this save completed. The newest shared copy was loaded; please add that meal again.");
+    }
+
+    const returnedPlan = normalizePlanShape(result.plan || sharedPlan, key);
+    const returnedRevision = Math.max(
+      0,
+      Number(returnedPlan.revision) || 0,
+      Number(result.revision) || 0,
+      latestKnownRevision
+    );
+    returnedPlan.revision = returnedRevision;
+    returnedPlan.baseRevision = returnedRevision;
+    returnedPlan.pendingSync = false;
+
     const current = plans[key];
     if(current && current.updatedAt === versionBeingSaved){
-      current.pendingSync = false;
-      savePlans();
+      plans[key] = returnedPlan;
+    }else if(current){
+      current.revision = returnedRevision;
+      current.baseRevision = returnedRevision;
     }
+
+    savePlans();
+    renderPlannerAfterSync(key);
     return result;
   });
   return sharedSaveQueue;
@@ -409,6 +468,7 @@ async function saveSharedWeek(date = activeWeek){
   ensurePlanSnapshots(plan);
   const versionBeingSaved = new Date().toISOString();
   plan.updatedAt = versionBeingSaved;
+  plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.pendingSync = true;
   plans[key] = plan;
   savePlans();
@@ -416,12 +476,18 @@ async function saveSharedWeek(date = activeWeek){
   try{
     await queueSharedPlanSave(key, plan, versionBeingSaved);
     $("weekStatus").dataset.state = "connected";
-    $("weekStatus").textContent = "Saved";
-    $("weekStatus").title = "Saved to the shared meal planner.";
-    setTimeout(() => { if($("weekStatus")?.textContent === "Saved") $("weekStatus").textContent = ""; }, 1800);
+    $("weekStatus").textContent = "Saved and verified";
+    $("weekStatus").title = "The shared server accepted this meal-plan revision.";
+    setTimeout(() => { if($("weekStatus")?.textContent === "Saved and verified") $("weekStatus").textContent = ""; }, 2200);
     return true;
   }catch(error){
-    $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
+    const current = plans[key];
+    if(current?.pendingSync){
+      $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
+    }else{
+      $("weekStatus").textContent = error.message || "The newest shared planner was loaded.";
+    }
+    $("weekStatus").title = error.message || "";
     return false;
   }
 }

@@ -1543,12 +1543,24 @@ async function plannerPost(payload){
   return result;
 }
 
+function normalizePlannerRevision(plan){
+  const clean = plan && typeof plan === "object" ? plan : {};
+  clean.revision = Math.max(0, Number(clean.revision) || 0);
+  clean.baseRevision = Math.max(0, Number(clean.baseRevision) || clean.revision);
+  return clean;
+}
+
 async function loadSharedPlanner(){
   if(plannerSyncLoaded || !config.appsScriptUrl || !config.sharedKey) return;
   plannerSyncLoaded = true;
   try{
     const result = await plannerPost({action:"getMealPlans"});
-    const remote = result?.plans || {};
+    const remote = Object.fromEntries(Object.entries(result?.plans || {}).map(([key, plan]) => {
+      const normalized = normalizePlannerRevision(plan);
+      normalized.pendingSync = false;
+      normalized.baseRevision = normalized.revision;
+      return [key, normalized];
+    }));
     const local = plannerRead();
 
     if(isPlannerViewer){
@@ -1557,36 +1569,53 @@ async function loadSharedPlanner(){
       return;
     }
 
-    // This browser is the primary editor. Never replace an existing local week
-    // with an older shared response; shared storage only fills missing weeks.
-    planner = {...remote, ...local};
-    localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
-
-    // Retry only writes that were explicitly left pending.
-    for(const [key, plan] of Object.entries(local)){
-      if(!plan?.pendingSync) continue;
-      await plannerPost({action:"saveMealPlan", weekKey:key, plan:{...plan,pendingSync:false}});
-      if(planner[key]?.updatedAt === plan.updatedAt) planner[key].pendingSync = false;
+    planner = {...remote};
+    for(const [key, rawPlan] of Object.entries(local)){
+      const plan = normalizePlannerRevision(rawPlan);
+      if(!plan.pendingSync) continue;
+      planner[key] = plan;
+      await saveSharedPlannerWeek(key, plan);
     }
     localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
   }catch(error){
+    plannerSyncLoaded = false;
     console.warn("Meal plans are using this browser until sync is available:", error);
   }
 }
 
 async function saveSharedPlannerWeek(key, plan){
   if(isPlannerViewer) return false;
+  normalizePlannerRevision(plan);
+  plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.pendingSync = true;
   localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
   const snapshot = JSON.parse(JSON.stringify(plan));
   const task = async () => {
     try{
-      await plannerPost({action:"saveMealPlan", weekKey:key, plan:{...snapshot,pendingSync:false}});
+      const result = await plannerPost({
+        action:"saveMealPlan",
+        weekKey:key,
+        plan:{...snapshot,pendingSync:false},
+        baseRevision:snapshot.baseRevision
+      });
+      if(result.conflict){
+        const serverPlan = normalizePlannerRevision(result.currentPlan || {});
+        serverPlan.pendingSync = false;
+        serverPlan.baseRevision = serverPlan.revision;
+        planner[key] = serverPlan;
+        localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
+        throw new Error("The meal plan changed elsewhere before this save completed.");
+      }
+      const returned = normalizePlannerRevision(result.plan || snapshot);
+      const revision = Math.max(returned.revision, Number(result.revision) || 0, Number(snapshot.revision) || 0);
       const current = planner[key];
       if(current && current.updatedAt === snapshot.updatedAt){
-        current.pendingSync = false;
-        localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
+        planner[key] = {...returned, revision, baseRevision:revision, pendingSync:false};
+      }else if(current){
+        current.revision = revision;
+        current.baseRevision = revision;
       }
+      localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
       return true;
     }catch(error){
       console.warn("Meal plan saved locally but could not sync:", error);
