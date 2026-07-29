@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-window.RECIPE_VAULT_BUILD = 236;
+window.RECIPE_VAULT_BUILD = 246;
 const $ = id => document.getElementById(id);
 
 function on(id, eventName, handler){
@@ -17,6 +17,8 @@ const PLANNER_KEY = "recipeVaultWeeklyPlansV104";
 const base = window.RECIPE_VAULT_CONFIG || {};
 let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
 let config = {...base, ...settings};
+const plannerMode = String(settings.plannerMode || "editor").toLowerCase();
+const isPlannerViewer = plannerMode === "view";
 let recipes = [];
 let active = null;
 let planner = JSON.parse(localStorage.getItem(PLANNER_KEY) || "{}");
@@ -1548,47 +1550,50 @@ async function loadSharedPlanner(){
     const result = await plannerPost({action:"getMealPlans"});
     const remote = result?.plans || {};
     const local = plannerRead();
-    const merged = {};
-    const uploadQueue = [];
-    const keys = new Set([...Object.keys(remote), ...Object.keys(local)]);
-    for(const key of keys){
-      const remotePlan = remote[key];
-      const localPlan = local[key];
-      if(!remotePlan){
-        merged[key] = localPlan;
-        if(localPlan) uploadQueue.push([key, localPlan]);
-      }else if(!localPlan){
-        merged[key] = remotePlan;
-      }else if(plannerTimestamp(localPlan) >= plannerTimestamp(remotePlan)){
-        merged[key] = localPlan;
-        if(plannerTimestamp(localPlan) > plannerTimestamp(remotePlan)) uploadQueue.push([key, localPlan]);
-      }else{
-        merged[key] = remotePlan;
-      }
+
+    if(isPlannerViewer){
+      planner = remote;
+      localStorage.setItem(PLANNER_KEY, JSON.stringify(remote));
+      return;
     }
-    planner = merged;
-    localStorage.setItem(PLANNER_KEY, JSON.stringify(merged));
-    for(const [key, plan] of uploadQueue){
-      await plannerPost({action:"saveMealPlan", weekKey:key, plan});
+
+    // This browser is the primary editor. Never replace an existing local week
+    // with an older shared response; shared storage only fills missing weeks.
+    planner = {...remote, ...local};
+    localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
+
+    // Retry only writes that were explicitly left pending.
+    for(const [key, plan] of Object.entries(local)){
+      if(!plan?.pendingSync) continue;
+      await plannerPost({action:"saveMealPlan", weekKey:key, plan:{...plan,pendingSync:false}});
+      if(planner[key]?.updatedAt === plan.updatedAt) planner[key].pendingSync = false;
     }
+    localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
   }catch(error){
     console.warn("Meal plans are using this browser until sync is available:", error);
   }
 }
 
 async function saveSharedPlannerWeek(key, plan){
+  if(isPlannerViewer) return false;
+  plan.pendingSync = true;
   localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
   const snapshot = JSON.parse(JSON.stringify(plan));
   const task = async () => {
     try{
-      await plannerPost({action:"saveMealPlan", weekKey:key, plan:snapshot});
+      await plannerPost({action:"saveMealPlan", weekKey:key, plan:{...snapshot,pendingSync:false}});
+      const current = planner[key];
+      if(current && current.updatedAt === snapshot.updatedAt){
+        current.pendingSync = false;
+        localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
+      }
       return true;
     }catch(error){
       console.warn("Meal plan saved locally but could not sync:", error);
       return false;
     }
   };
-  const resultPromise = plannerSaveChain.then(task, task);
+  const resultPromise = plannerSaveChain.catch(() => undefined).then(task);
   plannerSaveChain = resultPromise.then(() => undefined, () => undefined);
   return resultPromise;
 }
@@ -1623,6 +1628,10 @@ function plannerSlot(date){
   return {plans,key,day,recipeId:plans[key]?.days?.[day] || ""};
 }
 async function assignRecipeToDate(recipe, date){
+  if(isPlannerViewer){
+    window.alert("This phone is using the shared view. Add meals from the primary computer.");
+    return false;
+  }
   const slot=plannerSlot(date);
   if(slot.recipeId && String(slot.recipeId)!==String(recipe.id)){
     const existing=plannerRecipeName(slot.recipeId, slot.plans[slot.key]);

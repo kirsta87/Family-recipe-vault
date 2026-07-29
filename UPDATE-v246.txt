@@ -1,0 +1,8 @@
+BUILD 246 — DESKTOP-AUTHORITATIVE SHARED PLANNER
+
+- Primary computer keeps the editable meal plan and can never be overwritten by a stale server refresh.
+- Shared links open phones in view-only mode.
+- Phones refresh from the shared server automatically and can still generate/use the shopping list.
+- Only explicit unsynced edits are retried; timestamps alone never cause an upload.
+- Failed saves no longer poison the save queue.
+- Service-worker and script versions updated to 246.

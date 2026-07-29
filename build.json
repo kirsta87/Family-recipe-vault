@@ -1,1 +1,6 @@
-{"build":244,"name":"Protected family planner sync","supersedes":243}
+{
+  "build": 246,
+  "name": "Safe family planner merge",
+  "supersedes": 241,
+  "label": "Desktop-authoritative shared planner"
+}
