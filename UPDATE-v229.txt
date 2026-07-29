@@ -1,0 +1,3 @@
+Recipe Vault Build 229
+
+Cookbook assignment workspace now includes every unassigned recipe as well as assigned recipes that could not be verified. Unassigned recipes start with no cookbook or page selected. Added All / Unassigned / Assigned needs review filters. Nothing changes unless a destination is chosen, the recipe is checked, and Repair selected is clicked.

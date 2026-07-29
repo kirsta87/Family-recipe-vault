@@ -1,6 +1,6 @@
 {
-  "build": 227,
-  "version": "227",
+  "build": 229,
+  "version": "229",
   "updated": "2026-07-29",
-  "notes": "Restores the complete PDF scan helper and keeps the cookbook repair scan self-contained."
+  "notes": "Always opens manual cookbook-assignment review for unverified recipes, with search, cookbook selection, page entry, and PDF preview."
 }

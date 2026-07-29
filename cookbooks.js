@@ -251,20 +251,40 @@ async function scanCookbookAssignments(){
   const candidates=[],diagnostics=[];
   for(const recipe of recipes){
     const currentBook=library.find(book=>String(book.id||"")===String(recipe.cookbook_id||""))||null;
-    // This repair is for bad cookbook ownership. Do not auto-assign every loose
-    // vault recipe merely because its title appears somewhere in a cookbook.
-    if(!currentBook)continue;
     const ranked=available.map(entry=>({book:entry.book,...scoreRecipeAgainstPages(recipe,entry.pages)})).sort((a,b)=>b.score-a.score);
     diagnostics.push(cookbookRepairDiagnostics(recipe,currentBook,ranked.slice(0,3)));
+    // Unassigned recipes belong in the manual workspace too. They are never
+    // given a preselected destination; the PDF scan is shown only as optional
+    // evidence while the user chooses the cookbook and page themselves.
+    if(!currentBook){
+      const possible=ranked.filter(item=>item.recipePage&&item.score>=35).slice(0,8);
+      candidates.push({
+        recipe,current:null,target:null,page:0,score:possible[0]?.score||0,currentScore:0,
+        exact:Boolean(possible[0]?.exact),confidence:"unassigned",selected:false,
+        chosenBookId:"",chosenPage:"",ranked:possible.map(item=>({book:item.book,page:item.page,score:item.score,exact:item.exact}))
+      });
+      continue;
+    }
     const best=ranked[0],second=ranked[1];
-    if(!best||!best.recipePage||best.score<88)continue;
     const currentResult=ranked.find(item=>String(item.book.id)===String(currentBook.id));
     const currentScore=currentResult?.score||0;
-    const isDifferent=String(best.book.id)!==String(currentBook.id);
-    const decisive=(best.exact&&best.score-(second?.score||0)>=12)||(best.score>=92&&best.score-(second?.score||0)>=20);
-    const currentClearlyWrong=!currentResult?.recipePage||currentScore<60||(best.score-currentScore>=28);
-    if(isDifferent&&decisive&&currentClearlyWrong){
-      candidates.push({recipe,current:currentBook,target:best.book,page:best.page,score:best.score,currentScore,exact:best.exact,selected:false,ranked:ranked.filter(item=>item.recipePage&&item.score>=55).slice(0,8).map(item=>({book:item.book,page:item.page,score:item.score,exact:item.exact}))});
+    const isDifferent=best&&String(best.book.id)!==String(currentBook.id);
+    const decisive=Boolean(best&&best.recipePage&&best.score>=88&&((best.exact&&best.score-(second?.score||0)>=12)||(best.score>=92&&best.score-(second?.score||0)>=20)));
+    const currentVerified=Boolean(currentResult?.recipePage&&currentScore>=88);
+    const currentClearlyWrong=!currentResult?.recipePage||currentScore<60||Boolean(best&&best.score-currentScore>=28);
+    // Always send unverified assignments to the review workspace. Automatic
+    // confidence only controls the suggestion; it no longer controls whether
+    // the user is allowed to inspect and manually place the recipe.
+    if(!currentVerified||(isDifferent&&currentClearlyWrong)){
+      const suggested=(isDifferent&&decisive&&currentClearlyWrong)?best:currentResult||best;
+      candidates.push({
+        recipe,current:currentBook,target:suggested?.book||currentBook,
+        page:suggested?.page||Number(recipe.cookbook_page||0)||0,
+        score:suggested?.score||0,currentScore,exact:Boolean(suggested?.exact),
+        confidence:(isDifferent&&decisive&&currentClearlyWrong)?"high":"manual-review",
+        selected:false,
+        ranked:ranked.filter(item=>item.recipePage&&item.score>=35).slice(0,8).map(item=>({book:item.book,page:item.page,score:item.score,exact:item.exact}))
+      });
     }
   }
   return {candidates,diagnostics,availableBooks:available.map(x=>x.book.title)};
@@ -275,7 +295,7 @@ function ensureCookbookRepairReview(){
   overlay=document.createElement("div");
   overlay.id="cookbookRepairReviewOverlay";
   overlay.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:none;padding:24px;overflow:auto";
-  overlay.innerHTML=`<section style="max-width:1050px;margin:0 auto;background:var(--surface,#fff);color:var(--text,#222);border-radius:18px;padding:22px;box-shadow:0 20px 70px rgba(0,0,0,.35)"><div style="display:flex;gap:16px;justify-content:space-between;align-items:flex-start"><div><p class="eyebrow">COOKBOOK REPAIR REVIEW</p><h2 style="margin:.2rem 0">Review suggested moves</h2><p class="muted" style="max-width:760px">Nothing is selected automatically. Open the proposed PDF page, verify it is the actual recipe page—not a contents page—then select only the moves you approve.</p></div><button id="closeCookbookRepairReview" class="secondary" type="button">Close</button></div><div id="cookbookRepairReviewList" style="display:grid;gap:12px;margin:18px 0"></div><div style="position:sticky;bottom:0;background:var(--surface,#fff);padding:14px 0 2px;display:flex;gap:12px;justify-content:flex-end;border-top:1px solid rgba(128,128,128,.25)"><button id="cancelCookbookRepairReview" class="secondary" type="button">Cancel</button><button id="applyCookbookRepairReview" class="primary" type="button">Repair selected</button></div></section>`;
+  overlay.innerHTML=`<section style="max-width:1050px;margin:0 auto;background:var(--surface,#fff);color:var(--text,#222);border-radius:18px;padding:22px;box-shadow:0 20px 70px rgba(0,0,0,.35)"><div style="display:flex;gap:16px;justify-content:space-between;align-items:flex-start"><div><p class="eyebrow">COOKBOOK REPAIR REVIEW</p><h2 style="margin:.2rem 0">Review cookbook assignments</h2><p class="muted" style="max-width:760px">This includes every unassigned recipe plus cookbook assignments the scanner could not verify. Choose the real cookbook and PDF page, preview that page, then approve only the corrections you want.</p><div style="display:grid;grid-template-columns:minmax(220px,420px) minmax(180px,240px);gap:10px;margin-top:12px"><label class="field" style="margin:0">Find a recipe<input id="cookbookRepairReviewSearch" type="search" placeholder="Search recipe names…"></label><label class="field" style="margin:0">Show<select id="cookbookRepairReviewFilter"><option value="all">All review items</option><option value="unassigned">Unassigned only</option><option value="review">Assigned · needs review</option></select></label></div></div><button id="closeCookbookRepairReview" class="secondary" type="button">Close</button></div><div id="cookbookRepairReviewList" style="display:grid;gap:12px;margin:18px 0"></div><div style="position:sticky;bottom:0;background:var(--surface,#fff);padding:14px 0 2px;display:flex;gap:12px;justify-content:flex-end;border-top:1px solid rgba(128,128,128,.25)"><button id="cancelCookbookRepairReview" class="secondary" type="button">Cancel</button><button id="applyCookbookRepairReview" class="primary" type="button">Repair selected</button></div></section>`;
   document.body.appendChild(overlay);
   $("closeCookbookRepairReview").onclick=$("cancelCookbookRepairReview").onclick=()=>{overlay.style.display="none";};
   return overlay;
@@ -308,11 +328,16 @@ async function previewCookbookRepairPage(candidate){
 function renderCookbookRepairReview(candidates){
   const overlay=ensureCookbookRepairReview(),list=$("cookbookRepairReviewList");
   candidates.forEach(item=>{
-    item.chosenBookId=item.chosenBookId||item.target?.id||item.current?.id||"";
-    item.chosenPage=item.chosenPage||item.page||"";
+    if(item.confidence!=="unassigned"){
+      item.chosenBookId=item.chosenBookId||item.target?.id||item.current?.id||"";
+      item.chosenPage=item.chosenPage||item.page||"";
+    }else{
+      item.chosenBookId=item.chosenBookId||"";
+      item.chosenPage=item.chosenPage||"";
+    }
   });
-  const bookOptions=library.map(book=>`<option value="${escapeHTML(book.id)}">${escapeHTML(book.title)}</option>`).join("");
-  list.innerHTML=candidates.map((item,index)=>`<article style="border:1px solid rgba(128,128,128,.28);border-radius:14px;padding:14px;display:grid;gap:12px"><div style="display:flex;gap:12px;align-items:flex-start"><input type="checkbox" data-repair-select="${index}" aria-label="Select ${escapeHTML(item.recipe.name)}"><div style="min-width:0;flex:1"><strong>${escapeHTML(item.recipe.name||"Untitled recipe")}</strong><div class="muted" style="margin-top:4px">Currently: ${escapeHTML(item.current?.title||"Unassigned")}</div><div class="muted" style="font-size:.86rem;margin-top:3px">Scanner suggestion: ${escapeHTML(item.target.title)} · page ${item.page} · ${item.score}%${item.exact?" · exact title text":""}</div></div></div><div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(110px,160px) auto;gap:10px;align-items:end"><label class="field" style="margin:0">Place in cookbook<select data-repair-book="${index}">${bookOptions}</select></label><label class="field" style="margin:0">PDF page<input type="number" min="1" step="1" data-repair-page="${index}" value="${escapeHTML(String(item.chosenPage||""))}"></label><button class="secondary" type="button" data-repair-preview="${index}">View selected page</button></div><div class="muted" style="font-size:.84rem">Choose the cookbook and page that actually contain this recipe. Nothing changes unless you check the box and click Repair selected.</div></article>`).join("");
+  const bookOptions=`<option value="">Choose cookbook…</option>`+library.map(book=>`<option value="${escapeHTML(book.id)}">${escapeHTML(book.title)}</option>`).join("");
+  list.innerHTML=candidates.map((item,index)=>`<article data-repair-kind="${item.confidence==="unassigned"?"unassigned":"review"}" style="border:1px solid rgba(128,128,128,.28);border-radius:14px;padding:14px;display:grid;gap:12px"><div style="display:flex;gap:12px;align-items:flex-start"><input type="checkbox" data-repair-select="${index}" aria-label="Select ${escapeHTML(item.recipe.name)}"><div style="min-width:0;flex:1"><strong>${escapeHTML(item.recipe.name||"Untitled recipe")}</strong><div class="muted" style="margin-top:4px">Currently: ${escapeHTML(item.current?.title||"Unassigned")}</div><div class="muted" style="font-size:.86rem;margin-top:3px">${item.confidence==="unassigned"?"Unassigned recipe":item.confidence==="high"?"High-confidence suggestion":"Needs manual review"}: ${escapeHTML(item.target?.title||item.current?.title||((item.ranked||[])[0]?.book?.title?`Possible match: ${(item.ranked||[])[0].book.title}`:"Choose a cookbook"))}${item.page?` · page ${item.page}`:""}${item.score?` · ${item.score}%`:""}${item.exact?" · exact title text":""}</div></div></div><div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(110px,160px) auto;gap:10px;align-items:end"><label class="field" style="margin:0">Place in cookbook<select data-repair-book="${index}">${bookOptions}</select></label><label class="field" style="margin:0">PDF page<input type="number" min="1" step="1" data-repair-page="${index}" value="${escapeHTML(String(item.chosenPage||""))}"></label><button class="secondary" type="button" data-repair-preview="${index}">View selected page</button></div><div class="muted" style="font-size:.84rem">Choose the cookbook and page that actually contain this recipe. Nothing changes unless you check the box and click Repair selected.</div></article>`).join("");
   list.querySelectorAll("[data-repair-book]").forEach(select=>{
     const item=candidates[Number(select.dataset.repairBook)];
     select.value=String(item.chosenBookId||"");
@@ -327,6 +352,10 @@ function renderCookbookRepairReview(candidates){
   list.querySelectorAll("[data-repair-page]").forEach(input=>input.oninput=()=>{candidates[Number(input.dataset.repairPage)].chosenPage=input.value;});
   list.querySelectorAll("[data-repair-select]").forEach(input=>input.onchange=()=>{candidates[Number(input.dataset.repairSelect)].selected=input.checked;});
   list.querySelectorAll("[data-repair-preview]").forEach(button=>button.onclick=()=>previewCookbookRepairPage(candidates[Number(button.dataset.repairPreview)]));
+  const search=$('cookbookRepairReviewSearch'),filter=$('cookbookRepairReviewFilter');
+  const applyFilters=()=>{const query=normalize(search?.value||""),kind=filter?.value||"all";list.querySelectorAll('article').forEach((card,index)=>{const nameMatch=!query||normalize(candidates[index]?.recipe?.name||"").includes(query);const kindMatch=kind==="all"||card.dataset.repairKind===kind;card.hidden=!(nameMatch&&kindMatch);});};
+  if(search){search.value="";search.oninput=applyFilters;}
+  if(filter){filter.value="all";filter.onchange=applyFilters;}
   overlay.style.display="block";
   return new Promise(resolve=>{
     $("applyCookbookRepairReview").onclick=()=>{
@@ -342,18 +371,18 @@ function renderCookbookRepairReview(candidates){
 async function repairCookbookAssignments(){
   const button=$("repairCookbookAssignments"),status=$("cookbookRepairStatus");
   button.disabled=true;
-  status.textContent="Reading locally saved cookbook PDFs and checking currently assigned recipes…";
+  status.textContent="Reading locally saved cookbook PDFs and building the unassigned and cookbook-review workspace…";
   status.className="import-status";
   let scan;
   try{scan=await scanCookbookAssignments();}
   catch(error){console.error("Cookbook assignment scan failed",error);status.textContent=`Scan failed: ${error?.message||error}`;button.disabled=false;return;}
   const {candidates,diagnostics,availableBooks}=scan;
-  window.recipeVaultCookbookDiagnostics={build:227,createdAt:new Date().toISOString(),availableBooks,diagnostics};
-  localStorage.setItem("recipeVaultCookbookDiagnosticsV227",JSON.stringify(window.recipeVaultCookbookDiagnostics));
-  if(!candidates.length){status.textContent=`No high-confidence cookbook moves found after scanning ${availableBooks.length} saved PDF${availableBooks.length===1?"":"s"}.`;status.className="import-status success";button.disabled=false;return;}
-  status.textContent=`${candidates.length} possible mismatch${candidates.length===1?"":"es"} found. Review each proposed page before approving anything.`;
+  window.recipeVaultCookbookDiagnostics={build:229,createdAt:new Date().toISOString(),availableBooks,diagnostics};
+  localStorage.setItem("recipeVaultCookbookDiagnosticsV229",JSON.stringify(window.recipeVaultCookbookDiagnostics));
+  if(!candidates.length){status.textContent=`No unassigned or unverified cookbook recipes were found.`;status.className="import-status success";button.disabled=false;return;}
+  status.textContent=`${candidates.length} cookbook assignment${candidates.length===1?"":"s"} could not be fully verified. Review or manually place them.`;
   const selected=await renderCookbookRepairReview(candidates);
-  if(!selected.length){button.disabled=false;status.textContent=`${candidates.length} possible mismatch${candidates.length===1?"":"es"} found; no changes applied.`;return;}
+  if(!selected.length){button.disabled=false;status.textContent=`${candidates.length} assignment${candidates.length===1?"":"s"} available for review; no changes applied.`;return;}
   let repaired=0,failed=0;
   for(let index=0;index<selected.length;index++){
     const item=selected[index],recipe=item.recipe,target=repairCandidateBook(item),chosenPage=repairCandidatePage(item);
