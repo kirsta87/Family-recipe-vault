@@ -29,7 +29,8 @@ function importSharedPlannerSettingsFromLink(){
 
 importSharedPlannerSettingsFromLink();
 const WEEKLY_PLANS_KEY = "recipeVaultWeeklyPlansV104";
-const WEEKLY_PLANS_BACKUP_KEY = "recipeVaultWeeklyPlansBackupV242";
+const WEEKLY_PLANS_BACKUP_KEY = "recipeVaultWeeklyPlansBackupV244";
+const WEEKLY_PLANS_HISTORY_KEY = "recipeVaultWeeklyPlansHistoryV244";
 const PLANNER_RECIPE_CACHE_KEY = "recipeVaultPlannerRecipeCacheV118";
 const PANTRY_KEY = "recipeVaultPantryV130";
 const PANTRY_CHECKIN_KEY = "recipeVaultPantryCheckinV130";
@@ -64,20 +65,24 @@ const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sun
 let recipes = [];
 let plans = readPlans();
 let plannerRecoveredFromBackup = false;
+
+// Build 244: recovery is deliberately local-first. A shared sync is never
+// allowed to erase the last populated copy on this browser.
 try{
+  const candidates = [];
+  const currentCount = countPlannedMeals(plans);
   const backupPayload = JSON.parse(localStorage.getItem(WEEKLY_PLANS_BACKUP_KEY) || "null");
-  const backupPlansValue = backupPayload?.plans && typeof backupPayload.plans === "object" ? backupPayload.plans : null;
-  const currentMealCount = countPlannedMeals(plans);
-  const backupMealCount = backupPlansValue ? countPlannedMeals(backupPlansValue) : 0;
-  // Build 243 emergency recovery: if sync wiped the planner but Build 242 saved
-  // a fuller local backup, restore it before contacting shared storage.
-  if(backupPlansValue && backupMealCount > currentMealCount){
-    plans = backupPlansValue;
+  if(backupPayload?.plans && typeof backupPayload.plans === "object") candidates.push(backupPayload);
+  const history = JSON.parse(localStorage.getItem(WEEKLY_PLANS_HISTORY_KEY) || "[]");
+  if(Array.isArray(history)) candidates.push(...history.filter(item => item?.plans && typeof item.plans === "object"));
+  const fullest = candidates.sort((a,b) => countPlannedMeals(b.plans) - countPlannedMeals(a.plans))[0];
+  if(fullest && countPlannedMeals(fullest.plans) > currentCount){
+    plans = fullest.plans;
     localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans));
     plannerRecoveredFromBackup = true;
   }
 }catch(error){
-  console.warn("Meal-plan backup recovery could not run:", error);
+  console.warn("Meal-plan recovery could not run:", error);
 }
 let activeWeek = mondayOf(new Date());
 let assigningRecipe = null;
@@ -218,14 +223,22 @@ function readPlans(){
 
 function backupPlans(value){
   try{
-    const current = value || readPlans();
-    if(current && Object.keys(current).length){
-      localStorage.setItem(WEEKLY_PLANS_BACKUP_KEY, JSON.stringify({savedAt:new Date().toISOString(), plans:current}));
-    }
-  }catch(error){ console.warn("Planner backup could not be saved:", error); }
+    const current = value && typeof value === "object" ? value : readPlans();
+    if(!Object.keys(current).length) return;
+    const snapshot = {savedAt:new Date().toISOString(), mealCount:countPlannedMeals(current), plans:current};
+    localStorage.setItem(WEEKLY_PLANS_BACKUP_KEY, JSON.stringify(snapshot));
+    const history = JSON.parse(localStorage.getItem(WEEKLY_PLANS_HISTORY_KEY) || "[]");
+    const nextHistory = [snapshot, ...(Array.isArray(history) ? history : [])]
+      .filter((item, index, all) => index === all.findIndex(other => JSON.stringify(other?.plans || {}) === JSON.stringify(item?.plans || {})))
+      .slice(0, 10);
+    localStorage.setItem(WEEKLY_PLANS_HISTORY_KEY, JSON.stringify(nextHistory));
+  }catch(error){
+    console.warn("Planner backup could not be saved:", error);
+  }
 }
 function savePlans(){
-  try{ backupPlans(JSON.parse(localStorage.getItem(WEEKLY_PLANS_KEY) || "{}")); }catch(error){}
+  const previous = readPlans();
+  if(countPlannedMeals(previous) > 0) backupPlans(previous);
   localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans));
 }
 function recipeIdList(value){ return (Array.isArray(value) ? value : (value ? [value] : [])).filter(Boolean).map(String); }
@@ -339,6 +352,13 @@ async function loadSharedPlans(force = false){
 
   setPlannerSyncStatus("checking", "Checking shared planner…", "Connecting to Apps Script and the Meal Plans sheet.");
 
+  // Finish pending saves before reading shared data so an older server response
+  // cannot race a meal the user just added or removed.
+  try{ await sharedSaveQueue; }catch(error){}
+
+  const localBeforeFetch = readPlans();
+  if(countPlannedMeals(localBeforeFetch) > 0) backupPlans(localBeforeFetch);
+
   const result = await plannerPost({action:"getMealPlans"});
   if(requestSequence !== sharedLoadSequence) return false;
 
@@ -348,26 +368,43 @@ async function loadSharedPlans(force = false){
     normalized.pendingSync = false;
     return [key, normalized];
   }));
+  // Re-read after the network request in case the user changed the plan while it was loading.
   const local = Object.fromEntries(Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)]));
-  const merged = {...remote};
+  const merged = {};
   const plansToUpload = [];
   const allKeys = new Set([...Object.keys(remote), ...Object.keys(local)]);
 
   for(const key of allKeys){
     const localPlan = local[key];
     const remotePlan = remote[key];
-    if(localPlan && remotePlan && (planHasContent(localPlan) || planHasContent(remotePlan))){
-      // Never let connecting a family key replace meals on this device.
-      // Combine both copies, then upload the safe union to shared storage.
+    const localHasMeals = planHasContent(localPlan);
+    const remoteHasMeals = planHasContent(remotePlan);
+
+    if(localHasMeals && remoteHasMeals){
       const safePlan = mergePlanContent(localPlan, remotePlan, key);
       merged[key] = safePlan;
-      plansToUpload.push([key, safePlan]);
-    }else if(localPlan && planHasContent(localPlan)){
+      if(JSON.stringify(normalizePlanShape(remotePlan, key)) !== JSON.stringify({...safePlan, pendingSync:false})){
+        plansToUpload.push([key, safePlan]);
+      }
+    }else if(localHasMeals){
+      // Empty or missing shared data can never erase a populated local week.
       merged[key] = localPlan;
       plansToUpload.push([key, localPlan]);
-    }else if(remotePlan){
+    }else if(remoteHasMeals){
       merged[key] = remotePlan;
+    }else if(localPlan || remotePlan){
+      merged[key] = localPlan || remotePlan;
     }
+  }
+
+  const mergedCount = countPlannedMeals(merged);
+  const localCount = countPlannedMeals(local);
+  const remoteCount = countPlannedMeals(remote);
+
+  // Final guardrail: never replace a fuller local copy with a smaller sync result.
+  if(localCount > mergedCount){
+    plans = local;
+    throw new Error("Shared planner returned less data than this device. The local meal plan was protected.");
   }
 
   plans = merged;
@@ -384,7 +421,7 @@ async function loadSharedPlans(force = false){
   setPlannerSyncStatus(
     "connected",
     "Shared planner connected",
-    `${Object.keys(remote).length} shared week${Object.keys(remote).length === 1 ? "" : "s"} loaded with ${countPlannedMeals(remote)} planned meal${countPlannedMeals(remote) === 1 ? "" : "s"}.`
+    `${Object.keys(remote).length} shared week${Object.keys(remote).length === 1 ? "" : "s"} loaded with ${remoteCount} planned meal${remoteCount === 1 ? "" : "s"}.`
   );
   return true;
 }
