@@ -994,3 +994,14 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 
 /* Build 207 visual mapper workspace */
 .mapper-workspace{display:grid;grid-template-columns:240px minmax(0,1fr);gap:1rem;align-items:start}.mapper-sidebar{position:sticky;top:.5rem;display:grid;gap:.7rem;padding:1rem;background:var(--paper,#fffdf8);border:1px solid #dfd4c3;border-radius:18px;z-index:35}.mapper-sidebar label{display:grid;gap:.25rem;font-weight:750}.mapper-sidebar select{width:100%;padding:.6rem;border-radius:10px}.mapper-side-badge{margin-top:.35rem;padding:.4rem .6rem;background:#e8efe0;border-radius:10px;font-weight:800}.mapper-recipe-list{display:grid;gap:.4rem}.mapper-recipe-list button{display:flex;justify-content:space-between;gap:.5rem;text-align:left;background:#fff;border:1px solid #d8d0c3;border-radius:10px;padding:.55rem .65rem}.mapper-recipe-list button.active{border-color:#697454;background:#eef2e9}.mapper-recipe-list span{font-size:.76rem;opacity:.7}.mapper-main{min-width:0}.mapper-box.grouped{box-shadow:0 0 0 3px rgba(105,116,84,.45);z-index:20}.mapper-box.grouped span:after{content:" · grouped"}@media(max-width:900px){.mapper-workspace{grid-template-columns:1fr}.mapper-sidebar{position:relative;top:auto;grid-template-columns:repeat(2,minmax(0,1fr))}.mapper-sidebar #mapperBuildReview,.mapper-sidebar #mapperInstruction,.mapper-sidebar .mapper-recipe-list{grid-column:1/-1}}
+
+/* Build 214: cleaner duplicate review */
+.duplicate-compare-button{margin-top:.45rem;align-self:flex-start}
+.duplicate-comparison{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:.8rem;padding:1rem;border:1px solid var(--line,#d8d3c8);border-radius:18px;background:rgba(255,255,255,.5)}
+.duplicate-comparison[hidden]{display:none}
+.duplicate-compare-column{min-width:0}
+.duplicate-compare-column h4,.duplicate-compare-column h5{margin:.4rem 0}
+.duplicate-compare-column img,.duplicate-compare-column .cookbook-photo-placeholder{width:100%;max-width:220px;aspect-ratio:4/3;object-fit:cover;border-radius:14px;margin:.35rem 0 .65rem}
+.duplicate-compare-column ul{margin:.25rem 0 .8rem;padding-left:1.2rem;max-height:15rem;overflow:auto}
+.duplicate-compare-column li{margin:.15rem 0}
+@media(max-width:760px){.duplicate-comparison{grid-template-columns:1fr}}

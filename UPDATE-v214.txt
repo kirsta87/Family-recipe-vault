@@ -1,0 +1,5 @@
+BUILD 214
+
+- Removes OCR-inserted dot separators and leading punctuation from recipe titles.
+- Adds an inline side-by-side comparison for possible duplicates.
+- Removes parser report and debug parser controls from the normal review screen.
