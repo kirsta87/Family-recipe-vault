@@ -1,3 +1,4 @@
+window.RECIPE_VAULT_BUILD = 221;
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
@@ -1054,8 +1055,11 @@ function findTitleLineFromPage(page,regions){
 function cleanLine(text){return String(text||"").replace(/^[-•▪◦]\s*/,"").replace(/\s+/g," ").trim();}
 function cleanRecipeTitleText(value){
   return cleanImportedTitle(String(value||"")
-    .replace(/\s+(?:nutrition\s+facts?|macros?(?:\s*\(approx\))?)\s*$/i,"")
-    .replace(/\s+(?:nutrition\s+facts?|macros?(?:\s*\(approx\))?)\b.*$/i,"")
+    // Nutrition headings are frequently merged into the same PDF text run as
+    // the recipe title. Cut at the first heading even when punctuation or
+    // spacing is missing, e.g. "MAC N CHEESE Nutrition Facts".
+    .replace(/(?:\s*[·•|:–—-]?\s*)(?:nutrition\s+facts?|nutrition|macros?(?:\s*\(approx\))?|per\s+serving)(?:\b|$).*$/i,"")
+    .replace(/\s+/g," ")
     .trim());
 }
 function cleanIngredientText(value){
@@ -1066,7 +1070,9 @@ function cleanIngredientText(value){
 }
 function cleanInstructionText(value){
   return String(value||"")
-    .replace(/\s*back\s+to\s+(?:the\s+)?table\s+of\s+contents(?:\s+\d{1,4})?\s*$/i,"")
+    // Navigation text can be fused to the final sentence in one extracted run.
+    // Remove it from anywhere after the actual instruction, including page numbers.
+    .replace(/\s*(?:back|return)\s+to\s+(?:the\s+)?table\s+of\s+contents(?:\s*(?:page\s*)?\d{1,4})?.*$/i,"")
     .replace(/^\s*(?:directions?|instructions?|method)\s*:?\s*/i,"")
     .replace(/\s+/g," ").trim();
 }
@@ -1557,7 +1563,7 @@ function renderReview(){
   $('recipeReviewList').innerHTML=importState.candidates.map((r,i)=>{const health=assessImportCandidate(r);return `<article id="recipe-review-${i}" data-review-card="${i}" data-health="${health.severity}" class="recipe-review-card ${health.severity!=='good'?'needs-review':''} ${r.include?'':'excluded'}"><div class="recipe-review-layout"><div class="recipe-photo-review">${r.image?`<img src="${r.image}" alt="${r.imageKind==='photo-crop'?'Cropped cookbook food photo':'Extracted cookbook photo'}">`:`<div class="cookbook-photo-placeholder">No image found</div>`}${r.image?`<div class="photo-source-label">${r.imageKind==='photo-crop'?'Cropped recipe photo':'Recipe photo'}</div><label class="review-check photo-toggle"><input type="checkbox" data-review-image="${i}" ${r.useImage!==false?'checked':''}><span>Use this image</span></label>`:''}</div><div class="recipe-review-content"><div class="recipe-review-head"><div class="review-status-wrap">${r.importStatus==='already'?`<span class="import-status status-already">Already imported ✓</span>`:r.importStatus==='possible-duplicate'?`<span class="import-status status-duplicate">Possible duplicate · ${Math.round((r.duplicateConfidence||0)*100)}%</span>`:`<span class="import-status status-new">New</span>`}${r.duplicateMatch?`<small>Looks like: ${escapeHTML(r.duplicateMatch.name||'Existing recipe')}${recipeCookbookLabel(r.duplicateMatch)?` · ${escapeHTML(recipeCookbookLabel(r.duplicateMatch))}`:''}</small>${duplicateComparisonMarkup(r,i)}`:''}</div><label class="review-check"><input type="checkbox" data-review-include="${i}" ${r.include?'checked':''} ${r.importStatus==='already'?'disabled':''}><span>${r.importStatus==='possible-duplicate'?(r.duplicateAction==='replace'?'Replace':r.duplicateAction==='keep'?'Keep both':'Skip'):r.importStatus==='already'?'Imported':'Import'}</span></label><div class="recipe-review-page-tools"><span class="page-badge">Page ${r.page}${r.endPage!==r.page?`–${r.endPage}`:''} · ${escapeHTML(r.layoutProfile||"adaptive")}</span><button type="button" class="secondary compact-button" data-view-source-page="${r.page}">View source page</button></div></div><label class="field">Recipe title<input data-review-title="${i}" value="${escapeHTML(r.title)}"></label><div class="parser-source-row"><span class="parser-source-badge">Title: ${escapeHTML(r.titleSource||"visual fallback")} · ${Number(r.titleConfidence||0)}%</span><div class="parser-card-actions"><button type="button" class="secondary compact-button" data-back-review-top>Back to report ↑</button></div></div><div class="review-meta-grid"><label class="field">Yield / servings<input data-review-yield="${i}" value="${escapeHTML(r.yieldText||'')}"></label><label class="field">Macros / nutrition<input data-review-nutrition="${i}" value="${escapeHTML(r.nutrition||'')}" placeholder="Calories: 336 | Protein: 38g | Carbs: 28g | Fat: 8g"></label><label class="field review-description-field">Description<textarea rows="3" data-review-description="${i}">${escapeHTML(r.description||'')}</textarea></label></div><label class="field">Video / tutorial links<textarea rows="2" data-review-links="${i}" placeholder="One link per line">${escapeHTML((r.links||[]).join('\n'))}</textarea></label>${(r.warnings||[]).length?`<div class="parser-warning">${(r.warnings||[]).map(w=>`⚠ ${escapeHTML(w)}`).join("<br>")}</div>`:""}<details><summary>Review ingredients & instructions</summary><div class="review-columns"><label class="field">Ingredients<textarea rows="10" data-review-ingredients="${i}">${escapeHTML(r.ingredients.map(item=>`• ${item}`).join('\n'))}</textarea></label><label class="field">Instructions<textarea rows="10" data-review-instructions="${i}">${escapeHTML(r.instructions.join('\n'))}</textarea></label></div></details></div></div></article>`}).join('');
 }
 
-function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(cleanImportedTitle(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title));r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.nutrition=document.querySelector(`[data-review-nutrition="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n'));});}
+function syncReviewFields(){importState.candidates.forEach((r,i)=>{r.include=document.querySelector(`[data-review-include="${i}"]`)?.checked??r.include;r.useImage=document.querySelector(`[data-review-image="${i}"]`)?.checked??r.useImage;r.title=smartTitleCase(cleanRecipeTitleText(document.querySelector(`[data-review-title="${i}"]`)?.value.trim()||r.title));r.yieldText=document.querySelector(`[data-review-yield="${i}"]`)?.value.trim()||'';r.nutrition=document.querySelector(`[data-review-nutrition="${i}"]`)?.value.trim()||'';r.description=document.querySelector(`[data-review-description="${i}"]`)?.value.trim()||'';r.links=splitLinks(document.querySelector(`[data-review-links="${i}"]`)?.value||(r.links||[]).join('\n'));r.ingredients=splitList(document.querySelector(`[data-review-ingredients="${i}"]`)?.value||r.ingredients.join('\n'));r.instructions=splitList(document.querySelector(`[data-review-instructions="${i}"]`)?.value||r.instructions.join('\n')).map(cleanInstructionText).filter(Boolean);});}
 async function postVault(payload){if(!config.appsScriptUrl||!config.sharedKey)throw new Error("Open Recipe Vault settings and enter the Apps Script URL and family write key first.");const body=new URLSearchParams();body.set("payload",JSON.stringify({...payload,key:config.sharedKey}));const response=await fetch(config.appsScriptUrl,{method:"POST",body,redirect:"follow"});const result=await response.json();if(!result.success)throw new Error(result.error||"Request failed");return result;}
 async function renderImportedSourcePreview(pageNo){
   if(!activePdfDocument)return "";
@@ -1642,7 +1648,7 @@ async function importSelected(){
       recipeImage=await cropMappedImage(importState.pdf,r.page,r.mappedImageBox).catch(()=>"");
       r.image=recipeImage;
     }
-    return {name:smartTitleCase(cleanImportedTitle(r.title)),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:recipeImage,protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(stripStepNumber),nutrition:r.nutrition||"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:""};
+    return {name:smartTitleCase(cleanRecipeTitleText(r.title)),url:"",source:`Cookbook: ${title} · p. ${r.page}`,image:recipeImage,protein:r.protein,type:r.type,cuisine:r.cuisine,tags:`Cookbook|${title}|Page ${r.page}`,collections:collection,prep_time:"",cook_time:"",total_time:"",ingredients:r.ingredients,instructions:r.instructions.map(cleanInstructionText).filter(Boolean).map(stripStepNumber),nutrition:r.nutrition||"",kirsta_rating:"",tj_rating:"",torrin_rating:"",torrin_notes:"",description:r.description||"",yield:r.yieldText||"",video_url:(r.links||[])[0]||"",recipe_links:r.links||[],notes:"",made_count:0,hidden:false,added:new Date().toISOString().slice(0,10),last_made:"",pdf_url:"",cookbook_id:id,cookbook_title:title,cookbook_author:author,cookbook_page:r.page,source_page_image:""};
   };
 
   const updateProgress=()=>{
@@ -2102,9 +2108,9 @@ async function buildReviewFromVisualMapper(){
     // Only this recipe's own boxes may bound its extraction. Boxes belonging to
     // another recipe on the same page must never erase or clip its text.
     const ownBoxes=Object.values(g.boxes||{}).filter(Boolean);
-    const title=cleanImportedTitle(mappedText(page,g.boxes.title,"title",ownBoxes).replace(/\s+/g," ").trim());
+    const title=cleanRecipeTitleText(mappedText(page,g.boxes.title,"title",ownBoxes).replace(/\s+/g," ").trim());
     let ingredients=mapperCleanIngredients(mappedText(page,g.boxes.ingredients,"ingredients",ownBoxes));
-    let instructions=mappedText(page,g.boxes.instructions,"instructions",ownBoxes);
+    let instructions=mappedText(page,g.boxes.instructions,"instructions",ownBoxes).map(cleanInstructionText).filter(Boolean);
     // A single-recipe page gets a conservative parser fallback when a hand-drawn
     // box catches no text. Multi-recipe pages stay mapper-only to avoid mixing recipes.
     if(groups.length===1&&(!ingredients.length||!instructions.length)){

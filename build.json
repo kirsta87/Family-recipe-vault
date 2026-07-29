@@ -1,6 +1,8 @@
 {
-  "build": 220,
-  "version": "220",
-  "label": "Recipe DNA reliability and cookbook field cleanup",
-  "date": "2026-07-29"
+  "build": 221,
+  "version": "221",
+  "label": "Merged field cleanup and update recovery fix",
+  "date": "2026-07-29",
+  "cookbookEngine": "4.4",
+  "parser": "Visual Cookbook Mapper v5"
 }

@@ -1,0 +1,7 @@
+Recipe Vault Build 221
+
+- Removes merged Nutrition Facts / Macros text from recipe titles after visual mapping.
+- Removes merged Back to Table of Contents navigation text and page numbers from final instructions.
+- Applies cleanup again during review sync and final import.
+- Uses the running JavaScript asset build as the authoritative build number.
+- Repairs the clear-cache recovery action and prevents a current build from remaining red because of stale HTML metadata.
