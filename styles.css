@@ -1005,3 +1005,7 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .duplicate-compare-column ul{margin:.25rem 0 .8rem;padding-left:1.2rem;max-height:15rem;overflow:auto}
 .duplicate-compare-column li{margin:.15rem 0}
 @media(max-width:760px){.duplicate-comparison{grid-template-columns:1fr}}
+
+/* Build 215: duplicate decision controls */
+.duplicate-decision-row{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:.65rem;align-items:center;padding-top:.85rem;border-top:1px solid var(--line,#ddd4c5)}
+.duplicate-decision-row .is-selected{outline:3px solid color-mix(in srgb,var(--olive,#687957) 30%,transparent);outline-offset:2px}
