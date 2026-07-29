@@ -1,0 +1,9 @@
+RECIPE VAULT BUILD 225
+
+HOTFIX FOR BUILD 224
+- Restores the missing scanCookbookAssignments function.
+- The Cookbook Maintenance PDF scan button now runs instead of reporting that the function is undefined.
+- Keeps the diagnostic-first, PDF-verified repair behavior from Build 224.
+
+INSTALL
+Replace the included files in the deployed site, then refresh once.

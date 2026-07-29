@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-window.RECIPE_VAULT_BUILD = 224;
+window.RECIPE_VAULT_BUILD = 225;
 const $ = id => document.getElementById(id);
 
 function on(id, eventName, handler){

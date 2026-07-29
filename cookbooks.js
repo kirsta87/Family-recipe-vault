@@ -1,4 +1,4 @@
-window.RECIPE_VAULT_BUILD = 224;
+window.RECIPE_VAULT_BUILD = 225;
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
@@ -184,6 +184,48 @@ function ensureCookbookRepairControl(){
   host.appendChild(panel);
   $("repairCookbookAssignments").addEventListener("click",repairCookbookAssignments);
 }
+function repairTitleTokens(value){
+  const stop=new Set(["recipe","easy","best","homemade","the","and","with","for","style","copycat"]);
+  return normalize(String(value||"").replace(/\s*[.·-]\s*\d+\s*$/,"")).split(" ").filter(token=>token.length>2&&!stop.has(token)&&!/^\d+$/.test(token));
+}
+function scoreRecipeAgainstPages(recipe,pages){
+  const title=normalize(String(recipe?.name||"").replace(/\s*[.·-]\s*\d+\s*$/,"")).trim();
+  const tokens=repairTitleTokens(title);
+  let best={page:0,score:0,exact:false};
+  for(const page of pages){
+    const exact=Boolean(title&&page.text.includes(title));
+    const hits=tokens.filter(token=>page.text.includes(token)).length;
+    const ratio=tokens.length?hits/tokens.length:0;
+    const score=exact?100:Math.round(ratio*82);
+    if(score>best.score)best={page:page.page,score,exact};
+  }
+  return best;
+}
+async function scanCookbookAssignments(){
+  const available=[];
+  for(const book of library){
+    const pages=await cookbookPdfPageTexts(book);
+    if(pages.length)available.push({book,pages});
+  }
+  const candidates=[],diagnostics=[];
+  for(const recipe of recipes){
+    const currentBook=library.find(book=>String(book.id||"")===String(recipe.cookbook_id||""))||null;
+    const ranked=available.map(entry=>({book:entry.book,...scoreRecipeAgainstPages(recipe,entry.pages)})).sort((a,b)=>b.score-a.score);
+    diagnostics.push(cookbookRepairDiagnostics(recipe,currentBook,ranked.slice(0,3)));
+    const best=ranked[0],second=ranked[1];
+    if(!best||best.score<82)continue;
+    const currentResult=ranked.find(item=>currentBook&&String(item.book.id)===String(currentBook.id));
+    const currentScore=currentResult?.score||0;
+    const isDifferent=!currentBook||String(best.book.id)!==String(currentBook.id);
+    const decisive=best.exact||(best.score>=82&&best.score-(second?.score||0)>=18);
+    const currentClearlyWrong=currentScore<60||(best.score-currentScore>=25);
+    if(isDifferent&&decisive&&currentClearlyWrong){
+      candidates.push({recipe,current:currentBook,target:best.book,page:best.page,score:best.score,currentScore,exact:best.exact});
+    }
+  }
+  return {candidates,diagnostics,availableBooks:available.map(x=>x.book.title)};
+}
+
 async function repairCookbookAssignments(){
   const button=$("repairCookbookAssignments"),status=$("cookbookRepairStatus");
   button.disabled=true;
@@ -197,8 +239,8 @@ async function repairCookbookAssignments(){
     button.disabled=false;return;
   }
   const {candidates,diagnostics,availableBooks}=scan;
-  window.recipeVaultCookbookDiagnostics={build:224,createdAt:new Date().toISOString(),availableBooks,diagnostics};
-  localStorage.setItem("recipeVaultCookbookDiagnosticsV224",JSON.stringify(window.recipeVaultCookbookDiagnostics));
+  window.recipeVaultCookbookDiagnostics={build:225,createdAt:new Date().toISOString(),availableBooks,diagnostics};
+  localStorage.setItem("recipeVaultCookbookDiagnosticsV225",JSON.stringify(window.recipeVaultCookbookDiagnostics));
   if(!candidates.length){
     status.textContent=`No strong mismatches found after scanning ${availableBooks.length} saved PDF${availableBooks.length===1?"":"s"}. Diagnostic details were saved in this browser.`;
     status.className="import-status success";button.disabled=false;return;

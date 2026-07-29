@@ -1,0 +1,27 @@
+.meal-prep-panel{border:1px solid rgba(145,75,67,.18);background:linear-gradient(145deg,rgba(255,250,247,.98),rgba(250,245,238,.98))}
+.meal-prep-heading{align-items:flex-start;gap:16px}
+.meal-prep-count{display:inline-flex;align-items:center;min-height:32px;padding:6px 10px;border-radius:999px;background:rgba(145,75,67,.1);color:#743b35;font-weight:800;font-size:.82rem;white-space:nowrap}
+.meal-prep-form{display:grid;grid-template-columns:minmax(220px,1.25fr) minmax(150px,.65fr) minmax(220px,1fr) auto;gap:12px;align-items:end;margin-top:18px}
+.meal-prep-form .field{margin:0}
+.meal-prep-form input{width:100%}
+.meal-prep-form .primary{min-height:44px;white-space:nowrap}
+.meal-prep-status{min-height:1.3em;margin:10px 0 0}
+.meal-prep-status[data-state="success"]{color:#3f6f3f}
+.meal-prep-status[data-state="warning"]{color:#8a6329}
+.meal-prep-list{display:grid;gap:10px;margin-top:12px}
+.meal-prep-empty{display:flex;flex-direction:column;gap:4px;padding:18px;border:1px dashed rgba(145,75,67,.28);border-radius:14px;color:#65625d;background:rgba(255,255,255,.48)}
+.meal-prep-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start;padding:14px;border:1px solid rgba(86,76,66,.14);border-radius:14px;background:#fff}
+.meal-prep-item.is-complete{opacity:.62}
+.meal-prep-item.is-complete strong{text-decoration:line-through}
+.meal-prep-check{display:flex;align-items:center;justify-content:center;padding-top:2px}
+.meal-prep-check input{width:20px;height:20px;accent-color:#687452}
+.meal-prep-item-body{min-width:0}
+.meal-prep-item-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.meal-prep-item-title strong{font-size:1.02rem}
+.meal-prep-item-body p{margin:5px 0 0;color:#666158;font-size:.9rem}
+.meal-prep-recipe-badge,.meal-prep-custom-badge{display:inline-flex;padding:3px 7px;border-radius:999px;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.meal-prep-recipe-badge{background:#e8efe0;color:#4f643e}
+.meal-prep-custom-badge{background:#f2ece5;color:#755f50}
+.meal-prep-remove{align-self:center}
+@media(max-width:900px){.meal-prep-form{grid-template-columns:1fr 1fr}.meal-prep-notes-field{grid-column:1/-1}.meal-prep-form .primary{grid-column:1/-1}}
+@media(max-width:600px){.meal-prep-heading{display:block}.meal-prep-count{margin-top:10px}.meal-prep-form{grid-template-columns:1fr}.meal-prep-notes-field,.meal-prep-form .primary{grid-column:auto}.meal-prep-item{grid-template-columns:auto minmax(0,1fr)}.meal-prep-remove{grid-column:2;justify-self:start}}
