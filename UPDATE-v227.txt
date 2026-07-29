@@ -1,0 +1,10 @@
+Recipe Vault Build 227 — Review Before Repair
+
+- Scans only recipes already assigned to a cookbook.
+- Rejects contents/index pages unless they contain real recipe structure.
+- Shows every proposed move in a review screen.
+- Nothing is selected automatically.
+- Each recipe can be manually placed into any saved cookbook.
+- Enter or correct the exact PDF page before applying.
+- View Selected Page previews the cookbook/page you chose.
+- Only checked recipes are changed.

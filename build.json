@@ -1,6 +1,6 @@
 {
-  "build": 226,
-  "version": "226",
+  "build": 227,
+  "version": "227",
   "updated": "2026-07-29",
   "notes": "Restores the complete PDF scan helper and keeps the cookbook repair scan self-contained."
 }
