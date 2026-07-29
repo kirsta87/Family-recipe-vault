@@ -846,7 +846,7 @@ function itemsToStructuredLines(items){
 }
 function itemsToLines(items){return itemsToStructuredLines(items).map(line=>line.text);}
 const LINK_NOISE=/\b(click|tap)\s+here\b|video\s+tutorial|shop\s+here|see\s+the\s+.*i\s+use|save\s+digitally|pinterest|www\.|https?:|download|print here/i;
-const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies|toppings?|frosting|optional|add[- ]?ins?|for serving)$/i;
+const SECTION_NOISE=/^(ingredients?|directions?|instructions?|method|nutrition facts?|macros?(?:\s*\(approx\))?|nutrition|yield\/?servings?|serves?|servings?|prep time|cook time|notes?|important info|recipe(?:s)?|breakfast|lunch|dinner|desserts?|sauces?|extras|carbs|protein|veggies|toppings?|frosting|optional|add[- ]?ins?|for serving)$/i;
 const YIELD_VALUE_RX=/^(?:(?:yield\/?servings?|serves?|servings?|makes?)\s*:?\s*)?(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:tenders?|servings?|wraps?|bowls?|pieces?|portions?|cookies?|muffins?|pancakes?|waffles?|sandwiches?|cups?)\s*(?:[|·•-]\s*(?:\d+(?:\s*[-–]\s*\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+servings?)?$/i;
 function yieldLike(text){return YIELD_VALUE_RX.test(cleanLine(text));}
 function timeLedTitleLike(text){
@@ -1052,6 +1052,24 @@ function findTitleLineFromPage(page,regions){
   return strongestHeadingInRecipeRegion(page,regions,rich) || rich.sort((a,b)=>titleScore(b,page,regions)-titleScore(a,page,regions))[0]||null;
 }
 function cleanLine(text){return String(text||"").replace(/^[-•▪◦]\s*/,"").replace(/\s+/g," ").trim();}
+function cleanRecipeTitleText(value){
+  return cleanImportedTitle(String(value||"")
+    .replace(/\s+(?:nutrition\s+facts?|macros?(?:\s*\(approx\))?)\s*$/i,"")
+    .replace(/\s+(?:nutrition\s+facts?|macros?(?:\s*\(approx\))?)\b.*$/i,"")
+    .trim());
+}
+function cleanIngredientText(value){
+  return String(value||"")
+    .replace(/^\s*(?:ingredients?|directions?|instructions?|method)\s*:?\s*/i,"")
+    .replace(/\s+(?:directions?|instructions?|method)\s*:?\s*$/i,"")
+    .replace(/\s+/g," ").trim();
+}
+function cleanInstructionText(value){
+  return String(value||"")
+    .replace(/\s*back\s+to\s+(?:the\s+)?table\s+of\s+contents(?:\s+\d{1,4})?\s*$/i,"")
+    .replace(/^\s*(?:directions?|instructions?|method)\s*:?\s*/i,"")
+    .replace(/\s+/g," ").trim();
+}
 function lineInBox(line,box){return line.x>=box.x-8&&line.x<=box.x+box.w+8&&line.y>=box.y-8&&line.y<=box.y+box.h+8;}
 function lineRight(line){return (line.x||0)+(line.width||Math.max(12,line.text.length*(line.fontSize||10)*.42));}
 function verticalGap(a,b){return Math.abs((a?.y||0)-(b?.y||0));}
@@ -1105,7 +1123,7 @@ function buildTitle(page,titleLine,regions){
     .sort((a,b)=>b.y-a.y||a.x-b.x)
     .map(l=>cleanLine(l.text).replace(/^['"“”]+|['"“”]+$/g,''))
     .join(' ').replace(/\s+/g,' ').trim();
-  return cleanImportedTitle(titleRejected(title)?cleanLine(titleLine.text):title);
+  return cleanRecipeTitleText(titleRejected(title)?cleanLine(titleLine.text):title);
 }
 function linesInHeaderColumn(lines,header,W){
   if(!header)return [];
@@ -1131,7 +1149,7 @@ function mergeIngredientLines(lines){
       prev._line=l;
     }else out.push({text:t,_line:l});
   }
-  return out.map(x=>x.text.replace(/\s+/g,' ').trim());
+  return out.map(x=>cleanIngredientText(x.text)).filter(Boolean);
 }
 function mergeInstructionLines(lines,W=600){
   const cleaned=[...lines]
@@ -1187,7 +1205,8 @@ function mergeInstructionLines(lines,W=600){
       return result
         .sort((a,b)=>a.n-b.n)
         .filter((s,i,arr)=>i===0||s.n!==arr[i-1].n)
-        .map(s=>`${s.n}. ${s.text}`);
+        .map(s=>`${s.n}. ${cleanInstructionText(s.text)}`)
+        .filter(s=>cleanInstructionText(s.replace(/^\d+[.)]\s*/,'')));
     }
   }
 
@@ -1212,7 +1231,7 @@ function mergeInstructionLines(lines,W=600){
     else if(instructionLike(t)){steps.push(current);current={n:steps.length+1,text:t,line:l};}
   }
   if(current)steps.push(current);
-  return steps.map((s,i)=>`${s.n||i+1}. ${s.text}`.trim());
+  return steps.map((s,i)=>`${s.n||i+1}. ${cleanInstructionText(s.text)}`.trim()).filter(s=>cleanInstructionText(s.replace(/^\d+[.)]\s*/,'')));
 }
 
 function mergeProseLines(lines,W=600){
@@ -1311,13 +1330,13 @@ function buildCandidate(group){
   if(!instructionLines.length)instructionLines=lines.filter(l=>instructionLike(l.text)||/^\d+[.)]?\s*/.test(l.text));
 
   let ingredients=mergeIngredientLines(ingredientLines)
-    .map(t=>String(t||'').split(/\b(?:directions?|instructions?|method)\s*:/i)[0].trim())
+    .map(t=>cleanIngredientText(String(t||'').split(/\b(?:directions?|instructions?|method)\s*:/i)[0]))
     .filter(t=>t&&normalize(t)!==normalize(title)&&!SECTION_NOISE.test(t)&&!LINK_NOISE.test(t)&&!instructionLike(t)&&!yieldLike(t)&&!/(?:^|\b)(?:calories?|protein|carbs?|fat|macros?|nutrition)(?:\s*[:|-]|\b)/i.test(t))
     .slice(0,80);
   const titleParts=new Set(normalize(title).split(/\s+/).filter(Boolean));
   const titleish=t=>{const words=normalize(t).split(/\s+/).filter(Boolean);return words.length>1&&words.every(w=>titleParts.has(w));};
   instructionLines=instructionLines.filter(l=>!yieldLike(l.text)&&!titleish(l.text)&&!descriptionSet.has(l));
-  let instructions=mergeInstructionLines(instructionLines,W)
+  let instructions=mergeInstructionLines(instructionLines,W).map(cleanInstructionText).filter(Boolean)
     .filter(t=>{const safe=String(t||'');return safe&&!LINK_NOISE.test(safe)&&!ingredientLike(safe.replace(/^\d+[.)]\s*/,''));})
     .slice(0,60);
 
@@ -1341,7 +1360,7 @@ function buildCandidate(group){
   if(headerCount>2)warnings.push("Multiple recipe regions detected on this page; review this card carefully.");
   if(titleRejected(title)||ingredientLike(title))warnings.push("Low-confidence title detected.");
   const titleCandidates=(page.richLines||[]).filter(l=>plausibleVisualTitle(l,page,regions)).map(l=>({text:cleanLine(l.text),fontSize:l.fontSize,x:l.x,y:l.y,width:l.width,score:Math.round(titleScore(l,page,regions))})).sort((a,b)=>b.score-a.score).slice(0,20);
-  return {include:true,title:smartTitleCase(cleanImportedTitle(title)),titleLine,yieldText:meta.yieldText||extractYieldText(page),nutrition:extractMacroNutrition(page),description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
+  return {include:true,title:smartTitleCase(cleanRecipeTitleText(title)),titleLine,yieldText:meta.yieldText||extractYieldText(page),nutrition:extractMacroNutrition(page),description:meta.description,links:recipeVideoLinks(group.pages),regions,textDensity:{left:leftDensity,right:rightDensity},pageWidth:W,pageHeight:H,page:group.startPage,endPage:group.endPage,ingredients,instructions,protein:"",type:"",cuisine:"",warnings,layoutProfile:classifyPageLayout(page,regions),engineVersion:COOKBOOK_ENGINE_VERSION,pages:group.pages,rawLines:page.richLines||[],titleCandidates};
 }
 function guessBookTitle(pages,fileName){
   const first=(Array.isArray(pages)?pages:[]).slice(0,4)

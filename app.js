@@ -31,10 +31,15 @@ const RECIPE_CACHE_DB = "recipeVaultCacheV218";
 const RECIPE_CACHE_STORE = "recipeCache";
 const RECIPE_CACHE_RECORD = "current";
 const RECIPE_DNA_KEY = "recipeVaultRecipeDNAV141";
+const RECIPE_DNA_DB = "recipeVaultRecipeDNAV220";
+const RECIPE_DNA_STORE = "dna";
+const RECIPE_DNA_RECORD = "current";
 const RECIPE_DNA_ENGINE_VERSION = 3;
 let recipeIntelligenceRunning = false;
 let recipeIntelligencePromptShown = false;
-let recipeDNAStore = readRecipeDNAStore();
+let recipeDNAStore = readLegacyRecipeDNAStore();
+let recipeDNAWriteTimer = null;
+const recipeDNAReady = loadRecipeDNAStore();
 
 function openRecipeCacheDB(){
   return new Promise((resolve, reject) => {
@@ -438,6 +443,7 @@ function refreshEntryCategoryMenus(){
 }
 
 async function loadRecipes(){
+  await recipeDNAReady;
   const cached = await readRecipeCache();
   let showedCache = false;
 
@@ -631,23 +637,76 @@ const VIBE_PROFILES = {
   crowd:{label:"Crowd pleaser", minimum:24, terms:["party","potluck","crowd","slider","dip","nachos","casserole","sheet pan","barbecue","bbq","pizza"]}
 };
 
-function readRecipeDNAStore(){
-  try{
-    const stored = JSON.parse(localStorage.getItem(RECIPE_DNA_KEY) || "null");
-    if(!stored || typeof stored !== "object") return {engineVersion:RECIPE_DNA_ENGINE_VERSION,lastFullCheck:0,recipes:{}};
-    return {
-      engineVersion:Number(stored.engineVersion || 0),
-      lastFullCheck:Number(stored.lastFullCheck || 0),
-      recipes:stored.recipes && typeof stored.recipes === "object" ? stored.recipes : {}
-    };
-  }catch(error){
-    return {engineVersion:RECIPE_DNA_ENGINE_VERSION,lastFullCheck:0,recipes:{}};
-  }
+function emptyRecipeDNAStore(){
+  return {engineVersion:0,lastFullCheck:0,recipes:{}};
 }
 
-function writeRecipeDNAStore(){
-  try{ localStorage.setItem(RECIPE_DNA_KEY, JSON.stringify(recipeDNAStore)); }
-  catch(error){ console.warn("Recipe intelligence could not be saved:", error); }
+function normalizeRecipeDNAStore(stored){
+  if(!stored || typeof stored !== "object") return emptyRecipeDNAStore();
+  return {
+    engineVersion:Number(stored.engineVersion || 0),
+    lastFullCheck:Number(stored.lastFullCheck || 0),
+    recipes:stored.recipes && typeof stored.recipes === "object" ? stored.recipes : {}
+  };
+}
+
+function readLegacyRecipeDNAStore(){
+  try{ return normalizeRecipeDNAStore(JSON.parse(localStorage.getItem(RECIPE_DNA_KEY) || "null")); }
+  catch(error){ return emptyRecipeDNAStore(); }
+}
+
+function openRecipeDNADB(){
+  return new Promise((resolve,reject) => {
+    if(!window.indexedDB){ reject(new Error("IndexedDB is unavailable.")); return; }
+    const request=indexedDB.open(RECIPE_DNA_DB,1);
+    request.onupgradeneeded=()=>{
+      const db=request.result;
+      if(!db.objectStoreNames.contains(RECIPE_DNA_STORE)) db.createObjectStore(RECIPE_DNA_STORE);
+    };
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error || new Error("Could not open Recipe DNA storage."));
+  });
+}
+
+async function loadRecipeDNAStore(){
+  const legacy=readLegacyRecipeDNAStore();
+  try{
+    const db=await openRecipeDNADB();
+    const stored=await new Promise((resolve,reject)=>{
+      const tx=db.transaction(RECIPE_DNA_STORE,"readonly");
+      const request=tx.objectStore(RECIPE_DNA_STORE).get(RECIPE_DNA_RECORD);
+      request.onsuccess=()=>resolve(request.result || null);
+      request.onerror=()=>reject(request.error || new Error("Could not read Recipe DNA."));
+    });
+    db.close();
+    recipeDNAStore=stored ? normalizeRecipeDNAStore(stored) : legacy;
+    if(!stored && Object.keys(legacy.recipes).length) await writeRecipeDNAStore();
+    try{ localStorage.removeItem(RECIPE_DNA_KEY); }catch(error){ /* legacy storage may be unavailable */ }
+  }catch(error){
+    recipeDNAStore=legacy;
+    console.warn("Recipe DNA IndexedDB could not be loaded; using the in-memory copy for this visit:", error);
+  }
+  return recipeDNAStore;
+}
+
+async function writeRecipeDNAStore(){
+  const db=await openRecipeDNADB();
+  try{
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(RECIPE_DNA_STORE,"readwrite");
+      tx.objectStore(RECIPE_DNA_STORE).put(recipeDNAStore,RECIPE_DNA_RECORD);
+      tx.oncomplete=resolve;
+      tx.onerror=()=>reject(tx.error || new Error("Could not save Recipe DNA."));
+      tx.onabort=()=>reject(tx.error || new Error("Recipe DNA save was aborted."));
+    });
+  }finally{ db.close(); }
+}
+
+function scheduleRecipeDNAWrite(){
+  clearTimeout(recipeDNAWriteTimer);
+  recipeDNAWriteTimer=setTimeout(()=>{
+    writeRecipeDNAStore().catch(error=>console.warn("Recipe intelligence could not be saved:",error));
+  },350);
 }
 
 function recipeVibeText(recipe){
@@ -907,14 +966,16 @@ function startRecipeIntelligenceAnalysis({force=false}={}){
     cleanRecipeDNAStore();
     recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
     recipeDNAStore.lastFullCheck = Date.now();
-    writeRecipeDNAStore();
-    recipeIntelligenceRunning = false;
-    const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    if(status) status.textContent = "Saving Recipe DNA…";
+    writeRecipeDNAStore().then(()=>{
+      recipeIntelligenceRunning = false;
+      const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
     const doneText = $("recipeIntelligenceDoneText");
     if(doneText) doneText.textContent = `${candidates.length} recipe${candidates.length===1?"":"s"} analyzed with engine v${RECIPE_DNA_ENGINE_VERSION}. ${traitCount.toLocaleString()} traits identified in ${elapsed} second${elapsed===1?"":"s"}.`;
     setIntelligenceDialogMode("complete");
     if(status) status.textContent = `Recipe Intelligence is current · engine v${RECIPE_DNA_ENGINE_VERSION}`;
       render();
+    }).catch(showRecipeIntelligenceError);
     }catch(error){
       showRecipeIntelligenceError(error);
     }
@@ -940,7 +1001,7 @@ function refreshRecipeIntelligence({force=false,automatic=false}={}){
       recipeDNAStore.recipes[id] = analyzeRecipeDNA(recipe);
     });
     recipeDNAStore.engineVersion = RECIPE_DNA_ENGINE_VERSION;
-    writeRecipeDNAStore();
+    scheduleRecipeDNAWrite();
   }else if(force){
     startRecipeIntelligenceAnalysis({force:true});
     return candidates.length;
@@ -1007,7 +1068,7 @@ function vibeScore(recipe, vibes){
   if(!dna || dna.fingerprint !== recipeDNAFingerprint(recipe)){
     dna = analyzeRecipeDNA(recipe);
     recipeDNAStore.recipes[id] = dna;
-    writeRecipeDNAStore();
+    scheduleRecipeDNAWrite();
   }
   let total = 0;
   for(const key of vibes){
@@ -2764,8 +2825,18 @@ document.querySelectorAll("dialog").forEach(dialog => {
 });
 
 mountMultiCollectionPicker("manualCollectionPicker", []);
-on("recheckRecipeIntelligence", "click", () => startRecipeIntelligenceAnalysis({force:true}));
-on("startRecipeIntelligence", "click", () => startRecipeIntelligenceAnalysis());
+on("recheckRecipeIntelligence", "click", event => {
+  event.currentTarget.disabled = true;
+  const status=$("recipeIntelligenceStatus");
+  if(status) status.textContent="Starting full Recipe DNA analysis…";
+  Promise.resolve(recipeDNAReady).then(()=>startRecipeIntelligenceAnalysis({force:true})).finally(()=>{ event.currentTarget.disabled=false; });
+});
+on("startRecipeIntelligence", "click", event => {
+  event.currentTarget.disabled = true;
+  const status=$("recipeIntelligenceStatus");
+  if(status) status.textContent="Starting Recipe DNA analysis…";
+  Promise.resolve(recipeDNAReady).then(()=>startRecipeIntelligenceAnalysis()).finally(()=>{ event.currentTarget.disabled=false; });
+});
 on("laterRecipeIntelligence", "click", () => {
   $("recipeIntelligenceDialog")?.close();
   const count = recipeIntelligenceCandidates().length;

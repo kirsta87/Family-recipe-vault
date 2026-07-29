@@ -1,0 +1,9 @@
+Recipe Vault Build 220
+
+- Moves Recipe DNA storage from localStorage to IndexedDB with one-time migration.
+- Makes Analyze/Recheck show an immediate starting state and reports save failures instead of silently stopping.
+- Batches background Recipe DNA writes instead of saving once per recipe during filtering.
+- Removes Nutrition Facts/Macros labels from cookbook recipe titles.
+- Removes Back to Table of Contents and trailing page numbers from instructions.
+- Prevents Ingredients/Instructions/Directions section labels from leaking into ingredient or instruction values.
+- Preserves Build 219's generous layout regions and Stealth Health detection.
