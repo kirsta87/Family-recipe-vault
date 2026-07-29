@@ -1170,7 +1170,50 @@ $("copyShoppingList").addEventListener("click", async () => {
     $("shoppingListStatus").textContent = "Could not copy automatically. Select the list and copy it manually.";
   }
 });
-$("printShoppingList").addEventListener("click", () => window.print());
+function printCompactShoppingList(){
+  const {grouped, activeGroups} = buildShoppingText();
+  if(!activeGroups.length){
+    $("shoppingListStatus").textContent = "Generate the shopping list before printing.";
+    return;
+  }
+  const checkedKeys = new Set([...document.querySelectorAll('[data-shopping-purchased]:checked')].map(input => input.dataset.shoppingPurchased));
+  const rows = activeGroups.map(group => {
+    const items = latestShoppingItems
+      .filter(item => item.category === group)
+      .sort((a,b) => a.display.localeCompare(b.display));
+    return `<section><h2>${escapeHTML(group)}</h2>${items.map(item => {
+      const checked = checkedKeys.has(item.itemKey) ? "checked" : "";
+      return `<div class="item ${checked}"><span class="box">${checked ? "✓" : ""}</span><span>${escapeHTML(item.display)}</span></div>`;
+    }).join("")}</section>`;
+  }).join("");
+  const recipes = [...new Set(latestShoppingItems.flatMap(item => item.recipeNames || []))];
+  const popup = window.open("", "_blank", "noopener,noreferrer");
+  if(!popup){
+    $("shoppingListStatus").textContent = "Your browser blocked the print window. Allow pop-ups, then try again.";
+    return;
+  }
+  popup.document.open();
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Shopping List</title><style>
+    @page{size:auto;margin:.45in}
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11pt;line-height:1.2}
+    header{border-bottom:2px solid #111;margin-bottom:12px;padding-bottom:7px}
+    h1{font-family:Georgia,serif;font-size:22pt;margin:0 0 3px}
+    .meta{font-size:9pt;color:#555}
+    main{column-count:2;column-gap:28px}
+    section{break-inside:avoid;margin:0 0 13px}
+    h2{font-family:Georgia,serif;font-size:13pt;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #888;margin:0 0 5px;padding-bottom:2px}
+    .item{display:grid;grid-template-columns:15px 1fr;gap:5px;align-items:start;margin:0 0 3px;break-inside:avoid}
+    .box{width:12px;height:12px;border:1.3px solid #111;display:inline-flex;align-items:center;justify-content:center;font-size:9px;line-height:1;margin-top:1px}
+    .item.checked span:last-child{text-decoration:line-through;color:#666}
+    footer{border-top:1px solid #aaa;margin-top:12px;padding-top:5px;font-size:8pt;color:#666}
+    @media(max-width:650px){main{column-count:1}}
+    @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  </style></head><body><header><h1>Shopping List</h1><div class="meta">${escapeHTML(weekLabel(activeWeek))} · ${latestShoppingItems.length} items</div></header><main>${rows}</main>${recipes.length?`<footer>Generated from: ${recipes.map(escapeHTML).join(" • ")}</footer>`:""}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),100));<\/script></body></html>`);
+  popup.document.close();
+}
+
+$("printShoppingList").addEventListener("click", printCompactShoppingList);
 $("finishShopping").addEventListener("click", addShoppingToPantry);
 $("closeMealMade").addEventListener("click", () => $("mealMadeDialog").close());
 $("confirmMealMade").addEventListener("click", () => finalizeMealMade(true));

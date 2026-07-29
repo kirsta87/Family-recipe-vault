@@ -1,9 +1,10 @@
 "use strict";
-const BUILD = 236;
+const BUILD = 237;
 const CACHE_NAME = `recipe-vault-build-${BUILD}`;
 const APP_SHELL = [
   "./", "./index.html", `./app.js?v=${BUILD}`,
   "./cookbooks.html", `./cookbooks.js?v=${BUILD}`,
+  "./meal-planner.html", `./meal-planner.js?v=${BUILD}`, "./styles.css",
   "./build.json"
 ];
 self.addEventListener("install", event => {

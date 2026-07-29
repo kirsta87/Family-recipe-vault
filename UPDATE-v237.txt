@@ -1,0 +1,5 @@
+Build 237
+- Replaces browser page printing with a dedicated compact shopping-list print view.
+- Removes blank pages, dialogs, buttons, brand fields, and excessive spacing.
+- Prints categorized ingredients in two compact columns with checkboxes.
+- Includes all cumulative Build 236 files.
