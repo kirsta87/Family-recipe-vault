@@ -8,6 +8,10 @@
   <title>Cookbook Library · Recipe Vault</title>
   <link rel="stylesheet" href="styles.css?v=212">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+
+<style>
+.import-filter-bar{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}.import-filter-bar button{border:1px solid var(--border,#d7d7d7);background:transparent;border-radius:999px;padding:.55rem .85rem;cursor:pointer}.import-filter-bar button.active{background:#243b32;color:#fff;border-color:#243b32}.duplicate-location{display:grid;gap:.25rem;margin:.65rem 0;padding:.7rem;border-radius:.65rem;background:#f6f3eb}.duplicate-decision-row.always-visible{display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0}.duplicate-decision-row .is-selected{outline:3px solid rgba(36,59,50,.25)}.smart-import-actions{display:flex;gap:.5rem;flex-wrap:wrap}.recipe-review-card[hidden]{display:none!important}
+</style>
 </head>
 <body>
 <header class="hero cookbook-hero">
@@ -79,7 +83,7 @@
       </div>
       <section id="smartImportSummary" class="smart-import-summary" hidden></section>
       <div class="review-toolbar"><div><h3>Review detected recipes</h3><p id="reviewSummary" class="muted"></p></div><div class="actions"><button id="selectAllRecipes" class="secondary">Select all</button><button id="selectNoneRecipes" class="secondary">Select none</button><button id="importCookbookRecipes" class="primary">Import selected</button></div></div>
-      <section id="importHealthPanel" class="import-health-panel" aria-live="polite"></section>
+      <nav id="importFilterBar" class="import-filter-bar" aria-label="Filter imported recipes"></nav><section id="importHealthPanel" class="import-health-panel" aria-live="polite"></section>
       <div id="recipeReviewList" class="cookbook-review-list"></div>
       <button id="reviewBackToTop" class="review-back-to-top" type="button" hidden>↑ Back to top</button>
     </div>
@@ -119,6 +123,6 @@
 </dialog>
 <dialog id="deleteCookbookDialog"><button id="closeDeleteCookbook" class="close">×</button><h2>Remove cookbook?</h2><p id="deleteCookbookMessage"></p><div class="stacked-actions"><button id="removeCookbookOnly" class="secondary">Remove cookbook from shelf only</button><button id="removeCookbookAndRecipes" class="danger">Remove cookbook and its recipes</button><button id="cancelDeleteCookbook" class="secondary">Cancel</button></div><p class="muted">Removing recipes requires the connected Apps Script to support recipe deletion. If it does not, the cookbook will still be removed from the shelf and the recipes will remain in the vault.</p></dialog>
 <script src="config.js?v=193"></script>
-<script type="module" src="cookbooks.js?v=230"></script>
-  <script src="build-status.js?v=230"></script>
+<script type="module" src="cookbooks.js?v=229"></script>
+  <script src="build-status.js?v=229"></script>
 </body></html>
