@@ -1,0 +1,12 @@
+Recipe Vault Build 230 — Cookbook Re-import Ownership Recovery
+
+Install this build instead of Builds 228 or 229.
+
+What changed
+- The uploaded cookbook PDF is treated as the source of truth during duplicate review.
+- A strong duplicate currently attached to another cookbook is preselected as “Move existing recipe here.”
+- The existing recipe is updated and reassigned instead of creating a second copy.
+- Nothing moves until you confirm the full import batch by clicking Import selected.
+- Keep both and Skip remain available for genuinely ambiguous cases.
+- Cookbook recipe indexes are rebuilt after confirmed moves so reclaimed recipes are removed from the wrong cookbook.
+- No background scanner automatically changes cookbook ownership.
