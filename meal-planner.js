@@ -63,6 +63,22 @@ const config = {...base, ...settings};
 const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 let recipes = [];
 let plans = readPlans();
+let plannerRecoveredFromBackup = false;
+try{
+  const backupPayload = JSON.parse(localStorage.getItem(WEEKLY_PLANS_BACKUP_KEY) || "null");
+  const backupPlansValue = backupPayload?.plans && typeof backupPayload.plans === "object" ? backupPayload.plans : null;
+  const currentMealCount = countPlannedMeals(plans);
+  const backupMealCount = backupPlansValue ? countPlannedMeals(backupPlansValue) : 0;
+  // Build 243 emergency recovery: if sync wiped the planner but Build 242 saved
+  // a fuller local backup, restore it before contacting shared storage.
+  if(backupPlansValue && backupMealCount > currentMealCount){
+    plans = backupPlansValue;
+    localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans));
+    plannerRecoveredFromBackup = true;
+  }
+}catch(error){
+  console.warn("Meal-plan backup recovery could not run:", error);
+}
 let activeWeek = mondayOf(new Date());
 let assigningRecipe = null;
 let syncReady = false;
@@ -1487,11 +1503,11 @@ async function loadRecipes(){
 
   if(cached?.rows?.length){
     applyPlannerRecipeRows(cached.rows);
-    $("weekStatus").textContent = "Refreshing…";
+    $("weekStatus").textContent = plannerRecoveredFromBackup ? "Recovered meal plan from this device…" : "Refreshing…";
     renderPlanner();
     renderResults();
   }else{
-    $("weekStatus").textContent = "Loading…";
+    $("weekStatus").textContent = plannerRecoveredFromBackup ? "Recovered meal plan from this device…" : "Loading…";
     // Render the calendar shell and locally saved plans immediately.
     renderPlanner();
   }
@@ -1511,7 +1527,7 @@ async function loadRecipes(){
     setPlannerSyncStatus("error", "Shared planner unavailable", planResult.reason?.message || String(planResult.reason));
     $("weekStatus").textContent = "Showing saved planner; shared refresh delayed";
   }else{
-    $("weekStatus").textContent = "";
+    $("weekStatus").textContent = plannerRecoveredFromBackup ? "Meal plan recovered and shared" : "";
   }
 
   renderPlanner();

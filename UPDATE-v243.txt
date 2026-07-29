@@ -1,0 +1,8 @@
+BUILD 243 — EMERGENCY MEAL PLAN RECOVERY
+
+- Checks the local Build 242 planner backup before any shared sync runs.
+- If the backup contains more planned meals than the current wiped planner, it restores the backup automatically.
+- The recovered plan is then merged/uploaded to shared storage.
+- Empty or smaller shared data cannot replace the fuller recovered copy.
+
+Install Build 243 on the same browser/device where the meal plan was erased.
