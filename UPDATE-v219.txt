@@ -1,0 +1,7 @@
+Recipe Vault Build 219
+
+- Adds geometry-based, layout-first cookbook page scoring.
+- Recognizes visual title blocks, section headers, nutrition banners, column density, and instruction-body regions before relying on OCR-style keyword matches.
+- Keeps visually structured Stealth Health recipe pages checked when the PDF text layer is fragmented.
+- Preserves meaningful direction prose inside an explicitly mapped Instructions/Directions region instead of requiring every extracted line to begin with a cooking verb.
+- Updates cookbook parser engine metadata and cache-busting asset version.

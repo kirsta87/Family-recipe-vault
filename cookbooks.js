@@ -3,7 +3,7 @@ const SETTINGS_KEY = "recipeVaultSettingsV031";
 const LIBRARY_KEY = "recipeVaultCookbookLibraryV150";
 const BUILD_193 = true;
 const COOKBOOK_ENGINE_VERSION = "3.4.0";
-window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.3", parser:"Visual Cookbook Mapper v4"};
+window.RECIPE_VAULT_ENGINES = {...(window.RECIPE_VAULT_ENGINES||{}), cookbook:"4.4", parser:"Visual Cookbook Mapper v5"};
 const PHOTO_MIN_AREA = 42000;
 const PHOTO_RECIPE_TIMEOUT_MS = 900;
 const PAGE_PREVIEW_SCALE = .82;
@@ -1323,7 +1323,17 @@ function buildCandidate(group){
 
   // Keep all reconstructed cooking steps. Some cookbook PDFs omit printed step numbers,
   // so dropping unnumbered imperative lines can erase most of the directions.
-  instructions=instructions.filter(t=>instructionLike(String(t||'').replace(/^\d+[.)]\s*/,''))||/^\d+[.)]\s+/.test(String(t||'')));
+  if(instructionsHeader){
+    // Once a visible directions header defines the region, preserve meaningful
+    // prose inside it. Designed PDFs often split away the opening verb, which made
+    // valid Stealth Health directions disappear during the old text-first filter.
+    instructions=instructions.filter(t=>{
+      const safe=String(t||'').replace(/^\d+[.)]\s*/, '').trim();
+      return safe.length>=8&&safe.split(/\s+/).length>=2&&!SECTION_NOISE.test(safe)&&!LINK_NOISE.test(safe)&&!yieldLike(safe);
+    });
+  }else{
+    instructions=instructions.filter(t=>instructionLike(String(t||'').replace(/^\d+[.)]\s*/,''))||/^\d+[.)]\s+/.test(String(t||'')));
+  }
   instructions=instructions.map((t,i)=>/^\d+[.)]\s+/.test(t)?t:`${i+1}. ${t}`);
   const leftDensity=lines.filter(l=>l.x<W/2).reduce((n,l)=>n+l.text.length,0),rightDensity=lines.filter(l=>l.x>=W/2).reduce((n,l)=>n+l.text.length,0);
   const warnings=[];
@@ -1981,13 +1991,54 @@ function mappedText(page,b,mode="prose",allBoxes=[]){
  }
  return lines.map(l=>cleanLine(l.text)).filter(Boolean).join("\n").replace(/\s+\n/g,"\n").trim();
 }
+function mapperVisualLayoutSignals(page){
+ const rich=(page.richLines||[]).filter(line=>cleanLine(line?.text));
+ const W=Number(page.width||600),H=Number(page.height||800);
+ if(rich.length<6)return {score:0,title:false,sectionHeaders:0,columns:0,nutritionBanner:false,denseBody:false,instructionBody:false};
+ const fonts=rich.map(line=>Number(line.fontSize||0)).filter(size=>size>3&&size<30).sort((a,b)=>a-b);
+ const bodyFont=fonts[Math.floor(fonts.length*.55)]||10;
+ const headings=rich.filter(line=>{
+  const text=cleanLine(line.text),words=text.split(/\s+/).filter(Boolean).length;
+  return words>=1&&words<=10&&text.length<=90&&Number(line.fontSize||0)>=Math.max(15,bodyFont*1.32)&&!LINK_NOISE.test(text)&&!yieldLike(text);
+ });
+ const title=headings.some(line=>{
+  const center=(Number(line.x||0)+Number(line.width||0)/2);
+  return Number(line.y||0)>H*.60&&center>W*.12&&center<W*.88&&!SECTION_NOISE.test(cleanLine(line.text));
+ });
+ const sectionLines=rich.filter(line=>/^(?:ingredients?|directions?|instructions?|method|preparation)\s*:?$/i.test(cleanLine(line.text)));
+ const nutritionBanner=rich.some(line=>{
+  const text=cleanLine(line.text);
+  return /\b(?:calories?|protein|carbs?|fat|macros?|nutrition)\b/i.test(text)&&((line.width||0)>W*.28||text.length>28);
+ });
+ const body=rich.filter(line=>Number(line.fontSize||0)<=Math.max(17,bodyFont*1.35)&&cleanLine(line.text).length>2);
+ const bins=[0,0,0,0];
+ body.forEach(line=>{const center=(Number(line.x||0)+Number(line.width||0)/2)/W;bins[Math.max(0,Math.min(3,Math.floor(center*4)))]++;});
+ const activeBins=bins.filter(count=>count>=3).length;
+ const columns=activeBins>=3?2:activeBins>=2?1:0;
+ const denseBody=body.length>=14;
+ const lowerBody=body.filter(line=>Number(line.y||0)<H*.58);
+ const proseLines=lowerBody.filter(line=>{
+  const text=cleanLine(line.text);
+  return text.split(/\s+/).length>=4&&!ingredientLike(text)&&!SECTION_NOISE.test(text)&&!LINK_NOISE.test(text);
+ });
+ const instructionBody=proseLines.length>=3||lowerBody.filter(line=>instructionLike(cleanLine(line.text))).length>=2;
+ let score=0;
+ if(title)score+=14;
+ if(sectionLines.length>=2)score+=18;else if(sectionLines.length===1)score+=9;
+ if(nutritionBanner)score+=8;
+ if(columns===2)score+=10;else if(columns===1)score+=5;
+ if(denseBody)score+=6;
+ if(instructionBody)score+=9;
+ return {score,title,sectionHeaders:sectionLines.length,columns,nutritionBanner,denseBody,instructionBody};
+}
 function mapperPageRecipeScore(page){
  const raw=page.text||(page.lines||[]).join("\n")||"";
  const text=raw.toLowerCase();
  const compact=text.replace(/[^a-z0-9]+/g," ");
  const lines=(page.lines||[]).map(x=>cleanLine(x)).filter(Boolean);
  const lineCount=(page.richLines||[]).length||lines.length;
- let score=0;
+ const visual=mapperVisualLayoutSignals(page);
+ let score=visual.score;
  const hasIngredients=/\bingredients?\b/.test(compact)||/i\s*n\s*g\s*r\s*e\s*d\s*i\s*e\s*n\s*t\s*s/i.test(raw);
  const hasInstructions=/\b(directions?|instructions?|method|preparation)\b/.test(compact)||/i\s*n\s*s\s*t\s*r\s*u\s*c\s*t\s*i\s*o\s*n\s*s/i.test(raw);
  const hasNutrition=/\b(calories?|protein|carbs?|fat|macros?|nutrition)\b/.test(compact);
@@ -2008,6 +2059,11 @@ function mapperPageRecipeScore(page){
  // but a dense page with many quantity lines plus step-like prose is still a recipe.
  if(!hasIngredients&&!hasInstructions&&quantityLines>=5&&numberedSteps>=1)score=Math.max(score,58);
  if(!hasIngredients&&quantityLines>=6&&hasNutrition)score=Math.max(score,52);
+ // Layout-first fallback for image-heavy designed cookbooks such as Stealth Health.
+ // A clear title, recipe columns, nutrition strip, and lower instruction body can
+ // identify a recipe even when PDF text extraction fragments the printed labels.
+ if(visual.title&&visual.columns>=1&&visual.instructionBody&&(visual.sectionHeaders>=1||visual.nutritionBanner))score=Math.max(score,56);
+ if(visual.title&&visual.sectionHeaders>=2&&visual.denseBody)score=Math.max(score,62);
  if(/table of contents|copyright|all rights reserved|about the author|acknowledg|disclaimer/.test(text))score-=75;
  if(/^\s*(index|contents)\s*$/im.test(raw))score-=65;
  if(lineCount<5&&quantityLines<2)score-=35;
