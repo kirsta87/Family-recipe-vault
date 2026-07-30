@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="recipe-vault-build" content="252">
+  <meta name="recipe-vault-build" content="253">
   <meta name="theme-color" content="#914b43">
   <title>Meal Planner · Glaister Family Recipe Vault</title>
-  <link rel="stylesheet" href="styles.css?v=252">
+  <link rel="stylesheet" href="styles.css?v=253">
 <style>
 body.planner-view-only .planner-add-meal,
 body.planner-view-only .planner-remove-meal,
@@ -117,13 +117,13 @@ body.planner-view-only .planner-week-heading::after {
   <div id="plannerAssignDates" class="meal-plan-date-choices"></div>
   <p id="plannerAssignStatus" class="import-status" aria-live="polite"></p>
 </dialog>
-<script src="config.js?v=193"></script><script src="meal-planner.js?v=252"></script>
+<script src="config.js?v=193"></script><script src="meal-planner.js?v=253"></script>
 
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=252", {updateViaCache:"none"});
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=253", {updateViaCache:"none"});
       await registration.update();
     } catch (error) {
       console.warn("Service worker update failed:", error);
@@ -131,5 +131,5 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
-  <script src="build-status.js?v=252"></script>
+  <script src="build-status.js?v=253"></script>
 </body></html>

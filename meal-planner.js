@@ -31,6 +31,7 @@ function importSharedPlannerSettingsFromLink(){
 importSharedPlannerSettingsFromLink();
 const WEEKLY_PLANS_KEY = "recipeVaultWeeklyPlansV104";
 const WEEKLY_PLANS_BACKUP_KEY = "recipeVaultWeeklyPlansBackupV242";
+const WEEKLY_PLANS_RECOVERY_KEY = "recipeVaultWeeklyPlansRecoveryV253";
 const PLANNER_RECIPE_CACHE_KEY = "recipeVaultPlannerRecipeCacheV118";
 const PANTRY_KEY = "recipeVaultPantryV130";
 const PANTRY_CHECKIN_KEY = "recipeVaultPantryCheckinV130";
@@ -68,14 +69,18 @@ let recipes = [];
 let plans = readPlans();
 let plannerRecoveredFromBackup = false;
 try{
-  const backupPayload = JSON.parse(localStorage.getItem(WEEKLY_PLANS_BACKUP_KEY) || "null");
-  const backupPlansValue = backupPayload?.plans && typeof backupPayload.plans === "object" ? backupPayload.plans : null;
-  const currentMealCount = countPlannedMeals(plans);
-  const backupMealCount = backupPlansValue ? countPlannedMeals(backupPlansValue) : 0;
-  // Build 243 emergency recovery: if sync wiped the planner but Build 242 saved
-  // a fuller local backup, restore it before contacting shared storage.
-  if(backupPlansValue && backupMealCount > currentMealCount){
-    plans = backupPlansValue;
+  const candidates = [
+    {label:"backup", payload:JSON.parse(localStorage.getItem(WEEKLY_PLANS_BACKUP_KEY) || "null")},
+    {label:"recovery", payload:JSON.parse(localStorage.getItem(WEEKLY_PLANS_RECOVERY_KEY) || "null")}
+  ].filter(item => item.payload?.plans && typeof item.payload.plans === "object");
+  let fullest = {label:"current", plans, count:countPlannedMeals(plans)};
+  for(const item of candidates){
+    const count = countPlannedMeals(item.payload.plans);
+    if(count > fullest.count) fullest = {label:item.label, plans:item.payload.plans, count};
+  }
+  // Restore the fullest durable browser copy before any shared request runs.
+  if(fullest.label !== "current"){
+    plans = fullest.plans;
     localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans));
     plannerRecoveredFromBackup = true;
   }
@@ -239,15 +244,45 @@ function readPlans(){
   }
 }
 
+function totalPlannerItems(allPlans){
+  return Object.values(allPlans || {}).reduce((total, plan) => total +
+    Object.values(plan?.days || {}).reduce((sum, items) => sum + recipeIdList(items).length, 0) +
+    (Array.isArray(plan?.pool) ? plan.pool.length : 0) +
+    (Array.isArray(plan?.mealPrep) ? plan.mealPrep.length : 0), 0);
+}
+function readStoredPlanEnvelope(key){
+  try{
+    const parsed = JSON.parse(localStorage.getItem(key) || "null");
+    if(parsed?.plans && typeof parsed.plans === "object") return parsed;
+  }catch(error){}
+  return null;
+}
+function preserveRecoveryPlans(value, reason = "local-save"){
+  try{
+    const candidate = value && typeof value === "object" ? value : {};
+    if(!Object.keys(candidate).length) return;
+    const existing = readStoredPlanEnvelope(WEEKLY_PLANS_RECOVERY_KEY);
+    if(!existing || totalPlannerItems(candidate) >= totalPlannerItems(existing.plans)){
+      localStorage.setItem(WEEKLY_PLANS_RECOVERY_KEY, JSON.stringify({
+        savedAt:new Date().toISOString(), reason, plans:JSON.parse(JSON.stringify(candidate))
+      }));
+    }
+  }catch(error){ console.warn("Planner recovery copy could not be saved:", error); }
+}
 function backupPlans(value){
   try{
-    const current = value || readPlans();
-    if(current && Object.keys(current).length){
-      localStorage.setItem(WEEKLY_PLANS_BACKUP_KEY, JSON.stringify({savedAt:new Date().toISOString(), plans:current}));
+    const candidate = value || readPlans();
+    if(!candidate || !Object.keys(candidate).length) return;
+    const existing = readStoredPlanEnvelope(WEEKLY_PLANS_BACKUP_KEY);
+    // Never rotate a fuller backup out merely because shared sync returned an
+    // older/partial plan. Intentional deletions are protected after verification.
+    if(!existing || totalPlannerItems(candidate) >= totalPlannerItems(existing.plans)){
+      localStorage.setItem(WEEKLY_PLANS_BACKUP_KEY, JSON.stringify({savedAt:new Date().toISOString(), plans:candidate}));
     }
   }catch(error){ console.warn("Planner backup could not be saved:", error); }
 }
-function savePlans(){
+function savePlans(reason = "local-save"){
+  preserveRecoveryPlans(plans, reason);
   try{ backupPlans(JSON.parse(localStorage.getItem(WEEKLY_PLANS_KEY) || "{}")); }catch(error){}
   localStorage.setItem(WEEKLY_PLANS_KEY, JSON.stringify(plans));
 }
@@ -506,7 +541,7 @@ async function saveSharedWeek(date = activeWeek){
   plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.pendingSync = true;
   plans[key] = plan;
-  savePlans();
+  savePlans("pending-user-edit");
 
   try{
     await queueSharedPlanSave(key, plan, versionBeingSaved, {allowDestructive:true, source:"planner-user-edit"});
@@ -518,7 +553,18 @@ async function saveSharedWeek(date = activeWeek){
   }catch(error){
     const current = plans[key];
     if(current?.pendingSync){
-      $("weekStatus").textContent = "Saved on this device; shared sync will retry later";
+      $("weekStatus").textContent = "Saved on this device; retrying shared sync…";
+      // Retry the exact durable local version. A refresh is not required.
+      setTimeout(() => {
+        const latest = plans[key];
+        if(latest?.pendingSync && latest.updatedAt === versionBeingSaved){
+          queueSharedPlanSave(key, latest, versionBeingSaved, {allowDestructive:true, source:"planner-user-edit-retry"})
+            .then(() => {
+              if($("weekStatus")?.textContent.includes("retrying")) $("weekStatus").textContent = "Saved and verified";
+            })
+            .catch(retryError => { $("weekStatus").title = retryError.message || String(retryError); });
+        }
+      }, 4000);
     }else{
       $("weekStatus").textContent = error.message || "The newest shared planner was loaded.";
     }

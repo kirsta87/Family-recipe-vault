@@ -1,0 +1,10 @@
+BUILD 253 — Durable planner recovery and serialized sync
+
+Fixes:
+- Keeps a durable recovery journal that cannot be replaced by an older five-meal shared copy.
+- Restores the fullest local planner copy before shared synchronization starts.
+- Does not rotate a fuller backup out when a stale/partial plan appears.
+- Automatically retries a failed user save without requiring a refresh.
+- Serializes Apps Script meal-plan writes with LockService to prevent revision races.
+
+Deploy Apps-Script-Build-253.gs first, then upload the frontend files.
