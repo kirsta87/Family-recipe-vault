@@ -1,10 +1,10 @@
 "use strict";
-const BUILD = "256";
+const BUILD = "257";
 const CACHE_NAME = `recipe-vault-build-${BUILD}`;
 const APP_SHELL = [
   "./", "./index.html", `./app.js?v=${BUILD}`,
   "./cookbooks.html", `./cookbooks.js?v=${BUILD}`,
-  "./meal-planner.html", `./meal-planner.js?v=${BUILD}`,
+  "./meal-planner.html", `./meal-planner.js?v=${BUILD}`, `./meal-prep.js?v=${BUILD}`, `./meal-prep.css?v=${BUILD}`,
   "./pantry.html", "./recipe-health.html", "./manage-collections.html",
   "./styles.css", `./build-status.js?v=${BUILD}`, "./build.json"
 ];

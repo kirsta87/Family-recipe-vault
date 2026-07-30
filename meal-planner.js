@@ -203,6 +203,8 @@ function normalizePlanShape(plan, key){
   cleanPlan.pool = (Array.isArray(cleanPlan.pool) ? cleanPlan.pool : [])
     .map(value => normalizePlanReference(value, cleanPlan))
     .filter(Boolean);
+  cleanPlan.made = cleanPlan.made && typeof cleanPlan.made === "object" ? cleanPlan.made : {};
+  cleanPlan.mealPrep = Array.isArray(cleanPlan.mealPrep) ? cleanPlan.mealPrep : [];
   cleanPlan.revision = Math.max(0, Number(cleanPlan.revision) || 0);
   cleanPlan.baseRevision = Math.max(0, Number(cleanPlan.baseRevision) || cleanPlan.revision);
   return cleanPlan;
@@ -1081,22 +1083,50 @@ function cleanIngredientName(value){
     .trim();
 }
 
-function displayUnit(value){
-  const unit = String(value || "").toLowerCase();
-  return /^(units?|pieces?)$/.test(unit) ? "" : unit;
+function normalizeIngredientUnit(value){
+  const unit = String(value || "").toLowerCase().replace(/\.$/, "");
+  const aliases = {
+    c:"cup", cup:"cup", cups:"cup",
+    tbsp:"tablespoon", tablespoon:"tablespoon", tablespoons:"tablespoon",
+    tsp:"teaspoon", teaspoon:"teaspoon", teaspoons:"teaspoon",
+    oz:"ounce", ounce:"ounce", ounces:"ounce",
+    lb:"pound", lbs:"pound", pound:"pound", pounds:"pound",
+    g:"gram", gram:"gram", grams:"gram",
+    kg:"kilogram", kilogram:"kilogram", kilograms:"kilogram",
+    ml:"milliliter", milliliter:"milliliter", milliliters:"milliliter",
+    l:"liter", liter:"liter", liters:"liter",
+    clove:"clove", cloves:"clove", can:"can", cans:"can",
+    package:"package", packages:"package", pkg:"package",
+    stick:"stick", sticks:"stick", slice:"slice", slices:"slice",
+    piece:"", pieces:"", unit:"", units:""
+  };
+  return Object.prototype.hasOwnProperty.call(aliases, unit) ? aliases[unit] : unit;
+}
+
+function unitMeasure(unit, amount){
+  const normalized = normalizeIngredientUnit(unit);
+  const table = {
+    teaspoon:{dimension:"volume-us", factor:1}, tablespoon:{dimension:"volume-us", factor:3}, cup:{dimension:"volume-us", factor:48},
+    ounce:{dimension:"weight-us", factor:1}, pound:{dimension:"weight-us", factor:16},
+    gram:{dimension:"weight-metric", factor:1}, kilogram:{dimension:"weight-metric", factor:1000},
+    milliliter:{dimension:"volume-metric", factor:1}, liter:{dimension:"volume-metric", factor:1000}
+  };
+  const info = table[normalized];
+  if(!info) return {unit:normalized, dimension:`unit:${normalized}`, baseAmount:amount};
+  return {unit:normalized, dimension:info.dimension, baseAmount:amount * info.factor};
 }
 
 function parseIngredientLine(line){
   const original = String(line || "").trim();
   const text = normalizeFractionText(original);
-  const match = text.match(/^(?:(\d+(?:\.\d+)?)\s+)?(\d+\/\d+|\d+(?:\.\d+)?)(?:\s+)(cups?|c|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|lb|grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|cloves?|cans?|packages?|pkg|sticks?|slices?|pieces?|units?)\b\s*(.*)$/i);
+  const match = text.match(/^(?:(\d+(?:\.\d+)?)\s+)?(\d+\/\d+|\d+(?:\.\d+)?)(?:\s+)(cups?|c|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|lb|grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|cloves?|cans?|packages?|pkg|sticks?|slices?|pieces?|units?)\s*(.*)$/i);
   if(match){
     const whole = match[1] ? Number(match[1]) : 0;
     const amount = whole + numberFromToken(match[2]);
-    const unit = displayUnit(match[3]);
     const name = cleanIngredientName(match[4]);
     if(Number.isFinite(amount) && name){
-      return {original, amount, unit, name, key:`${unit}|${ingredientMemoryKey(name)}`};
+      const measure = unitMeasure(match[3], amount);
+      return {original, amount, unit:measure.unit, baseAmount:measure.baseAmount, dimension:measure.dimension, name, key:`${measure.dimension}|${ingredientMemoryKey(name)}`};
     }
   }
   const noUnit = text.match(/^(?:(\d+(?:\.\d+)?)\s+)?(\d+\/\d+|\d+(?:\.\d+)?)\s+(.+)$/);
@@ -1104,34 +1134,59 @@ function parseIngredientLine(line){
     const amount = (noUnit[1] ? Number(noUnit[1]) : 0) + numberFromToken(noUnit[2]);
     const name = cleanIngredientName(noUnit[3]);
     if(Number.isFinite(amount) && name){
-      return {original, amount, unit:"", name, key:`|${ingredientMemoryKey(name)}`};
+      return {original, amount, unit:"", baseAmount:amount, dimension:"count", name, key:`count|${ingredientMemoryKey(name)}`};
     }
   }
   const name = cleanIngredientName(original);
-  return {original, amount:null, unit:"", name, key:`raw|${ingredientMemoryKey(name)}`};
+  return {original, amount:null, unit:"", baseAmount:null, dimension:"raw", name, key:`raw|${ingredientMemoryKey(name)}`};
 }
 
 function prettyAmount(value){
-  const rounded = Math.round(value * 100) / 100;
-  const whole = Math.floor(rounded);
-  const fraction = Math.round((rounded - whole) * 8) / 8;
-  const labels = {0.125:"1/8",0.25:"1/4",0.375:"3/8",0.5:"1/2",0.625:"5/8",0.75:"3/4",0.875:"7/8"};
-  if(!fraction) return String(whole);
-  if(labels[fraction]) return whole ? `${whole} ${labels[fraction]}` : labels[fraction];
-  return String(rounded);
+  const rounded = Math.round(Number(value) * 1000) / 1000;
+  const whole = Math.floor(rounded + 1e-9);
+  const decimal = rounded - whole;
+  const fractions = [[0.125,"1/8"],[0.25,"1/4"],[1/3,"1/3"],[0.375,"3/8"],[0.5,"1/2"],[0.625,"5/8"],[2/3,"2/3"],[0.75,"3/4"],[0.875,"7/8"],[1,"1"]];
+  let best = fractions.reduce((winner,current) => Math.abs(current[0]-decimal) < Math.abs(winner[0]-decimal) ? current : winner, [0,""]);
+  if(Math.abs(best[0]-decimal) > 0.035) return String(rounded);
+  if(best[0] === 1) return String(whole + 1);
+  if(!best[1]) return String(whole);
+  return whole ? `${whole} ${best[1]}` : best[1];
+}
+
+function pluralUnit(unit, amount){
+  if(!unit) return "";
+  return Math.abs(Number(amount) - 1) < 0.0001 ? unit : `${unit}s`;
+}
+
+function displayMeasure(item){
+  const amount = Number(item.baseAmount ?? item.amount);
+  if(!Number.isFinite(amount)) return null;
+  let shown = amount, unit = item.unit || "";
+  if(item.dimension === "volume-us"){
+    if(amount >= 48 && Math.abs(amount / 48 - Math.round(amount / 48)) < .001){ shown=amount/48; unit="cup"; }
+    else if(amount >= 3){ shown=amount/3; unit="tablespoon"; }
+    else { shown=amount; unit="teaspoon"; }
+  }else if(item.dimension === "weight-us"){
+    if(amount >= 16){ shown=amount/16; unit="pound"; } else { shown=amount; unit="ounce"; }
+  }else if(item.dimension === "weight-metric"){
+    if(amount >= 1000){ shown=amount/1000; unit="kilogram"; } else { shown=amount; unit="gram"; }
+  }else if(item.dimension === "volume-metric"){
+    if(amount >= 1000){ shown=amount/1000; unit="liter"; } else { shown=amount; unit="milliliter"; }
+  }
+  return {amount:shown, unit:pluralUnit(unit, shown)};
 }
 
 function selectedShoppingRecipes(){
-  const selected = [...document.querySelectorAll('[data-shopping-recipe]:checked')]
+  const selectedById = new Map();
+  [...document.querySelectorAll('[data-shopping-recipe]:checked')]
     .map(input => recipeById(input.value))
-    .filter(Boolean);
+    .filter(Boolean)
+    .forEach(recipe => selectedById.set(String(recipe.id), recipe));
   extraShoppingRecipeIds.forEach(id => {
     const recipe = recipeById(id);
-    if(recipe && !selected.some(item => String(item.id) === String(recipe.id))){
-      selected.push(recipe);
-    }
+    if(recipe) selectedById.set(String(recipe.id), recipe);
   });
-  return selected;
+  return [...selectedById.values()];
 }
 
 function renderExtraShoppingRecipes(){
@@ -1159,7 +1214,9 @@ function renderExtraShoppingRecipes(){
 }
 
 function openShoppingListDialog(){
-  const planned = plannedRecipesForWeek();
+  const plannedMeals = plannedRecipesForWeek();
+  const prepMeals = prepRecipesForWeek();
+  const planned = [...plannedMeals, ...prepMeals];
   extraShoppingRecipeIds = new Set();
   $("shoppingListTitle").textContent = `Shopping list · ${weekLabel(activeWeek)}`;
   $("shoppingListIntro").textContent = planned.length
@@ -1168,7 +1225,7 @@ function openShoppingListDialog(){
   $("shoppingRecipeChooser").innerHTML = planned.length ? planned.map(({day,recipe}) => `
     <label class="shopping-recipe-choice">
       <input type="checkbox" data-shopping-recipe value="${escapeHTML(recipe.id)}" checked>
-      <span><strong>${escapeHTML(recipe.name || "Untitled recipe")}</strong><small>${escapeHTML(day)}</small></span>
+      <span><strong>${escapeHTML(recipe.name || "Untitled recipe")}</strong><small>${escapeHTML(day)}${day === "Meal prep" ? " · added automatically" : ""}</small></span>
     </label>`).join("") : '<p class="muted">No planned recipes this week.</p>';
   $("shoppingExtraSearch").value = "";
   renderExtraShoppingRecipes();
@@ -1185,8 +1242,10 @@ function openShoppingListDialog(){
 }
 
 function shoppingItemDisplay(item){
-  if(item.amount === null) return cleanIngredientName(item.original);
-  return `${prettyAmount(item.amount)}${item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
+  if(item.amount === null && item.baseAmount === null) return cleanIngredientName(item.original);
+  const measure = displayMeasure(item);
+  if(!measure) return cleanIngredientName(item.original);
+  return `${prettyAmount(measure.amount)}${measure.unit ? ` ${measure.unit}` : ""} ${item.name}`.trim();
 }
 
 function buildShoppingText(){
@@ -1204,6 +1263,15 @@ function captureShoppingUiState(){
   };
 }
 
+function shoppingSourceLinks(item){
+  const sources = Array.isArray(item.sources) ? item.sources : [];
+  if(!sources.length) return "";
+  const unique = [...new Map(sources.map(source => [String(source.recipeId || source.recipeName), source])).values()];
+  return `<div class="shopping-item-sources"><span>Used in:</span>${unique.map(source => source.recipeId
+    ? `<a href="index.html?recipe=${encodeURIComponent(source.recipeId)}" target="_blank" rel="noopener">${escapeHTML(source.recipeName || "Recipe")}</a>`
+    : `<span>${escapeHTML(source.recipeName || "Recipe")}</span>`).join('<span aria-hidden="true"> • </span>')}</div>`;
+}
+
 function renderShoppingOutput(selectedRecipes, preservedState = null){
   const state = preservedState || {checkedKeys:new Set(), brands:{}};
   const {grouped, activeGroups} = buildShoppingText();
@@ -1219,8 +1287,8 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
           const rememberedBrand=state.brands[item.itemKey] ?? shoppingBrandMemory[memoryKey] ?? "";
           const checked=state.checkedKeys.has(item.itemKey) ? "checked" : "";
           return `<div class="shopping-item-row">
-            <label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" ${checked}><span class="shopping-item-label">${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}</span></label>
-            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}">${item.parts?.length > 1 ? `<button class="shopping-split-item" type="button" data-shopping-split="${escapeHTML(item.itemKey)}" aria-label="Separate combined ingredient ${escapeHTML(item.display)}">Separate</button>` : ""}<button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
+            <label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" ${checked}><span class="shopping-item-label">${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}${shoppingSourceLinks(item)}</span></label>
+            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}">${(item.parts?.length > 1 || item.sources?.length > 1) ? `<button class="shopping-split-item" type="button" data-shopping-split="${escapeHTML(item.itemKey)}" aria-label="Separate combined ingredient ${escapeHTML(item.display)}">Separate</button>` : ""}<button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
             <input class="shopping-brand-input" type="text" data-shopping-brand="${escapeHTML(item.itemKey)}" value="${escapeHTML(rememberedBrand)}" placeholder="Brand (optional)" aria-label="Brand for ${escapeHTML(item.display)}">
             <select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select>
           </div>`;
@@ -1258,6 +1326,8 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
       item.original = edited;
       item.amount = parsed.amount;
       item.unit = parsed.unit;
+      item.baseAmount = parsed.baseAmount;
+      item.dimension = parsed.dimension;
       item.name = parsed.name || edited;
       item.display = edited;
       renderShoppingOutput(selectedRecipes, uiState);
@@ -1293,6 +1363,7 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
       return {
         ...parsed,
         parts:[line],
+        sources:(item.sources || []).filter(source => String(source.line || "").trim() === line),
         itemKey:`${item.itemKey}-split-${Date.now()}-${offset}`,
         display:shoppingItemDisplay(parsed),
         category:categoryForIngredient(parsed.name)
@@ -1351,12 +1422,15 @@ function buildShoppingList(){
   selected.forEach(recipe => {
     [...new Set((recipe.ingredients || []).map(item => String(item).trim()).filter(Boolean))].forEach(line => {
       const parsed = parseIngredientLine(line);
+      const source = {recipeId:String(recipe.id || ""), recipeName:String(recipe.name || "Untitled recipe"), line};
       if(parsed.amount !== null && merged.has(parsed.key)){
         const existing = merged.get(parsed.key);
-        existing.amount += parsed.amount;
+        existing.baseAmount = Number(existing.baseAmount ?? existing.amount) + Number(parsed.baseAmount ?? parsed.amount);
+        existing.amount = existing.baseAmount;
         existing.parts.push(line);
+        existing.sources.push(source);
       }else if(!merged.has(parsed.key)){
-        merged.set(parsed.key, {...parsed, parts:[line]});
+        merged.set(parsed.key, {...parsed, parts:[line], sources:[source]});
       }
     });
   });
@@ -1375,7 +1449,7 @@ function buildShoppingList(){
   $("copyShoppingList").hidden = false;
   $("printShoppingList").hidden = false;
   $("finishShopping").hidden = false;
-  $("shoppingListStatus").textContent = "Matching ingredients were combined. Move anything once and the list will remember next time.";
+  $("shoppingListStatus").textContent = "Planned meals and meal-prep recipes were added. Matching measurements were combined; each ingredient shows which recipe uses it.";
   $("shoppingListStatus").className = "import-status success";
 }
 

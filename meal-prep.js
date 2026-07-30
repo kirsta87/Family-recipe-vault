@@ -244,38 +244,19 @@ async function persist(mutator){
   savePlans(plans);
   render();
   setStatus("Saving meal prep…");
-  const snapshot = JSON.parse(JSON.stringify(plan));
 
+  const snapshot = JSON.parse(JSON.stringify(plan));
   const task = async () => {
     try{
-      const baseRevision = Math.max(0, Number(snapshot.revision) || 0);
-      let sentPlan = {...snapshot, revision:baseRevision, baseRevision, pendingSync:false};
-      let result = await plannerPost({
-        action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision,
-        allowDestructive:true, source:"meal-prep-edit", mutationId:`${key}:${snapshot.updatedAt}`
-      });
-      if(result.conflict){
-        const currentRevision = Math.max(0, Number(result.currentPlan?.revision) || Number(result.revision) || 0);
-        sentPlan = {...sentPlan, revision:currentRevision, baseRevision:currentRevision};
-        result = await plannerPost({
-          action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision:currentRevision,
-          allowDestructive:true, source:"meal-prep-edit", mutationId:`${key}:${snapshot.updatedAt}:retry`
-        });
-        if(result.conflict) throw new Error("Meal prep changed twice during sync; local copy preserved.");
-      }
-      const verification = await plannerPost({action:"getMealPlans"});
-      const verified = verification?.plans?.[key] || {};
-      if(plannerContentSignature(verified) !== plannerContentSignature(sentPlan)) throw new Error("Shared verification failed; meal prep remains saved on this device.");
+      await plannerPost({action:"saveMealPlan", weekKey:key, plan:snapshot});
       const latest = readPlans();
-      if(latest[key]){
-        latest[key].revision = Math.max(0, Number(verified.revision) || Number(result.plan?.revision) || baseRevision);
-        latest[key].baseRevision = latest[key].revision;
-        if(latest[key].updatedAt === snapshot.updatedAt) latest[key].pendingSync = false;
+      if(latest[key] && latest[key].updatedAt === snapshot.updatedAt){
+        latest[key].pendingSync = false;
         savePlans(latest);
       }
-      setStatus("Meal prep saved and verified.", "success");
+      setStatus("Meal prep saved.", "success");
     }catch(error){
-      setStatus("Saved on this device; shared sync will retry when the planner saves again.", "warning");
+      setStatus("Saved on this device; shared sync will retry with the next change.", "warning");
       console.warn("Meal prep shared save:", error);
     }
   };

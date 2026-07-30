@@ -1028,3 +1028,8 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .shopping-split-item{border:1px solid currentColor;border-radius:999px;background:transparent;padding:.38rem .65rem;font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .shopping-split-item:hover{background:rgba(0,0,0,.05)}
 @media print{.shopping-split-item{display:none!important}}
+
+/* Build 257 shopping-list recipe tracing */
+.shopping-item-sources{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;font-size:.72rem;font-weight:600;color:#756d64}
+.shopping-item-sources a{color:#7d443e;text-decoration:underline;text-underline-offset:2px}
+.shopping-item-sources span:first-child{font-weight:800}

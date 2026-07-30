@@ -1,0 +1,6 @@
+Build 257
+- Restores the Meal Prep This Week panel.
+- Meal-prep vault recipes are checked automatically when generating the shopping list.
+- Every shopping ingredient now shows the recipe(s) that use it, with links back to the recipe.
+- Compatible measurements now combine across tsp/tbsp/cup, oz/lb, g/kg, and ml/l.
+- Combined items keep the Separate control.
