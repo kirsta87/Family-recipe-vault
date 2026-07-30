@@ -1042,6 +1042,20 @@ function plannedRecipesForWeek(){
   });
 }
 
+function prepRecipesForWeek(){
+  const plan = planFor();
+  const prepItems = Array.isArray(plan.mealPrep) ? plan.mealPrep : [];
+  return prepItems.map(item => {
+    if(!item || typeof item !== "object") return null;
+    let recipe = item.recipeId ? recipeForPlan(item.recipeId, plan) : null;
+    if(!recipe && item.name){
+      const target = String(item.name).trim().toLowerCase();
+      recipe = recipes.find(candidate => String(candidate?.name || "").trim().toLowerCase() === target) || null;
+    }
+    return recipe ? {day:"Meal prep", recipe} : null;
+  }).filter(Boolean);
+}
+
 function categoryForIngredient(text){
   const memoryKey = ingredientMemoryKey(text);
   if(memoryKey && shoppingCategoryMemory[memoryKey]) return shoppingCategoryMemory[memoryKey];
