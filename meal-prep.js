@@ -135,7 +135,6 @@ function plannerContentSignature(value){
   return JSON.stringify(stablePlannerValue({
     days:value?.days || {},
     pool:Array.isArray(value?.pool) ? value.pool : [],
-    recipeSnapshots:value?.recipeSnapshots || {},
     made:value?.made || {},
     mealPrep:Array.isArray(value?.mealPrep) ? value.mealPrep : []
   }));
@@ -143,18 +142,96 @@ function plannerContentSignature(value){
 
 async function plannerPost(payload){
   if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Shared planner settings are missing.");
-  const form = new URLSearchParams();
-  form.set("payload", JSON.stringify({...payload, key:config.sharedKey}));
-  const response = await fetch(config.appsScriptUrl, {
-    method:"POST", body:form, redirect:"follow", cache:"no-store"
+
+  const request = {...payload, key:config.sharedKey};
+
+  if(request.action === "getMealPlans"){
+    return new Promise((resolve, reject) => {
+      const callbackName = `recipeVaultPlanner_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const script = document.createElement("script");
+      const timer = setTimeout(() => cleanup(new Error("Shared planner did not respond.")), 12000);
+
+      function cleanup(error, result){
+        clearTimeout(timer);
+        try{ delete window[callbackName]; }catch(_error){ window[callbackName] = undefined; }
+        script.remove();
+        if(error) reject(error); else resolve(result);
+      }
+
+      window[callbackName] = result => {
+        if(!result?.success) return cleanup(new Error(result?.error || "Shared planner load failed."));
+        cleanup(null, result);
+      };
+
+      const url = new URL(config.appsScriptUrl);
+      url.searchParams.set("action", "getMealPlans");
+      url.searchParams.set("key", config.sharedKey);
+      url.searchParams.set("callback", callbackName);
+      url.searchParams.set("_", String(Date.now()));
+      script.onerror = () => cleanup(new Error("Shared planner could not be reached."));
+      script.src = url.toString();
+      document.head.appendChild(script);
+    });
+  }
+
+  if(request.action !== "saveMealPlan") throw new Error("Unknown planner action.");
+
+  const sourcePlan = request.plan && typeof request.plan === "object" ? request.plan : {};
+  const sharedPlan = {
+    days: sourcePlan.days && typeof sourcePlan.days === "object" ? sourcePlan.days : {},
+    pool: Array.isArray(sourcePlan.pool) ? sourcePlan.pool : [],
+    made: sourcePlan.made && typeof sourcePlan.made === "object" ? sourcePlan.made : {},
+    mealPrep: Array.isArray(sourcePlan.mealPrep) ? sourcePlan.mealPrep : [],
+    updatedAt: sourcePlan.updatedAt || new Date().toISOString()
+  };
+
+  await new Promise((resolve, reject) => {
+    const frameName = `recipeVaultSave_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    const form = document.createElement("form");
+    iframe.name = frameName;
+    iframe.hidden = true;
+    form.hidden = true;
+    form.method = "POST";
+    form.action = config.appsScriptUrl;
+    form.target = frameName;
+
+    const field = document.createElement("input");
+    field.type = "hidden";
+    field.name = "payload";
+    field.value = JSON.stringify({
+      action:"saveMealPlan",
+      key:config.sharedKey,
+      weekKey:request.weekKey,
+      plan:sharedPlan
+    });
+    form.appendChild(field);
+
+    let submitted = false;
+    let finished = false;
+    const timeout = setTimeout(() => finish(), 8000);
+    function finish(error){
+      if(finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      setTimeout(() => { form.remove(); iframe.remove(); }, 0);
+      if(error) reject(error); else resolve();
+    }
+    iframe.addEventListener("load", () => {
+      if(!submitted){
+        submitted = true;
+        form.submit();
+        return;
+      }
+      finish();
+    });
+    iframe.addEventListener("error", () => finish(new Error("Shared planner save could not be submitted.")), {once:true});
+
+    document.body.appendChild(form);
+    document.body.appendChild(iframe);
   });
-  const text = await response.text();
-  if(!response.ok) throw new Error(`Apps Script returned HTTP ${response.status}.`);
-  let result;
-  try { result = JSON.parse(text); }
-  catch { throw new Error("Apps Script returned an unreadable response."); }
-  if(!result.success && !result.conflict) throw new Error(result.error || "Meal prep sync failed.");
-  return result;
+
+  return {success:true};
 }
 
 async function persist(mutator){

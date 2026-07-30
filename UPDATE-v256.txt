@@ -1,0 +1,9 @@
+BUILD 256 — Simple shared planner sync
+
+- One editor, last save wins.
+- Shared plans store only day assignments, pool, made status, meal prep, and updated time.
+- Recipe snapshots and revision/conflict machinery are no longer part of shared saves.
+- Planner reads use JSONP so Google Apps Script redirects cannot trigger browser CORS failures.
+- Planner saves use a hidden form POST, followed by a shared read verification.
+
+Deploy Apps-Script-Build-256.gs first, then upload the frontend files.
