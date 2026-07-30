@@ -1,0 +1,8 @@
+BUILD 255 — Planner payload size and recovery fix
+
+- Removes embedded base64 data-image strings from meal-plan snapshots before shared sync.
+- Prevents meal-plan JSON from exceeding the Google Sheets 50,000-character cell limit.
+- Stops Apps Script platform failures from surfacing as misleading browser CORS errors.
+- Keeps normal image URLs and all planned meals intact.
+
+Deploy Apps-Script-Build-255.gs first, then upload the frontend files.

@@ -353,6 +353,22 @@ async function sharePlanner(){
   }
 }
 
+function sanitizePlannerPayloadForSync(payload){
+  const cleanPayload = JSON.parse(JSON.stringify(payload || {}));
+  const plan = cleanPayload.plan;
+  if(plan?.recipeSnapshots && typeof plan.recipeSnapshots === "object"){
+    Object.values(plan.recipeSnapshots).forEach(snapshot => {
+      if(!snapshot || typeof snapshot !== "object") return;
+      const image = String(snapshot.image || "");
+      // Google Sheets cells have a 50,000-character limit. Embedded base64
+      // images can make one meal-plan JSON cell exceed that limit and cause
+      // Apps Script to return an HTML platform error that Chrome labels CORS.
+      if(image.startsWith("data:")) snapshot.image = "";
+    });
+  }
+  return cleanPayload;
+}
+
 async function plannerPost(payload){
   if(!config.appsScriptUrl){
     throw new Error("Apps Script URL is missing. Open Settings on the main vault and save it again.");
@@ -362,7 +378,7 @@ async function plannerPost(payload){
   }
 
   const form = new URLSearchParams();
-  form.set("payload", JSON.stringify({...payload, key:config.sharedKey}));
+  form.set("payload", JSON.stringify({...sanitizePlannerPayloadForSync(payload), key:config.sharedKey}));
 
   let response;
   try{
