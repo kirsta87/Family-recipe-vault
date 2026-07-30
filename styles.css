@@ -1094,3 +1094,25 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .shopping-item-editor-actions{display:flex;flex-wrap:wrap;gap:10px}
 .shopping-item-editor-close{position:absolute;right:14px;top:14px}
 @media print{.shopping-edit-item{display:none!important}}
+
+
+/* Build 262: clearer planner actions and corrected shopping editor */
+.planner-page-top-actions .primary,
+.planner-page-top-actions .secondary,
+.planner-page-top-actions .linkbtn,
+.planner-page-top-actions .shopping-list-header-button{
+  min-height:56px;
+  padding:14px 24px;
+  font-size:1rem;
+  line-height:1;
+}
+#openShoppingList.shopping-list-header-button{
+  background:var(--clay);
+  color:#fff;
+  border:1px solid rgba(80,45,30,.18);
+  box-shadow:0 8px 20px rgba(92,54,35,.16);
+}
+#openShoppingList.shopping-list-header-button:hover{background:#9f593d}
+.shopping-list-dialog{background:var(--paper);border-color:var(--line)}
+.shopping-list-summary,.shopping-list-recipes{background:#faf6ee;border-color:var(--line)}
+.shopping-category{background:var(--paper);border-color:var(--line)}

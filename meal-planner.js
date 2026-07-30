@@ -1290,18 +1290,47 @@ function looksLikeMultipleIngredientsLine(line){
 
 async function postRecipeIngredientUpdate(recipe, ingredients){
   if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Recipe Vault write settings are missing.");
-  const form = new URLSearchParams();
-  form.set("payload", JSON.stringify({
+  const payload = {
     action:"update",
     key:config.sharedKey,
     id:recipe.id,
     url:recipe.url || "",
     updates:{ingredients}
-  }));
-  const response = await fetch(config.appsScriptUrl, {method:"POST", body:form, redirect:"follow"});
-  const result = await response.json();
-  if(!result?.success) throw new Error(result?.error || "Recipe update failed.");
-  return result;
+  };
+  await new Promise((resolve, reject) => {
+    const frameName = `recipeVaultIngredientUpdate_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    const form = document.createElement("form");
+    iframe.name = frameName;
+    iframe.hidden = true;
+    form.hidden = true;
+    form.method = "POST";
+    form.action = config.appsScriptUrl;
+    form.target = frameName;
+    const field = document.createElement("input");
+    field.type = "hidden";
+    field.name = "payload";
+    field.value = JSON.stringify(payload);
+    form.appendChild(field);
+    let submitted = false;
+    let finished = false;
+    const timer = setTimeout(() => finish(), 8000);
+    function finish(error){
+      if(finished) return;
+      finished = true;
+      clearTimeout(timer);
+      setTimeout(() => { form.remove(); iframe.remove(); }, 0);
+      if(error) reject(error); else resolve();
+    }
+    iframe.addEventListener("load", () => {
+      if(!submitted){ submitted = true; form.submit(); return; }
+      finish();
+    });
+    iframe.addEventListener("error", () => finish(new Error("Recipe update could not be submitted.")), {once:true});
+    document.body.appendChild(form);
+    document.body.appendChild(iframe);
+  });
+  return {success:true};
 }
 
 async function saveRecipeIngredientLines(item, lines){
@@ -1353,7 +1382,7 @@ function openShoppingItemEditor(item, selectedRecipes){
   dialog.querySelector("#saveShoppingItemOnly").addEventListener("click", () => {
     const edited = textarea.value.trim();
     if(!edited){ status.textContent = "The ingredient cannot be blank."; status.className = "import-status error"; return; }
-    if(edited.includes("\\n")){ status.textContent = "For multiple lines, use “Split into separate ingredients.”"; status.className = "import-status error"; return; }
+    if(edited.includes("\n")){ status.textContent = "For multiple lines, use “Split into separate ingredients.”"; status.className = "import-status error"; return; }
     const uiState = captureShoppingUiState();
     const parsed = parseIngredientLine(edited);
     item.original = edited;
@@ -1370,7 +1399,7 @@ function openShoppingItemEditor(item, selectedRecipes){
   });
 
   dialog.querySelector("#splitRecipeIngredientLines")?.addEventListener("click", async () => {
-    const lines = textarea.value.split(/\\n+/).map(line => line.trim()).filter(Boolean);
+    const lines = textarea.value.split(/\n+/).map(line => line.trim()).filter(Boolean);
     if(lines.length < 2){ status.textContent = "Put each ingredient on its own line first."; status.className = "import-status error"; return; }
     status.textContent = "Saving the corrected ingredient lines to the recipe…";
     status.className = "import-status";
