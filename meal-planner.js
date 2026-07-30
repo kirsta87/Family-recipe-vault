@@ -1282,6 +1282,70 @@ function captureShoppingUiState(){
   };
 }
 
+function looksLikeMultipleIngredientsLine(line){
+  const text = normalizeFractionText(String(line || ""));
+  const measurePattern = /(?:^|\s)(?:\d+(?:\.\d+)?|\d+\/\d+)\s*(?:cups?|c\b|tablespoons?|tbsp\b|tblspn\b|teaspoons?|tsp\b|ounces?|oz\b|pounds?|lbs?\b|grams?|g\b|kilograms?|kg\b|milliliters?|ml\b|liters?|l\b|cloves?|cans?|packages?|pkg\b|sticks?|slices?|pieces?|units?)?/gi;
+  return (text.match(measurePattern) || []).filter(Boolean).length >= 2;
+}
+
+async function postRecipeIngredientUpdate(recipe, ingredients){
+  if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Recipe Vault write settings are missing.");
+  const form = new URLSearchParams();
+  form.set("payload", JSON.stringify({
+    action:"update",
+    key:config.sharedKey,
+    id:recipe.id,
+    url:recipe.url || "",
+    updates:{ingredients}
+  }));
+  const response = await fetch(config.appsScriptUrl, {method:"POST", body:form, redirect:"follow"});
+  const result = await response.json();
+  if(!result?.success) throw new Error(result?.error || "Recipe update failed.");
+  return result;
+}
+
+async function splitRecipeIngredientLine(item){
+  const sources = Array.isArray(item.sources) ? item.sources : [];
+  const source = sources.length === 1 ? sources[0] : null;
+  const recipe = source?.recipeId ? recipeById(source.recipeId) : null;
+  const originalLine = String(source?.line || item.original || "").trim();
+  if(!recipe || !originalLine) return;
+
+  const response = window.prompt(
+    `Fix the ingredient line in ${recipe.name || "this recipe"}. Put each ingredient on its own line:`,
+    originalLine
+  );
+  if(response === null) return;
+  const lines = response.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  if(lines.length < 2){
+    $("shoppingListStatus").textContent = "Add at least two separate ingredient lines.";
+    $("shoppingListStatus").className = "import-status error";
+    return;
+  }
+
+  const currentIngredients = Array.isArray(recipe.ingredients) ? [...recipe.ingredients] : [];
+  const lineIndex = currentIngredients.findIndex(line => String(line).trim() === originalLine);
+  if(lineIndex < 0){
+    $("shoppingListStatus").textContent = "That original ingredient line could not be found in the recipe.";
+    $("shoppingListStatus").className = "import-status error";
+    return;
+  }
+  const updatedIngredients = [...currentIngredients];
+  updatedIngredients.splice(lineIndex, 1, ...lines);
+  $("shoppingListStatus").textContent = `Saving the corrected ingredient lines to ${recipe.name || "the recipe"}…`;
+  $("shoppingListStatus").className = "import-status";
+  try{
+    await postRecipeIngredientUpdate(recipe, updatedIngredients);
+    recipe.ingredients = updatedIngredients;
+    buildShoppingList();
+    $("shoppingListStatus").textContent = `Fixed ${recipe.name || "the recipe"} and rebuilt the shopping list.`;
+    $("shoppingListStatus").className = "import-status success";
+  }catch(error){
+    $("shoppingListStatus").textContent = `Could not save the recipe correction: ${error.message || error}`;
+    $("shoppingListStatus").className = "import-status error";
+  }
+}
+
 function shoppingSourceLinks(item){
   const sources = Array.isArray(item.sources) ? item.sources : [];
   if(!sources.length) return "";
@@ -1307,7 +1371,7 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
           const checked=state.checkedKeys.has(item.itemKey) ? "checked" : "";
           return `<div class="shopping-item-row">
             <label class="shopping-item"><input type="checkbox" data-shopping-purchased="${escapeHTML(item.itemKey)}" ${checked}><span class="shopping-item-label">${escapeHTML(item.display)}${pantryNoteForShoppingItem(item)}${shoppingSourceLinks(item)}</span></label>
-            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}">${(item.parts?.length > 1 || item.sources?.length > 1) ? `<button class="shopping-split-item" type="button" data-shopping-split="${escapeHTML(item.itemKey)}" aria-label="Separate combined ingredient ${escapeHTML(item.display)}">Separate</button>` : ""}<button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
+            <div class="shopping-edit-wrap"><input class="shopping-item-edit" type="text" data-shopping-edit="${escapeHTML(item.itemKey)}" value="${escapeHTML(item.display)}" aria-label="Edit ${escapeHTML(item.display)}">${(item.parts?.length > 1 || item.sources?.length > 1) ? `<button class="shopping-split-item" type="button" data-shopping-split="${escapeHTML(item.itemKey)}" aria-label="Separate combined ingredient ${escapeHTML(item.display)}">Separate</button>` : ""}${(item.sources?.length === 1 && looksLikeMultipleIngredientsLine(item.sources[0]?.line || item.original)) ? `<button class="shopping-fix-recipe-line" type="button" data-shopping-fix-recipe="${escapeHTML(item.itemKey)}">Split recipe line</button>` : ""}<button class="shopping-delete-item" type="button" data-shopping-delete="${escapeHTML(item.itemKey)}" aria-label="Remove ${escapeHTML(item.display)} from shopping list">×</button></div>
             <input class="shopping-brand-input" type="text" data-shopping-brand="${escapeHTML(item.itemKey)}" value="${escapeHTML(rememberedBrand)}" placeholder="Brand (optional)" aria-label="Brand for ${escapeHTML(item.display)}">
             <select class="shopping-section-select" data-shopping-item-key="${escapeHTML(item.itemKey)}" aria-label="Move ${escapeHTML(item.display)} to another section">${categoryOptions}</select>
           </div>`;
@@ -1361,6 +1425,11 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
       }
     });
   });
+
+  document.querySelectorAll("[data-shopping-fix-recipe]").forEach(button => button.addEventListener("click", async () => {
+    const item = latestShoppingItems.find(entry => entry.itemKey === button.dataset.shoppingFixRecipe);
+    if(item) await splitRecipeIngredientLine(item);
+  }));
 
   document.querySelectorAll("[data-shopping-split]").forEach(button => button.addEventListener("click", () => {
     const item = latestShoppingItems.find(entry => entry.itemKey === button.dataset.shoppingSplit);

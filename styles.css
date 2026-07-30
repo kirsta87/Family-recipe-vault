@@ -1,4 +1,4 @@
-:root{--cream:#b7c297;--paper:#fffdf8;--ink:#2d2a24;--muted:#766f64;--sage:#697454;--sage-dark:#505c3f;--clay:#b66d4c;--line:#ded4c3}
+:root{--cream:#87916f;--paper:#fffdf8;--ink:#2d2a24;--muted:#766f64;--sage:#697454;--sage-dark:#505c3f;--clay:#b66d4c;--line:#ded4c3}
 *{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font-family:system-ui,-apple-system,sans-serif}
 .hero{max-width:1200px;margin:auto;padding:48px 24px 28px;display:flex;justify-content:space-between;align-items:end;gap:20px}
 h1,h2{font-family:Georgia,serif}.hero h1{font-size:clamp(3rem,7vw,5.5rem);line-height:.9;margin:0}.eyebrow{letter-spacing:.16em;font-weight:800;color:var(--clay)}
@@ -1033,3 +1033,5 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .shopping-item-sources{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;font-size:.72rem;font-weight:600;color:#756d64}
 .shopping-item-sources a{color:#7d443e;text-decoration:underline;text-underline-offset:2px}
 .shopping-item-sources span:first-child{font-weight:800}
+
+.shopping-fix-recipe-line{border:1px solid #9a6b43;border-radius:999px;background:#f4eadc;color:#5d3c24;padding:8px 11px;font:inherit;font-weight:800;cursor:pointer;white-space:nowrap}.shopping-fix-recipe-line:hover{background:#ead8c3}
