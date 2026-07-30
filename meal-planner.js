@@ -95,9 +95,14 @@ let sharedSaveQueue = Promise.resolve();
 let currentMealMade = null;
 
 window.addEventListener("error", event => {
+  // Browsers deliberately hide details for failed cross-origin script/JSONP
+  // requests and report only "Script error.". That is a sync transport
+  // warning, not a fatal planner crash, so do not cover the page with it.
+  if(String(event.message || "").trim().toLowerCase() === "script error.") return;
   const box = $("fatalError");
+  if(!box) return;
   box.hidden = false;
-  box.textContent = `Planner error: ${event.message}`;
+  box.textContent = `Planner error: ${event.message || "Unknown error"}`;
 });
 
 function escapeHTML(value){
@@ -1133,7 +1138,7 @@ function unitMeasure(unit, amount){
 function parseIngredientLine(line){
   const original = String(line || "").trim();
   const text = normalizeFractionText(original);
-  const match = text.match(/^(?:(\d+(?:\.\d+)?)\s+)?(\d+\/\d+|\d+(?:\.\d+)?)(?:\s+)(cups?|c|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|lb|grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|cloves?|cans?|packages?|pkg|sticks?|slices?|pieces?|units?)\s*(.*)$/i);
+  const match = text.match(/^(?:(\d+(?:\.\d+)?)\s+)?(\d+\/\d+|\d+(?:\.\d+)?)(?:\s+)(cups?|c|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|lb|grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|cloves?|cans?|packages?|pkg|sticks?|slices?|pieces?|units?)\b\s*(.*)$/i);
   if(match){
     const whole = match[1] ? Number(match[1]) : 0;
     const amount = whole + numberFromToken(match[2]);
