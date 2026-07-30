@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-window.RECIPE_VAULT_BUILD = 246;
+window.RECIPE_VAULT_BUILD = 252;
 const $ = id => document.getElementById(id);
 
 function on(id, eventName, handler){
@@ -1528,6 +1528,24 @@ document.addEventListener("submit", async event => {
 
 
 
+
+function stablePlannerValue(value){
+  if(Array.isArray(value)) return value.map(stablePlannerValue);
+  if(value && typeof value === "object"){
+    return Object.keys(value).sort().reduce((out, key) => { out[key] = stablePlannerValue(value[key]); return out; }, {});
+  }
+  return value;
+}
+function plannerContentSignature(value){
+  return JSON.stringify(stablePlannerValue({
+    days:value?.days || {},
+    pool:Array.isArray(value?.pool) ? value.pool : [],
+    recipeSnapshots:value?.recipeSnapshots || {},
+    made:value?.made || {},
+    mealPrep:Array.isArray(value?.mealPrep) ? value.mealPrep : []
+  }));
+}
+
 function plannerTimestamp(plan){
   const value = Date.parse(plan?.updatedAt || "");
   return Number.isFinite(value) ? value : 0;
@@ -1539,7 +1557,7 @@ async function plannerPost(payload){
   form.set("payload", JSON.stringify({...payload, key: config.sharedKey}));
   const response = await fetch(config.appsScriptUrl, {method:"POST", body:form, redirect:"follow"});
   const result = await response.json();
-  if(!result.success) throw new Error(result.error || "Meal plan sync failed");
+  if(!result.success && !result.conflict) throw new Error(result.error || "Meal plan sync failed");
   return result;
 }
 
@@ -1562,19 +1580,18 @@ async function loadSharedPlanner(){
       return [key, normalized];
     }));
     const local = plannerRead();
+    if(isPlannerViewer){ planner = remote; localStorage.setItem(PLANNER_KEY, JSON.stringify(remote)); return; }
 
-    if(isPlannerViewer){
-      planner = remote;
-      localStorage.setItem(PLANNER_KEY, JSON.stringify(remote));
-      return;
-    }
-
-    planner = {...remote};
-    for(const [key, rawPlan] of Object.entries(local)){
-      const plan = normalizePlannerRevision(rawPlan);
-      if(!plan.pendingSync) continue;
-      planner[key] = plan;
-      await saveSharedPlannerWeek(key, plan);
+    // The home page does not perform destructive startup uploads. Existing local
+    // weeks are retained; remote-only weeks are added. The planner page performs
+    // the full additive reconciliation with normalized day arrays.
+    planner = {...local};
+    for(const [key, remotePlan] of Object.entries(remote)){
+      if(!planner[key]) planner[key] = remotePlan;
+      else{
+        planner[key].revision = remotePlan.revision;
+        planner[key].baseRevision = remotePlan.revision;
+      }
     }
     localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
   }catch(error){
@@ -1583,44 +1600,45 @@ async function loadSharedPlanner(){
   }
 }
 
-async function saveSharedPlannerWeek(key, plan){
+async function saveSharedPlannerWeek(key, plan, options = {}){
   if(isPlannerViewer) return false;
   normalizePlannerRevision(plan);
   plan.baseRevision = Math.max(0, Number(plan.revision) || 0);
   plan.pendingSync = true;
   localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
   const snapshot = JSON.parse(JSON.stringify(plan));
+  const allowDestructive = options.allowDestructive !== false;
+  const source = String(options.source || "home-add-to-plan");
   const task = async () => {
     try{
-      const result = await plannerPost({
-        action:"saveMealPlan",
-        weekKey:key,
-        plan:{...snapshot,pendingSync:false},
-        baseRevision:snapshot.baseRevision
+      let sentPlan = {...snapshot,pendingSync:false};
+      let result = await plannerPost({
+        action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision:snapshot.baseRevision,
+        allowDestructive, source, mutationId:`${key}:${snapshot.updatedAt || Date.now()}`
       });
       if(result.conflict){
-        const serverPlan = normalizePlannerRevision(result.currentPlan || {});
-        serverPlan.pendingSync = false;
-        serverPlan.baseRevision = serverPlan.revision;
-        planner[key] = serverPlan;
-        localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
-        throw new Error("The meal plan changed elsewhere before this save completed.");
+        const retryRevision = Math.max(0, Number(result.currentPlan?.revision) || Number(result.revision) || 0);
+        sentPlan = {...sentPlan, revision:retryRevision, baseRevision:retryRevision};
+        result = await plannerPost({
+          action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision:retryRevision,
+          allowDestructive, source, mutationId:`${key}:${snapshot.updatedAt || Date.now()}:retry`
+        });
+        if(result.conflict) throw new Error("Shared planner changed twice; local plan preserved.");
       }
-      const returned = normalizePlannerRevision(result.plan || snapshot);
-      const revision = Math.max(returned.revision, Number(result.revision) || 0, Number(snapshot.revision) || 0);
+      const verification = await plannerPost({action:"getMealPlans"});
+      const verified = normalizePlannerRevision(verification?.plans?.[key] || {});
+      if(plannerContentSignature(verified) !== plannerContentSignature(sentPlan)){
+        throw new Error("Shared verification failed; the local meal plan was preserved.");
+      }
       const current = planner[key];
-      if(current && current.updatedAt === snapshot.updatedAt){
-        planner[key] = {...returned, revision, baseRevision:revision, pendingSync:false};
-      }else if(current){
-        current.revision = revision;
-        current.baseRevision = revision;
+      if(current){
+        current.revision = Math.max(Number(verified.revision)||0, Number(result.plan?.revision)||0);
+        current.baseRevision = current.revision;
+        if(current.updatedAt === snapshot.updatedAt) current.pendingSync = false;
       }
       localStorage.setItem(PLANNER_KEY, JSON.stringify(planner));
       return true;
-    }catch(error){
-      console.warn("Meal plan saved locally but could not sync:", error);
-      return false;
-    }
+    }catch(error){ console.warn("Meal plan saved locally but could not sync:", error); return false; }
   };
   const resultPromise = plannerSaveChain.catch(() => undefined).then(task);
   plannerSaveChain = resultPromise.then(() => undefined, () => undefined);
@@ -1654,7 +1672,7 @@ function plannerRecipeName(id, plan){
 function plannerSlot(date){
   const monday=plannerMonday(date), key=plannerWeekKey(monday), day=plannerDayName(date);
   const plans=planner;
-  return {plans,key,day,recipeId:plans[key]?.days?.[day] || ""};
+  return {plans,key,day,recipeId:(Array.isArray(plans[key]?.days?.[day]) ? plans[key].days[day][0] : plans[key]?.days?.[day]) || ""};
 }
 async function assignRecipeToDate(recipe, date){
   if(isPlannerViewer){
@@ -1669,12 +1687,12 @@ async function assignRecipeToDate(recipe, date){
   }
   if(!slot.plans[slot.key]) slot.plans[slot.key]={days:{},updatedAt:null};
   if(!slot.plans[slot.key].days) slot.plans[slot.key].days={};
-  slot.plans[slot.key].days[slot.day]=recipe.id;
+  slot.plans[slot.key].days[slot.day]=[String(recipe.id)];
   if(!slot.plans[slot.key].recipeSnapshots) slot.plans[slot.key].recipeSnapshots={};
   slot.plans[slot.key].recipeSnapshots[String(recipe.id)]={id:String(recipe.id),name:recipe.name||"Untitled recipe",image:recipe.image||"",protein:recipe.protein||"",type:recipe.type||"",total_time:Number(recipe.total_time)||0};
   slot.plans[slot.key].updatedAt=new Date().toISOString();
   planner=slot.plans;
-  const synced = await saveSharedPlannerWeek(slot.key, slot.plans[slot.key]);
+  const synced = await saveSharedPlannerWeek(slot.key, slot.plans[slot.key], {allowDestructive:true, source:"home-add-to-plan"});
   return {saved:true, synced};
 }
 function renderMealPlanWeekGroup(start,label){

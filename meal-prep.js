@@ -14,7 +14,7 @@ const config = {...base, ...settings};
 
 let activeWeek = mondayOf(new Date());
 let recipes = [];
-let saving = false;
+let saveChain = Promise.resolve();
 
 function escapeHTML(value){
   return String(value ?? "").replace(/[&<>"']/g, character => ({
@@ -123,6 +123,24 @@ function render(){
   `).join("");
 }
 
+
+function stablePlannerValue(value){
+  if(Array.isArray(value)) return value.map(stablePlannerValue);
+  if(value && typeof value === "object"){
+    return Object.keys(value).sort().reduce((out, key) => { out[key] = stablePlannerValue(value[key]); return out; }, {});
+  }
+  return value;
+}
+function plannerContentSignature(value){
+  return JSON.stringify(stablePlannerValue({
+    days:value?.days || {},
+    pool:Array.isArray(value?.pool) ? value.pool : [],
+    recipeSnapshots:value?.recipeSnapshots || {},
+    made:value?.made || {},
+    mealPrep:Array.isArray(value?.mealPrep) ? value.mealPrep : []
+  }));
+}
+
 async function plannerPost(payload){
   if(!config.appsScriptUrl || !config.sharedKey) throw new Error("Shared planner settings are missing.");
   const form = new URLSearchParams();
@@ -135,13 +153,11 @@ async function plannerPost(payload){
   let result;
   try { result = JSON.parse(text); }
   catch { throw new Error("Apps Script returned an unreadable response."); }
-  if(!result.success) throw new Error(result.error || "Meal prep sync failed.");
+  if(!result.success && !result.conflict) throw new Error(result.error || "Meal prep sync failed.");
   return result;
 }
 
 async function persist(mutator){
-  if(saving) return;
-  saving = true;
   const {plans,key,plan} = currentPlan();
   plan.mealPrep = plan.mealPrep.map(normalizePrepItem).filter(Boolean);
   mutator(plan.mealPrep);
@@ -151,21 +167,44 @@ async function persist(mutator){
   savePlans(plans);
   render();
   setStatus("Saving meal prep…");
+  const snapshot = JSON.parse(JSON.stringify(plan));
 
-  try{
-    await plannerPost({action:"saveMealPlan", weekKey:key, plan:{...plan,pendingSync:false}});
-    const latest = readPlans();
-    if(latest[key] && latest[key].updatedAt === plan.updatedAt){
-      latest[key].pendingSync = false;
-      savePlans(latest);
+  const task = async () => {
+    try{
+      const baseRevision = Math.max(0, Number(snapshot.revision) || 0);
+      let sentPlan = {...snapshot, revision:baseRevision, baseRevision, pendingSync:false};
+      let result = await plannerPost({
+        action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision,
+        allowDestructive:true, source:"meal-prep-edit", mutationId:`${key}:${snapshot.updatedAt}`
+      });
+      if(result.conflict){
+        const currentRevision = Math.max(0, Number(result.currentPlan?.revision) || Number(result.revision) || 0);
+        sentPlan = {...sentPlan, revision:currentRevision, baseRevision:currentRevision};
+        result = await plannerPost({
+          action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision:currentRevision,
+          allowDestructive:true, source:"meal-prep-edit", mutationId:`${key}:${snapshot.updatedAt}:retry`
+        });
+        if(result.conflict) throw new Error("Meal prep changed twice during sync; local copy preserved.");
+      }
+      const verification = await plannerPost({action:"getMealPlans"});
+      const verified = verification?.plans?.[key] || {};
+      if(plannerContentSignature(verified) !== plannerContentSignature(sentPlan)) throw new Error("Shared verification failed; meal prep remains saved on this device.");
+      const latest = readPlans();
+      if(latest[key]){
+        latest[key].revision = Math.max(0, Number(verified.revision) || Number(result.plan?.revision) || baseRevision);
+        latest[key].baseRevision = latest[key].revision;
+        if(latest[key].updatedAt === snapshot.updatedAt) latest[key].pendingSync = false;
+        savePlans(latest);
+      }
+      setStatus("Meal prep saved and verified.", "success");
+    }catch(error){
+      setStatus("Saved on this device; shared sync will retry when the planner saves again.", "warning");
+      console.warn("Meal prep shared save:", error);
     }
-    setStatus("Meal prep saved to the shared week.", "success");
-  }catch(error){
-    setStatus("Saved on this device; shared sync will retry when the planner saves again.", "warning");
-    console.warn("Meal prep shared save:", error);
-  }finally{
-    saving = false;
-  }
+  };
+  const promise = saveChain.catch(() => undefined).then(task);
+  saveChain = promise.then(() => undefined, () => undefined);
+  return promise;
 }
 
 function populateRecipeOptions(){

@@ -1,5 +1,1 @@
-{
-  "build": 247,
-  "label": "Verified shared planner revision sync",
-  "released": "2026-07-29"
-}
+{"build":252,"label":"End-to-end planner integrity and recovery"}

@@ -202,6 +202,24 @@ function normalizePlanShape(plan, key){
   cleanPlan.baseRevision = Math.max(0, Number(cleanPlan.baseRevision) || cleanPlan.revision);
   return cleanPlan;
 }
+
+function stablePlannerValue(value){
+  if(Array.isArray(value)) return value.map(stablePlannerValue);
+  if(value && typeof value === "object"){
+    return Object.keys(value).sort().reduce((out, key) => { out[key] = stablePlannerValue(value[key]); return out; }, {});
+  }
+  return value;
+}
+function plannerContentSignature(value){
+  return JSON.stringify(stablePlannerValue({
+    days:value?.days || {},
+    pool:Array.isArray(value?.pool) ? value.pool : [],
+    recipeSnapshots:value?.recipeSnapshots || {},
+    made:value?.made || {},
+    mealPrep:Array.isArray(value?.mealPrep) ? value.mealPrep : []
+  }));
+}
+
 function planHasContent(plan){
   return Boolean(
     Object.values(plan?.days || {}).some(items => (Array.isArray(items) ? items : [items]).filter(Boolean).length) ||
@@ -246,6 +264,13 @@ function mergePlanContent(localPlan, remotePlan, key){
   merged.pool = [...new Set([...(remote.pool || []).map(String), ...(local.pool || []).map(String)])];
   merged.recipeSnapshots = {...(remote.recipeSnapshots || {}), ...(local.recipeSnapshots || {})};
   merged.made = {...(remote.made || {}), ...(local.made || {})};
+  const prepById = new Map();
+  [...(remote.mealPrep || []), ...(local.mealPrep || [])].forEach(item => {
+    if(!item || typeof item !== "object") return;
+    const id = String(item.id || `${item.name || "prep"}:${item.addedAt || ""}`);
+    prepById.set(id, item);
+  });
+  merged.mealPrep = [...prepById.values()];
   merged.updatedAt = new Date(Math.max(planTimestamp(local), planTimestamp(remote), Date.now())).toISOString();
   merged.pendingSync = true;
   return merged;
@@ -328,7 +353,9 @@ async function plannerPost(payload){
     throw new Error("Apps Script returned an unreadable response. The deployment URL may be outdated.");
   }
 
-  if(!result.success){
+  // Conflict is a valid structured response from the meal-plan endpoint.
+  // Let the caller resolve it instead of converting it into a generic error.
+  if(!result.success && !result.conflict){
     if(String(result.error || "").toLowerCase().includes("unauthorized")){
       throw new Error("The family key was rejected. The key in Site Settings must exactly match the key in Apps Script.");
     }
@@ -354,40 +381,54 @@ async function loadSharedPlans(force = false){
     normalized.baseRevision = normalized.revision;
     return [key, normalized];
   }));
-
-  const local = Object.fromEntries(
-    Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)])
-  );
+  const local = Object.fromEntries(Object.entries(readPlans()).map(([key, plan]) => [key, normalizePlanShape(plan, key)]));
 
   if(isPlannerViewer){
-    // Shared-link devices mirror the server. The URL fragment is intentionally
-    // removed after its settings are imported, but those settings remain saved.
     plans = remote;
     savePlans();
   }else{
-    // The server is authoritative for completed saves. Only explicitly pending
-    // local edits are allowed to sit on top of it and retry.
-    plans = {...remote};
-    const pendingUploads = [];
-    Object.entries(local).forEach(([key, localPlan]) => {
-      if(!localPlan.pendingSync) return;
-      plans[key] = localPlan;
-      pendingUploads.push([key, localPlan, localPlan.updatedAt || new Date().toISOString()]);
-    });
+    // Startup reconciliation is additive, never destructive. This protects both
+    // directions: a stale one-meal server cannot erase a full desktop week, and
+    // cleared/partial browser storage cannot erase a fuller shared week.
+    plans = {};
+    const uploads = [];
+    const keys = new Set([...Object.keys(local), ...Object.keys(remote)]);
+    for(const key of keys){
+      const localPlan = local[key];
+      const remotePlan = remote[key];
+      if(!localPlan){ plans[key] = remotePlan; continue; }
+      if(!remotePlan){
+        plans[key] = localPlan;
+        plans[key].revision = 0;
+        plans[key].baseRevision = 0;
+        plans[key].pendingSync = true;
+        uploads.push([key, plans[key], plans[key].updatedAt || new Date().toISOString()]);
+        continue;
+      }
+      if(plannerContentSignature(localPlan) === plannerContentSignature(remotePlan)){
+        plans[key] = localPlan;
+        plans[key].revision = remotePlan.revision;
+        plans[key].baseRevision = remotePlan.revision;
+        plans[key].pendingSync = false;
+        continue;
+      }
+      const merged = mergePlanContent(localPlan, remotePlan, key);
+      merged.revision = remotePlan.revision;
+      merged.baseRevision = remotePlan.revision;
+      merged.pendingSync = true;
+      plans[key] = merged;
+      uploads.push([key, merged, merged.updatedAt]);
+    }
     savePlans();
-
-    for(const [key, plan, versionBeingSaved] of pendingUploads){
-      await queueSharedPlanSave(key, plan, versionBeingSaved);
+    for(const [key, plan, versionBeingSaved] of uploads){
+      await queueSharedPlanSave(key, plan, versionBeingSaved, {allowDestructive:false, source:"startup-reconcile"});
     }
     savePlans();
   }
 
   syncReady = true;
-  setPlannerSyncStatus(
-    "connected",
-    isPlannerViewer ? "Viewing shared planner" : "Shared planner connected",
-    `${Object.keys(remote).length} shared week${Object.keys(remote).length === 1 ? "" : "s"} loaded with ${countPlannedMeals(remote)} planned meal${countPlannedMeals(remote) === 1 ? "" : "s"}.`
-  );
+  setPlannerSyncStatus("connected", isPlannerViewer ? "Viewing shared planner" : "Shared planner connected",
+    `${Object.keys(remote).length} shared week${Object.keys(remote).length === 1 ? "" : "s"} loaded with ${countPlannedMeals(remote)} planned meal${countPlannedMeals(remote) === 1 ? "" : "s"}.`);
   return true;
 }
 
@@ -397,60 +438,54 @@ function renderPlannerAfterSync(key){
   renderResults();
 }
 
-function queueSharedPlanSave(key, plan, versionBeingSaved){
+function queueSharedPlanSave(key, plan, versionBeingSaved, options = {}){
   const queuedPlan = JSON.parse(JSON.stringify(normalizePlanShape(plan, key)));
+  const allowDestructive = Boolean(options.allowDestructive);
+  const source = String(options.source || "planner-edit");
 
   sharedSaveQueue = sharedSaveQueue.catch(() => undefined).then(async () => {
     const currentBeforeSave = plans[key];
-    const latestKnownRevision = Math.max(
-      0,
-      Number(currentBeforeSave?.revision) || 0,
-      Number(queuedPlan.revision) || 0
-    );
-
-    const sharedPlan = {
-      ...queuedPlan,
-      revision:latestKnownRevision,
-      baseRevision:latestKnownRevision,
-      pendingSync:false
-    };
-
-    const result = await plannerPost({
-      action:"saveMealPlan",
-      weekKey:key,
-      plan:sharedPlan,
-      baseRevision:sharedPlan.baseRevision
+    const latestKnownRevision = Math.max(0, Number(currentBeforeSave?.revision) || 0, Number(queuedPlan.revision) || 0);
+    let sentPlan = {...queuedPlan, revision:latestKnownRevision, baseRevision:latestKnownRevision, pendingSync:false};
+    let result = await plannerPost({
+      action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision:sentPlan.baseRevision,
+      allowDestructive, source, mutationId:`${key}:${versionBeingSaved}`
     });
 
     if(result.conflict){
       const serverPlan = normalizePlanShape(result.currentPlan || {}, key);
-      serverPlan.pendingSync = false;
-      serverPlan.baseRevision = serverPlan.revision;
-      plans[key] = serverPlan;
-      savePlans();
-      renderPlannerAfterSync(key);
-      throw new Error("The shared planner changed before this save completed. The newest shared copy was loaded; please add that meal again.");
+      const retryRevision = Math.max(0, Number(serverPlan.revision) || Number(result.revision) || 0);
+      // Startup/recovery writes merge with the server. Explicit user edits may
+      // intentionally remove or replace meals and are allowed to overwrite.
+      sentPlan = allowDestructive ? {...sentPlan} : mergePlanContent(sentPlan, serverPlan, key);
+      sentPlan.revision = retryRevision;
+      sentPlan.baseRevision = retryRevision;
+      sentPlan.pendingSync = false;
+      result = await plannerPost({
+        action:"saveMealPlan", weekKey:key, plan:sentPlan, baseRevision:retryRevision,
+        allowDestructive, source, mutationId:`${key}:${versionBeingSaved}:retry`
+      });
+      if(result.conflict) throw new Error("Shared planner changed twice during recovery. The local plan is preserved and will retry.");
     }
 
-    const returnedPlan = normalizePlanShape(result.plan || sharedPlan, key);
-    const returnedRevision = Math.max(
-      0,
-      Number(returnedPlan.revision) || 0,
-      Number(result.revision) || 0,
-      latestKnownRevision
-    );
-    returnedPlan.revision = returnedRevision;
-    returnedPlan.baseRevision = returnedRevision;
-    returnedPlan.pendingSync = false;
-
+    const returnedRevision = Math.max(0, Number(result.plan?.revision) || 0, Number(result.revision) || 0, latestKnownRevision);
+    const verification = await plannerPost({action:"getMealPlans"});
+    const verifiedPlan = normalizePlanShape(verification?.plans?.[key] || {}, key);
+    if(plannerContentSignature(verifiedPlan) !== plannerContentSignature(sentPlan)){
+      throw new Error("Shared verification failed. The local meal plan was preserved.");
+    }
     const current = plans[key];
-    if(current && current.updatedAt === versionBeingSaved){
-      plans[key] = returnedPlan;
-    }else if(current){
-      current.revision = returnedRevision;
-      current.baseRevision = returnedRevision;
+    if(current){
+      // If reconciliation added remote content, keep that verified merged content.
+      if(!allowDestructive && current.updatedAt === versionBeingSaved){
+        const preservedMeta = {revision:returnedRevision, baseRevision:returnedRevision, pendingSync:false};
+        plans[key] = {...verifiedPlan, ...preservedMeta};
+      }else{
+        current.revision = Math.max(returnedRevision, Number(verifiedPlan.revision) || 0);
+        current.baseRevision = current.revision;
+        if(current.updatedAt === versionBeingSaved) current.pendingSync = false;
+      }
     }
-
     savePlans();
     renderPlannerAfterSync(key);
     return result;
@@ -474,7 +509,7 @@ async function saveSharedWeek(date = activeWeek){
   savePlans();
 
   try{
-    await queueSharedPlanSave(key, plan, versionBeingSaved);
+    await queueSharedPlanSave(key, plan, versionBeingSaved, {allowDestructive:true, source:"planner-user-edit"});
     $("weekStatus").dataset.state = "connected";
     $("weekStatus").textContent = "Saved and verified";
     $("weekStatus").title = "The shared server accepted this meal-plan revision.";

@@ -1,0 +1,8 @@
+Build 252 — end-to-end planner integrity and recovery
+
+• Additive startup reconciliation prevents either stale side from deleting the fuller plan.
+• Explicit user edits are distinguished from automatic recovery writes.
+• Every shared save is read back and verified before pending status is cleared.
+• Main-page meal assignment uses the same day-array format as the planner.
+• Meal-prep edits are queued instead of silently dropped while another save is running.
+• Requires the accompanying Apps Script Build 252 backend update.
