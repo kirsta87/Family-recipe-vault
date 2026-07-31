@@ -2030,8 +2030,11 @@ function openRecipe(recipe){
   $("nutritionText").textContent = recipe.nutrition || "Nutrition details have not been imported.";
   $("hideBtn").textContent = recipe.hidden ? "Restore recipe" : "Hide recipe";
   $("sourceLink").href = recipe.url || "#";$("sourceLink").hidden=!recipe.url;
-  $("pdfLink").href = recipe.pdf_url || "#";$("pdfLink").hidden=!recipe.pdf_url;
-  $("sourcePageBtn").hidden=!(recipe.source_page_image||inferredCookbookPage(recipe));
+  const hasSourcePage=Boolean(recipe.source_page_image||inferredCookbookPage(recipe));
+  $("sourcePageBtn").hidden=!(hasSourcePage||recipe.pdf_url);
+  $("sourcePageBtn").textContent=hasSourcePage?"View original PDF page":"Open PDF";
+  $("pdfLink").href = recipe.pdf_url || "#";
+  $("pdfLink").hidden=true;
   renderStars("kirstaStars", "kirsta_rating");
   renderStars("tjStars", "tj_rating");
   renderStars("torrinStars", "torrin_rating");
@@ -2767,9 +2770,9 @@ on("closeRecipe", "click", () => {
 });
 on("saveNotes", "click", () => write("update", active, {notes: $("notes").value.trim()}));
 on("sourcePageBtn","click",()=>{
+  const inferredPage=inferredCookbookPage(active);
   if(active?.source_page_image){
     const dialog=$("sourcePagePreviewDialog"),img=$("sourcePagePreviewImage"),status=$("sourcePagePreviewStatus");
-    const inferredPage=inferredCookbookPage(active);
     $("sourcePagePreviewTitle").textContent=`${active.name||"Original recipe page"}${inferredPage?` · Page ${inferredPage}`:""}`;
     status.textContent="Loading page…";status.hidden=false;img.hidden=true;
     img.onload=()=>{status.hidden=true;img.hidden=false;};
@@ -2778,6 +2781,8 @@ on("sourcePageBtn","click",()=>{
     if(!dialog.open)dialog.showModal();
   }else if(inferredPage){
     location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(inferredPage)}`;
+  }else if(active?.pdf_url){
+    window.open(active.pdf_url,"_blank","noopener");
   }
 });
 on("closeSourcePagePreview","click",()=>{$("sourcePagePreviewDialog").close();});

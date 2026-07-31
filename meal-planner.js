@@ -1009,6 +1009,13 @@ let latestShoppingText = "";
 let latestShoppingItems = [];
 let shoppingCategoryMemory = readShoppingCategoryMemory();
 const SHOPPING_BRAND_MEMORY_KEY = "recipe-vault-shopping-brand-memory-v1";
+const SHOPPING_EXCLUSIONS_KEY = "recipeVaultShoppingExclusionsV263";
+function readShoppingExclusions(){
+  try{ const value=JSON.parse(localStorage.getItem(SHOPPING_EXCLUSIONS_KEY)||"[]"); return new Set(Array.isArray(value)?value:[]); }catch(error){ return new Set(); }
+}
+let shoppingExclusions = readShoppingExclusions();
+function saveShoppingExclusions(){ localStorage.setItem(SHOPPING_EXCLUSIONS_KEY, JSON.stringify([...shoppingExclusions])); }
+function shoppingSourceKey(recipeId, line){ return `${String(recipeId||"")}::${String(line||"").trim().toLowerCase()}`; }
 function readShoppingBrandMemory(){
   try{ const value=JSON.parse(localStorage.getItem(SHOPPING_BRAND_MEMORY_KEY)||"{}"); return value&&typeof value==="object"?value:{}; }catch(error){ return {}; }
 }
@@ -1083,6 +1090,7 @@ function normalizeFractionText(text){
     .replace(/¼/g," 1/4").replace(/½/g," 1/2").replace(/¾/g," 3/4")
     .replace(/⅓/g," 1/3").replace(/⅔/g," 2/3").replace(/⅛/g," 1/8")
     .replace(/⅜/g," 3/8").replace(/⅝/g," 5/8").replace(/⅞/g," 7/8")
+    .replace(/\b(\d)(\d\/\d)\b/g,"$1 $2")
     .replace(/\s+/g," ").trim();
 }
 
@@ -1261,6 +1269,15 @@ function openShoppingListDialog(){
 }
 
 function shoppingItemDisplay(item){
+  const components = Array.isArray(item.components) && item.components.length ? item.components : [item];
+  if(components.length > 1){
+    const measures = components.map(component => {
+      if(component.amount === null && component.baseAmount === null) return cleanIngredientName(component.original);
+      const measure = displayMeasure(component);
+      return measure ? `${prettyAmount(measure.amount)}${measure.unit ? ` ${measure.unit}` : ""}` : cleanIngredientName(component.original);
+    }).filter(Boolean);
+    return `${measures.join(" + ")} ${item.name}`.trim();
+  }
   if(item.amount === null && item.baseAmount === null) return cleanIngredientName(item.original);
   const measure = displayMeasure(item);
   if(!measure) return cleanIngredientName(item.original);
@@ -1517,11 +1534,20 @@ function renderShoppingOutput(selectedRecipes, preservedState = null){
   document.querySelectorAll("[data-shopping-delete]").forEach(button => button.addEventListener("click", () => {
     const uiState = captureShoppingUiState();
     const removed = latestShoppingItems.find(entry => entry.itemKey === button.dataset.shoppingDelete);
+    const sources = Array.isArray(removed?.sources) ? removed.sources : [];
+    // A single-source deletion is remembered, so rebuilding after another edit
+    // does not resurrect an OCR/instruction line the user already removed.
+    if(sources.length === 1){
+      shoppingExclusions.add(shoppingSourceKey(sources[0].recipeId, sources[0].line));
+      saveShoppingExclusions();
+    }
     latestShoppingItems = latestShoppingItems.filter(entry => entry.itemKey !== button.dataset.shoppingDelete);
     uiState.checkedKeys.delete(button.dataset.shoppingDelete);
     delete uiState.brands[button.dataset.shoppingDelete];
     renderShoppingOutput(selectedRecipes, uiState);
-    $("shoppingListStatus").textContent = `${removed?.display || "Ingredient"} removed from this shopping list.`;
+    $("shoppingListStatus").textContent = sources.length === 1
+      ? `${removed?.display || "Ingredient"} removed and will stay hidden when this list rebuilds.`
+      : `${removed?.display || "Ingredient"} removed from this shopping list.`;
     $("shoppingListStatus").className = "import-status success";
   }));
 
@@ -1557,16 +1583,31 @@ function buildShoppingList(){
   const merged = new Map();
   selected.forEach(recipe => {
     [...new Set((recipe.ingredients || []).map(item => String(item).trim()).filter(Boolean))].forEach(line => {
+      if(shoppingExclusions.has(shoppingSourceKey(recipe.id, line))) return;
       const parsed = parseIngredientLine(line);
+      const nameKey = ingredientMemoryKey(parsed.name) || ingredientMemoryKey(line);
       const source = {recipeId:String(recipe.id || ""), recipeName:String(recipe.name || "Untitled recipe"), line};
-      if(parsed.amount !== null && merged.has(parsed.key)){
-        const existing = merged.get(parsed.key);
-        existing.baseAmount = Number(existing.baseAmount ?? existing.amount) + Number(parsed.baseAmount ?? parsed.amount);
-        existing.amount = existing.baseAmount;
-        existing.parts.push(line);
-        existing.sources.push(source);
-      }else if(!merged.has(parsed.key)){
-        merged.set(parsed.key, {...parsed, parts:[line], sources:[source]});
+      if(!merged.has(nameKey)){
+        merged.set(nameKey, {...parsed, components:[{...parsed}], parts:[line], sources:[source]});
+        return;
+      }
+      const existing = merged.get(nameKey);
+      existing.parts.push(line);
+      existing.sources.push(source);
+      const compatible = existing.components.find(component =>
+        component.dimension === parsed.dimension &&
+        component.amount !== null && parsed.amount !== null
+      );
+      if(compatible){
+        compatible.baseAmount = Number(compatible.baseAmount ?? compatible.amount) + Number(parsed.baseAmount ?? parsed.amount);
+        compatible.amount = compatible.baseAmount;
+        // Keep the legacy top-level fields synchronized when there is only one measure type.
+        if(existing.components.length === 1){
+          existing.baseAmount = compatible.baseAmount;
+          existing.amount = compatible.amount;
+        }
+      }else{
+        existing.components.push({...parsed});
       }
     });
   });
@@ -1585,7 +1626,7 @@ function buildShoppingList(){
   $("copyShoppingList").hidden = false;
   $("printShoppingList").hidden = false;
   $("finishShopping").hidden = false;
-  $("shoppingListStatus").textContent = "Planned meals and meal-prep recipes were added. Matching measurements were combined; each ingredient shows which recipe uses it.";
+  $("shoppingListStatus").textContent = "Planned meals and meal-prep recipes were added. Matching ingredient names are grouped, even when their measurements differ.";
   $("shoppingListStatus").className = "import-status success";
 }
 

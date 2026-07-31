@@ -1116,3 +1116,14 @@ dialog .close{position:sticky;top:0;z-index:5;margin-left:auto;display:block;bac
 .shopping-list-dialog{background:var(--paper);border-color:var(--line)}
 .shopping-list-summary,.shopping-list-recipes{background:#faf6ee;border-color:var(--line)}
 .shopping-category{background:var(--paper);border-color:var(--line)}
+
+
+/* Build 263: compact planner actions */
+.planner-page-top-actions .primary,
+.planner-page-top-actions .secondary,
+.planner-page-top-actions .linkbtn,
+.planner-page-top-actions .shopping-list-header-button{
+  min-height:44px;
+  padding:10px 18px;
+  font-size:.95rem;
+}
