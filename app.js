@@ -2033,8 +2033,6 @@ function openRecipe(recipe){
   const hasSourcePage=Boolean(recipe.source_page_image||inferredCookbookPage(recipe));
   $("sourcePageBtn").hidden=!(hasSourcePage||recipe.pdf_url);
   $("sourcePageBtn").textContent=hasSourcePage?"View original PDF page":"Open PDF";
-  $("pdfLink").href = recipe.pdf_url || "#";
-  $("pdfLink").hidden=true;
   renderStars("kirstaStars", "kirsta_rating");
   renderStars("tjStars", "tj_rating");
   renderStars("torrinStars", "torrin_rating");
@@ -2769,6 +2767,16 @@ on("closeRecipe", "click", () => {
   $("recipeDialog").close();
 });
 on("saveNotes", "click", () => write("update", active, {notes: $("notes").value.trim()}));
+function openExternalPdfInViewer(url){
+  const pdfUrl=String(url||"").trim();
+  if(!pdfUrl) return false;
+  // Some recipe hosts force Content-Disposition: attachment, which downloads the
+  // PDF even when opened in a new tab. Google Docs Viewer keeps it viewable.
+  const viewer=`https://docs.google.com/gview?embedded=0&url=${encodeURIComponent(pdfUrl)}`;
+  const opened=window.open(viewer,"_blank","noopener,noreferrer");
+  return Boolean(opened);
+}
+
 on("sourcePageBtn","click",()=>{
   const inferredPage=inferredCookbookPage(active);
   if(active?.source_page_image){
@@ -2780,9 +2788,12 @@ on("sourcePageBtn","click",()=>{
     img.src=active.source_page_image;
     if(!dialog.open)dialog.showModal();
   }else if(inferredPage){
-    location.href=`cookbooks.html?recipe=${encodeURIComponent(active.id||"")}&page=${encodeURIComponent(inferredPage)}`;
+    const pageUrl=new URL("cookbooks.html",window.location.href);
+    pageUrl.searchParams.set("recipe",active.id||"");
+    pageUrl.searchParams.set("page",String(inferredPage));
+    window.open(pageUrl.href,"_blank","noopener,noreferrer");
   }else if(active?.pdf_url){
-    window.open(active.pdf_url,"_blank","noopener");
+    openExternalPdfInViewer(active.pdf_url);
   }
 });
 on("closeSourcePagePreview","click",()=>{$("sourcePagePreviewDialog").close();});
