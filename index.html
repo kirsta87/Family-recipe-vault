@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="recipe-vault-build" content="256">
+  <meta name="recipe-vault-build" content="266">
   <meta name="theme-color" content="#697454">
   <title>Glaister Family Recipe Vault</title>
   <link rel="stylesheet" href="styles.css?v=193">
@@ -19,6 +19,7 @@
     <a class="secondary linkbtn collections-link" href="manage-collections.html">Manage collections</a>
     <a class="secondary linkbtn health-link" href="recipe-health.html">Recipe health</a>
     <a class="secondary linkbtn pantry-link" href="pantry.html">Pantry</a>
+    <button id="recipeAnalyzerBtn" class="secondary" type="button">Recipe Analyzer</button>
     <button id="manageBtn" class="secondary" type="button">Settings</button>
   </div>
 
@@ -293,7 +294,7 @@ https://www.budgetbytes.com/..."></textarea>
 
   <div class="actions">
     <button id="editRecipeBtn" class="primary">Edit recipe</button>
-    <button id="saveNotes" class="secondary">Save notes</button>
+    <button id="saveNotes" class="secondary">Save notes</button><span id="notesStatus" class="import-status" aria-live="polite"></span>
     <button id="madeBtn" class="secondary">Made this</button>
     <button id="hideBtn" class="danger">Hide recipe</button>
     <button id="sourcePageBtn" class="secondary" type="button">View original PDF page</button>
@@ -489,7 +490,7 @@ https://www.budgetbytes.com/..."></textarea>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js?v=176"></script>
 <script src="recipe-pack-schema.js?v=180"></script>
 <script src="config.js?v=193"></script>
-<script src="app.js?v=265"></script>
-  <script src="build-status.js?v=256"></script>
+<script src="app.js?v=267"></script>
+  <script src="build-status.js?v=267"></script>
 </body>
 </html>

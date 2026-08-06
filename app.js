@@ -2763,10 +2763,45 @@ on("editRecipeForm", "submit", async event => {
   }
 });
 
+function recipeReturnUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const value = String(params.get("return") || "").trim();
+  if(!value) return "";
+  try{
+    const url = new URL(value, window.location.href);
+    if(url.origin !== window.location.origin) return "";
+    return url.href;
+  }catch(error){
+    return "";
+  }
+}
+
 on("closeRecipe", "click", () => {
   $("recipeDialog").close();
+  const returnUrl = recipeReturnUrl();
+  if(returnUrl) window.location.href = returnUrl;
 });
-on("saveNotes", "click", () => write("update", active, {notes: $("notes").value.trim()}));
+on("saveNotes", "click", async () => {
+  if(!active) return;
+  const notes = $("notes").value.trim();
+  const button = $("saveNotes");
+  const status = $("notesStatus");
+  button.disabled = true;
+  if(status){ status.textContent = "Saving…"; status.className = "import-status"; }
+  try{
+    const result = await postVault({action:"update", id:active.id, url:active.url, updates:{notes}});
+    if(!result) return;
+    active.notes = notes;
+    const cached = recipes.find(recipe => String(recipe.id) === String(active.id));
+    if(cached) cached.notes = notes;
+    if(status){ status.textContent = "Notes saved"; status.className = "import-status success"; }
+    setTimeout(() => { if(status?.textContent === "Notes saved") status.textContent = ""; }, 2200);
+  }catch(error){
+    if(status){ status.textContent = `Could not save notes: ${error.message}`; status.className = "import-status error"; }
+  }finally{
+    button.disabled = false;
+  }
+});
 function openExternalPdfInViewer(url){
   const pdfUrl=String(url||"").trim();
   if(!pdfUrl) return false;
@@ -3151,6 +3186,21 @@ document.querySelectorAll("dialog").forEach(dialog => {
 });
 
 mountMultiCollectionPicker("manualCollectionPicker", []);
+on("recipeAnalyzerBtn", "click", () => {
+  Promise.resolve(recipeDNAReady).then(() => {
+    const count = recipeIntelligenceCandidates().length;
+    const queued = readMetadataQueue().length;
+    showRecipeIntelligencePrompt(Math.max(count, queued), false);
+    if(!count && !queued){
+      const dialog = $("recipeIntelligenceDialog");
+      const message = $("recipeIntelligenceMessage");
+      if(message) message.textContent = `Recipe Intelligence is current. You can still run a full recheck.`;
+      setIntelligenceDialogMode("prompt");
+      if(dialog && !dialog.open) dialog.showModal();
+    }
+  }).catch(showRecipeIntelligenceError);
+});
+
 on("recheckRecipeIntelligence", "click", event => {
   event.currentTarget.disabled = true;
   const status=$("recipeIntelligenceStatus");
